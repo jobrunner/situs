@@ -1,0 +1,15 @@
+# build output
+/situs
+
+# local index + WAL sidecars
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# pinned source artifacts are fetched, never committed
+/pipelines/*/artifacts/
+
+# keep the vendored skill symlinks under version control
+.claude/*
+!.claude/skills
+!.claude/skills/**
