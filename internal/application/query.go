@@ -233,7 +233,8 @@ func speciesEntry(r domain.SpeciesRole) input.SpeciesEntry {
 
 // preferredLabel picks the label to serve and reports its provenance, ordered
 // official > curated > derived: the most authoritative wording wins, and the
-// answer never depends on row order (Repository.Localization guarantees none).
+// answer never depends on row order. Repository.Localization does order its
+// rows, but this holds regardless of whether an implementation does.
 func preferredLabel(labels []domain.Localization) (string, string) {
 	best := map[string]domain.Localization{}
 	for _, l := range labels {

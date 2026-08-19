@@ -43,8 +43,13 @@ zu normalisieren; zur Laufzeit ist situs für Abfragen per Konzept-ID autark.
 Im Aufbau. Das Gerüst steht (Go 1.26, hexagonal, Qualitäts-Gates, CI); Ingest
 und Lese-API des Fundaments sind implementiert.
 
+`make verify` braucht neben der Go-Toolchain ein **`python3`** im Pfad: die
+Tests der XLSX→CSV-Pipeline gehören zum kanonischen Grün-Check. Zusätzliche
+Python-Pakete sind nicht nötig — die Pipeline benutzt ausschließlich die
+Standardbibliothek.
+
 ```bash
-make verify      # fmt-check, vet, lint, test, arch, debt, build
+make verify      # fmt-check, vet, lint, test, pipeline-test, arch, debt, build
 make build       # ./situs
 ./situs serve    # HTTP auf 127.0.0.1:8080
 ```

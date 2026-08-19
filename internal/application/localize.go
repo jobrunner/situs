@@ -181,8 +181,9 @@ func hasOfficialOrCurated(ls []domain.Localization) bool {
 
 // officialOrCuratedName returns the value of an official or curated entry in
 // ls, preferring official — repeated ingests of the same data must produce
-// byte-identical derived labels, not a value that depends on ls's row order
-// (Repository.Localization makes no ordering guarantee). A derived entry
+// byte-identical derived labels, not a value that depends on ls's row order.
+// Repository.Localization does order its rows, but this must hold for any
+// implementation of the port, not just the sqlite one. A derived entry
 // must never be treated as a source to derive from, nor as a reason to skip
 // deriving.
 func officialOrCuratedName(ls []domain.Localization) (string, bool) {

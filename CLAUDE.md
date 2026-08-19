@@ -22,11 +22,18 @@ IDs; at runtime it is autark for concept-ID queries.
 
 ## Current State — START HERE
 
-**Task 1 of the foundation plan is done:** the service is scaffolded with the
-full quality harness (module `github.com/jobrunner/situs`, Go 1.26, hexagonal
-package layout, ratchets, CI, release-please, MkDocs). There is **no business
-logic yet** — `internal/domain` and `internal/adapters/hostus` are placeholders,
-and the HTTP surface is the operations surface plus `GET /v1/info`.
+**All 8 tasks of the foundation plan are done.** The service is scaffolded with
+the full quality harness (module `github.com/jobrunner/situs`, Go 1.26,
+hexagonal package layout, ratchets, CI, release-please, MkDocs), and the
+foundation's ingest and read API are implemented: domain value objects, the
+sqlite index, the hostus name-resolution adapter, the CSV ingest, the
+localization overlay with `=`-only German derivation, and the habitat-type /
+species / syntaxon read endpoints.
+
+Not in the index yet, deliberately: **no German labels.** The overlay mechanism
+is built and tested, but no German name source is pinned (EUR-Lex is deferred),
+so `Localizations` and `DerivedLabels` are measured 0. See
+`docs/reference/measured-index.md` for every measured figure.
 
 - `third_party/claude-skills` (git submodule, SSH remote) + `.claude/skills/*`
   symlinks — the `new-go-service` skill resolves through them. The submodule is
@@ -34,9 +41,9 @@ and the HTTP surface is the operations surface plus `GET /v1/info`.
   toolchain into vendor mode and breaks every bare `go build`/`go test`.
 - The design documents (see below).
 
-**Next action:** continue
-`docs/superpowers/plans/2026-08-19-situs-foundation.md` at **Task 2** (domain
-value objects) using the **superpowers:subagent-driven-development** skill.
+**Next action:** none in this plan — the foundation branch is ready to merge.
+Deliberately out of scope for it: scoring/ranking, the ESy rule engine, the
+EUNIS-2012 key, and full plot classification.
 
 ## Design documents (read these before implementing)
 

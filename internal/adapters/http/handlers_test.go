@@ -395,9 +395,11 @@ func TestSpeciesBatch_ReportsResolvedAndUnresolvedNames(t *testing.T) {
 	}
 }
 
-// A field recording repeats names; each 50 distinct names is one hostus round
-// trip, so a duplicate must not buy a second one.
-func TestSpeciesBatch_DeduplicatesNamesPreservingInputOrder(t *testing.T) {
+// A field recording repeats names, and each 50 distinct names is one hostus
+// round trip — so a duplicate must not buy a second one upstream. The answer,
+// however, carries one entry per input name in input order, so a client can pair
+// response[i] with names[i] without knowing anything about deduplication.
+func TestSpeciesBatch_DeduplicatesUpstreamButAnswersPerInputName(t *testing.T) {
 	names := seededNameQueryService()
 	srv := newServerWithNames(t, seededQueryService(), names)
 
@@ -409,45 +411,117 @@ func TestSpeciesBatch_DeduplicatesNamesPreservingInputOrder(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
+
+	// Property one: each distinct name reached the resolver exactly once.
 	if want := []string{"Salvia pratensis", "Bromus erectus"}; !slices.Equal(names.gotNames, want) {
 		t.Errorf("resolver saw %q, want %q — deduplicated in input order", names.gotNames, want)
+	}
+
+	// Property two: one entry per input name, in input order, duplicates included.
+	var got []input.NameResolution
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding body %s: %v", rec.Body, err)
+	}
+	verbatims := make([]string, 0, len(got))
+	for _, r := range got {
+		verbatims = append(verbatims, r.Verbatim)
+	}
+	want := []string{"Salvia pratensis", "Bromus erectus", "Salvia pratensis", "Bromus erectus"}
+	if !slices.Equal(verbatims, want) {
+		t.Fatalf("response verbatims = %q, want %q (one per input name, input order)", verbatims, want)
+	}
+
+	// A repeated name must carry the same resolution both times, not an empty one.
+	if got[1].ConceptID != got[3].ConceptID || !got[1].Resolved || !got[3].Resolved {
+		t.Errorf("duplicate entries = %+v / %+v, want the same resolution twice", got[1], got[3])
+	}
+	if len(got[1].HabitatTypes) == 0 || len(got[3].HabitatTypes) == 0 {
+		t.Error("a duplicated resolved name lost its habitat types on one of its entries")
+	}
+}
+
+// partialNameQueryService answers about fewer names than it was asked about —
+// the one way the fan-out can find no resolution for an input name.
+type partialNameQueryService struct{}
+
+func (partialNameQueryService) SpeciesHabitatTypesByName(
+	_ context.Context, names []string, _ string,
+) ([]input.NameResolution, error) {
+	return []input.NameResolution{
+		{Verbatim: names[0], Resolved: true, ConceptID: "wcvp-1", HabitatTypes: []input.HabitatTypeRole{}},
+	}, nil
+}
+
+// An input name the use case said nothing about must still come back — an input
+// is never silently dropped, and habitat_types must be [] rather than null.
+func TestSpeciesBatch_InputNameWithoutAResolutionIsStillReported(t *testing.T) {
+	srv := newServerWithNames(t, seededQueryService(), partialNameQueryService{})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/species/habitat-types",
+		strings.NewReader(`{"names":["Bromus erectus","Salvia pratensis"]}`))
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	var got []input.NameResolution
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decoding body %s: %v", rec.Body, err)
 	}
 	if len(got) != 2 {
-		t.Fatalf("got %d entries, want one per distinct input name", len(got))
+		t.Fatalf("got %d entries, want one per input name even so", len(got))
+	}
+	if got[1].Verbatim != "Salvia pratensis" || got[1].Resolved {
+		t.Errorf("got[1] = %+v, want the unanswered name reported with resolved=false", got[1])
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"habitat_types":[]`)) {
+		t.Errorf("body = %s, want habitat_types as [] rather than null", rec.Body)
 	}
 }
 
 // The 1 MiB body cap does not bound the item count, and each 50 names is a
-// hostus round trip — so the item count needs its own bound.
+// hostus round trip — so the array length needs its own bound. The bound is on
+// the raw array length, exactly as `maxItems` in the spec is defined, so a
+// validating gateway and this handler cannot disagree: 301 entries are rejected
+// even when they collapse to a single distinct name.
 func TestSpeciesBatch_TooManyNamesIsInvalidQuery(t *testing.T) {
-	names := seededNameQueryService()
-	srv := newServerWithNames(t, seededQueryService(), names)
-
-	list := make([]string, 0, 301)
+	distinctList := make([]string, 0, 301)
 	for i := range 301 {
-		list = append(list, fmt.Sprintf("Genus species%d", i))
+		distinctList = append(distinctList, fmt.Sprintf("Genus species%d", i))
 	}
-	body, err := json.Marshal(map[string][]string{"names": list})
-	if err != nil {
-		t.Fatalf("encoding body: %v", err)
+	duplicateList := make([]string, 301)
+	for i := range duplicateList {
+		duplicateList[i] = "Bromus erectus"
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/species/habitat-types", bytes.NewReader(body))
-	rec := httptest.NewRecorder()
-	srv.Router().ServeHTTP(rec, req)
+	for name, list := range map[string][]string{
+		"301 distinct names":               distinctList,
+		"301 entries of one repeated name": duplicateList,
+	} {
+		t.Run(name, func(t *testing.T) {
+			names := seededNameQueryService()
+			srv := newServerWithNames(t, seededQueryService(), names)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", rec.Code)
-	}
-	if !bytes.Contains(rec.Body.Bytes(), []byte(`"INVALID_QUERY"`)) {
-		t.Errorf("body = %s, want the INVALID_QUERY error envelope", rec.Body)
-	}
-	if names.gotNames != nil {
-		t.Errorf("resolver was called with %d names, want no upstream call at all", len(names.gotNames))
+			body, err := json.Marshal(map[string][]string{"names": list})
+			if err != nil {
+				t.Fatalf("encoding body: %v", err)
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/species/habitat-types", bytes.NewReader(body))
+			rec := httptest.NewRecorder()
+			srv.Router().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400", rec.Code)
+			}
+			if !bytes.Contains(rec.Body.Bytes(), []byte(`"INVALID_QUERY"`)) {
+				t.Errorf("body = %s, want the INVALID_QUERY error envelope", rec.Body)
+			}
+			if names.gotNames != nil {
+				t.Errorf("resolver was called with %d names, want no upstream call at all", len(names.gotNames))
+			}
+		})
 	}
 }
 

@@ -71,6 +71,23 @@ Antwort lautet „Konzept ja, Fakten nein". Ein nicht auflösbarer Name kommt mi
 `resolved: false` zurück und wird nie verworfen, damit eine Teilauflösung nicht
 die ganze Anfrage kostet.
 
+## Grenzen des Batch-Endpunkts
+
+`POST /v1/species/habitat-types` ist zweifach begrenzt: der Body auf **1 MiB**
+und das `names`-Array auf **300 Einträge** (`maxItems` in der Spezifikation).
+Beides ergibt `INVALID_QUERY` (400), ohne hostus überhaupt zu rufen. Die
+Array-Grenze ist nötig, weil die Byte-Grenze sie nicht impliziert: 1 MiB kurzer
+Namen sind rund 50 000 Einträge, und je 50 Namen kostet einen hostus-Roundtrip
+von gemessen bis zu 16,3 s. 300 liegt weit über jeder realistischen
+Geländeaufnahme und deckelt den schlechtesten Fall auf sechs Roundtrips.
+
+Doppelte Namen sind erlaubt. Nach oben (hostus) wird dedupliziert — das begrenzt
+die Roundtrips —, die Antwort trägt aber **einen Eintrag je Eingabename in
+Eingabereihenfolge**, sodass `response[i]` zu `names[i]` gehört. Ein doppelt
+genannter Name liefert also zweimal dieselbe Auflösung. Leere bzw. nur aus
+Whitespace bestehende Einträge werden verworfen; enthält `names` danach keinen
+Namen mehr, ist das `INVALID_QUERY`.
+
 ## Fehler
 
 Fehler kommen einheitlich als `{"error":{"code":"...","message":"..."}}` mit den

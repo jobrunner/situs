@@ -63,7 +63,7 @@ func (s *Server) handleSyntaxonHabitatTypes(w http.ResponseWriter, r *http.Reque
 	s.writeJSON(w, http.StatusOK, types)
 }
 
-// habitatTypeKey parses the (typology, code) path pair. An omitted typology
+// habitatTypeKey parses the (typology, code) path pair. A blank typology
 // defaults to eunis@2021; a syntactically unparseable one is INVALID_QUERY and
 // never reaches the use case. It writes the error envelope itself and reports
 // whether the caller may continue.

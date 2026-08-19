@@ -5,6 +5,19 @@ geschätzt und nicht aus der Spec übernommen. Sie beantworten die offenen Punkt
 1, 2, 3 und 5 der Design-Spec
 (`docs/superpowers/specs/2026-08-18-situs-foundation-design.md`).
 
+!!! warning "Eine Ausnahme: die Crosswalk-Gesamtzahl ist vorhergesagt, nicht gemessen"
+
+    Gemessen wurden **4305 ingestierte + 2 übersprungene** Crosswalk-Zeilen. Die
+    2 übersprungenen waren die `≈`-Zeilen, die der Ingest damals verwarf. Seit
+    `≈` ein vollwertiger Qualifier ist, sind **4307 ingestiert und 0
+    übersprungen** zu erwarten — der reale Ingest wurde dafür aber **absichtlich
+    nicht erneut ausgeführt**. Die 4307 unten sind also die erwartete, nicht die
+    beobachtete Zahl; sie ist beim nächsten echten Lauf zu bestätigen. Ebenso
+    kann die Zahl der Typen mit Anhang-I-Bezug dann um bis zu 2 auf höchstens 186
+    steigen. Alle übrigen Zahlen auf dieser Seite sind unverändert gemessen; die
+    `=`-Quote bleibt 29, weil `≈` nach `IsSame()` nicht als volle Entsprechung
+    zählt.
+
 Reproduzierbar mit der Pipeline (Artefakte gepinnt in
 `pipelines/eunis/manifest.yaml`):
 
@@ -28,7 +41,7 @@ brauchen.
 |---|---|
 | Habitattypen (über `eunis@2021` + `eunis@2012` + `annex1`) | **7937** |
 | Maximales Level der eunis@2021-Klassifikationshierarchie | **8** |
-| Crosswalk-Zeilen (Versions- **und** Anhang-I-Crosswalk) | **4307** |
+| Crosswalk-Zeilen (Versions- **und** Anhang-I-Crosswalk) | **4307** (vorhergesagt, siehe Warnung oben) |
 | Syntaxa | **1050** |
 | Habitattyp↔Syntaxon-Verknüpfungen | **1283** |
 | Zeilen in `species_roles.csv` | **13791** |

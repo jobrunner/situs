@@ -118,11 +118,24 @@ func (d *DB) CrosswalksTo(ctx context.Context, typology domain.TypologyID) ([]do
 // Localization returns every localization row matching entityType, entityKey,
 // lang and field — there can be more than one, one per source (an official
 // row and a derived row for the same entity/field are both kept).
+//
+// The rows come back clustered by provenance and, within a provenance, by
+// source. Both consumers (application.officialOrCuratedName and
+// application.preferredLabel) rank on provenance and promise an answer that does
+// not depend on row order, and source is unique per matched key (it is the last
+// column of the primary key), so this is a total order — two official rows from
+// different sources can no longer resolve differently between two ingests.
+//
+// Ordering on the pair, not on source alone, is deliberate: the WHERE pins the
+// first four columns of the primary key, so source alone is what
+// sqlite_autoindex_localization_1 already yields and an ORDER BY source would be
+// unobservable — correct, but impossible to regression-test and therefore
+// silently removable.
 func (d *DB) Localization(ctx context.Context, entityType, entityKey, lang, field string) ([]domain.Localization, error) {
 	rows, err := d.QueryContext(ctx,
 		`SELECT value, source, provenance, derived_from FROM localization
 		 WHERE entity_type = ? AND entity_key = ? AND lang = ? AND field = ?
-		 ORDER BY source`,
+		 ORDER BY provenance, source`,
 		entityType, entityKey, lang, field)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: querying localization %s/%s: %w", entityType, entityKey, err)

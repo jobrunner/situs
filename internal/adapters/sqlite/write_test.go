@@ -282,7 +282,12 @@ func TestCrosswalksTo_ReturnsOnlyCrosswalksToTheGivenTypology(t *testing.T) {
 // crosswalk wins" is order-dependent by design. Provenance ranking alone does
 // not disambiguate two official rows from different sources, so the SQL, not
 // sqlite's discretion, has to fix the order.
-func TestLocalization_OrdersRowsBySource(t *testing.T) {
+// The seed is chosen so the asserted order differs from the order the query
+// plan would produce on its own: the WHERE pins the first four primary-key
+// columns, so sqlite_autoindex_localization_1 hands rows back sorted by source
+// (arge, bfn, eur-lex). Clustering by provenance first reorders them, so
+// deleting the ORDER BY fails this test rather than passing by coincidence.
+func TestLocalization_OrdersRowsByProvenanceThenSource(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
 
@@ -290,14 +295,18 @@ func TestLocalization_OrdersRowsBySource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	// Inserted in reverse of the wanted order, so an unordered query would
-	// most likely hand them back the other way round.
-	for _, source := range []string{"eur-lex", "bfn", "arge"} {
+	for _, l := range []domain.Localization{
+		// Two official rows from different sources: the case provenance ranking
+		// alone cannot disambiguate, which is why the SQL has to.
+		{Source: "arge", Provenance: "official"},
+		{Source: "bfn", Provenance: "curated"},
+		{Source: "eur-lex", Provenance: "official"},
+	} {
 		if err := tx.UpsertLocalization(domain.Localization{
 			EntityType: "habitat_type", EntityKey: "annex1:6510", Lang: "de", Field: "name",
-			Value: "Wiese laut " + source, Source: source, Provenance: "official",
+			Value: "Wiese laut " + l.Source, Source: l.Source, Provenance: l.Provenance,
 		}); err != nil {
-			t.Fatalf("UpsertLocalization(%s): %v", source, err)
+			t.Fatalf("UpsertLocalization(%s): %v", l.Source, err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -308,15 +317,21 @@ func TestLocalization_OrdersRowsBySource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Localization: %v", err)
 	}
-	sources := make([]string, 0, len(got))
+	pairs := make([]string, 0, len(got))
 	for _, l := range got {
-		sources = append(sources, l.Source)
+		pairs = append(pairs, l.Provenance+"/"+l.Source)
 	}
-	if want := []string{"arge", "bfn", "eur-lex"}; !slices.Equal(sources, want) {
-		t.Errorf("Localization sources = %q, want %q (ORDER BY source)", sources, want)
+	// Index order would be arge, bfn, eur-lex; provenance clusters curated first.
+	want := []string{"curated/bfn", "official/arge", "official/eur-lex"}
+	if !slices.Equal(pairs, want) {
+		t.Errorf("Localization order = %q, want %q (ORDER BY provenance, source)", pairs, want)
 	}
 }
 
+// Same construction: idx_crosswalk_to(to_typology, to_code) drives the WHERE, so
+// without the ORDER BY the rows arrive sorted by to_code (R11->6110, R99->6130,
+// R11->6520). Ordering by from_code first moves R99 last, so the clause is
+// actually guarded here too.
 func TestCrosswalksTo_OrdersRowsDeterministically(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
@@ -325,14 +340,14 @@ func TestCrosswalksTo_OrdersRowsDeterministically(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	// Again inserted out of order on purpose.
 	for _, c := range []domain.Crosswalk{
-		{From: domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"},
-			To: domain.HabitatTypeKey{Typology: "annex1", Code: "6520"}, Qualifier: domain.QualifierSame},
-		{From: domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"},
-			To: domain.HabitatTypeKey{Typology: "annex1", Code: "6510"}, Qualifier: domain.QualifierSame},
-		{From: domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R12"},
+		{From: domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R99"},
 			To: domain.HabitatTypeKey{Typology: "annex1", Code: "6130"}, Qualifier: domain.QualifierApproximate},
+		{From: domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R11"},
+			To: domain.HabitatTypeKey{Typology: "annex1", Code: "6520"}, Qualifier: domain.QualifierSame},
+		// Same from_code as the row above, so the to_code tie-break is exercised.
+		{From: domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R11"},
+			To: domain.HabitatTypeKey{Typology: "annex1", Code: "6110"}, Qualifier: domain.QualifierSame},
 	} {
 		if err := tx.UpsertCrosswalk(c); err != nil {
 			t.Fatalf("UpsertCrosswalk(%+v): %v", c, err)
@@ -350,7 +365,7 @@ func TestCrosswalksTo_OrdersRowsDeterministically(t *testing.T) {
 	for _, c := range got {
 		pairs = append(pairs, c.From.Code+"->"+c.To.Code)
 	}
-	want := []string{"R12->6130", "R22->6510", "R22->6520"}
+	want := []string{"R11->6110", "R11->6520", "R99->6130"}
 	if !slices.Equal(pairs, want) {
 		t.Errorf("CrosswalksTo order = %q, want %q (ORDER BY from_typology, from_code, to_code)", pairs, want)
 	}

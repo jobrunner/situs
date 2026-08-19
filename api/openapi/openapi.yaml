@@ -179,9 +179,11 @@ paths:
                 names:
                   type: array
                   description: >-
-                    Verbatim-Namen. Namen werden serverseitig dedupliziert (in
-                    Eingabereihenfolge); die Obergrenze gilt für die Anzahl
-                    verschiedener Namen. Mehr als maxItems ergibt INVALID_QUERY.
+                    Verbatim-Namen, wie im Gelände aufgenommen. Mehr als
+                    maxItems Einträge ergeben INVALID_QUERY. Doppelte Namen sind
+                    erlaubt: nach oben (hostus) wird dedupliziert, die Antwort
+                    trägt aber einen Eintrag je Eingabename in
+                    Eingabereihenfolge, sodass response[i] zu names[i] gehört.
                   minItems: 1
                   maxItems: 300
                   items:
