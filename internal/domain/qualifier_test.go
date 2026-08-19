@@ -23,6 +23,9 @@ func TestParseQualifier(t *testing.T) {
 			if err == nil {
 				t.Errorf("ParseQualifier(%q) = %q, want error", tc.in, got)
 			}
+			if got != Qualifier("") {
+				t.Errorf("ParseQualifier(%q) = %q, want zero value on error", tc.in, got)
+			}
 			continue
 		}
 		if err != nil {

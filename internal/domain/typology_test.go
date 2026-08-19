@@ -24,6 +24,9 @@ func TestParseTypologyID(t *testing.T) {
 			if err == nil {
 				t.Errorf("ParseTypologyID(%q) = %q, want error", tc.in, got)
 			}
+			if got != TypologyID("") {
+				t.Errorf("ParseTypologyID(%q) = %q, want zero value on error", tc.in, got)
+			}
 			continue
 		}
 		if err != nil {
