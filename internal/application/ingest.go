@@ -18,6 +18,13 @@ import (
 	"github.com/jobrunner/situs/internal/ports/output"
 )
 
+// colCode/colTypologyID are the CSV column names shared by every file keyed
+// on (typology_id, code): habitat types, syntaxon links and species roles.
+const (
+	colCode       = "code"
+	colTypologyID = "typology_id"
+)
+
 // IngestReport summarizes one ingest run.
 type IngestReport struct {
 	HabitatTypes  int
@@ -246,9 +253,9 @@ func ingestHabitatTypes(ctx context.Context, tx output.IngestTx, dir string) (co
 	const file = "habitat_types.csv"
 	skip := newRowSkipper(&skipped, file, "habitat type")
 	err = readAll(ctx, dir, file,
-		[]string{"typology_id", "code", "level", "name_en", "parent_code", "priority"}, skip,
+		[]string{colTypologyID, colCode, "level", "name_en", "parent_code", "priority"}, skip,
 		func(idx map[string]int, row []string, line int) error {
-			typologyID, perr := domain.ParseTypologyID(row[idx["typology_id"]])
+			typologyID, perr := domain.ParseTypologyID(row[idx[colTypologyID]])
 			if perr != nil {
 				skip(line, perr)
 				return nil
@@ -264,7 +271,7 @@ func ingestHabitatTypes(ctx context.Context, tx output.IngestTx, dir string) (co
 				return nil
 			}
 			h := domain.HabitatType{
-				Key:        domain.HabitatTypeKey{Typology: typologyID, Code: row[idx["code"]]},
+				Key:        domain.HabitatTypeKey{Typology: typologyID, Code: row[idx[colCode]]},
 				Level:      level,
 				NameEN:     row[idx["name_en"]],
 				ParentCode: row[idx["parent_code"]],
@@ -334,17 +341,174 @@ func ingestSyntaxa(ctx context.Context, tx output.IngestTx, dir string) (count, 
 	return count, skipped, err
 }
 
-func ingestSyntaxonLinks(ctx context.Context, tx output.IngestTx, dir string) (count, skipped int, err error) {
-	const file = "habitat_type_syntaxa.csv"
-	skip := newRowSkipper(&skipped, file, "syntaxon link")
-	err = readAll(ctx, dir, file, []string{"typology_id", "code", "syntaxon_id"}, skip,
-		func(idx map[string]int, row []string, line int) error {
-			typologyID, perr := domain.ParseTypologyID(row[idx["typology_id"]])
+// SpeciesReport summarizes one species-role ingest run.
+type SpeciesReport struct {
+	Rows       int
+	Resolved   int
+	Unresolved int
+}
+
+// ResolutionRate is the fraction of rows whose verbatim name resolved to a
+// hostus concept ID, measured against the total row count (not the distinct
+// name count) — the same population the design spec's open point 3 asks for.
+func (r SpeciesReport) ResolutionRate() float64 {
+	if r.Rows == 0 {
+		return 0
+	}
+	return float64(r.Resolved) / float64(r.Rows)
+}
+
+// parseOptionalFloat mirrors parseOptionalInt: an empty fidelity/constancy
+// column is absence of data, never a zero value.
+func parseOptionalFloat(s string) (*float64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return nil, err
+	}
+	return &f, nil
+}
+
+// speciesRow is one parsed species_roles.csv row, held in memory only long
+// enough to collect the distinct verbatim names before the single Resolve
+// call and the subsequent upserts.
+type speciesRow struct {
+	key       domain.HabitatTypeKey
+	verbatim  string
+	role      string
+	fidelity  *float64
+	constancy *float64
+}
+
+// readSpeciesRows parses dir/file (species_roles.csv), skipping malformed
+// rows the same way every other ingest file does.
+func readSpeciesRows(ctx context.Context, dir, file string, skip rowSkipper) ([]speciesRow, error) {
+	var rows []speciesRow
+	err := readAll(ctx, dir, file,
+		[]string{colTypologyID, colCode, "verbatim_name", "role", "fidelity", "constancy"}, skip,
+		func(idx map[string]int, r []string, line int) error {
+			typologyID, perr := domain.ParseTypologyID(r[idx[colTypologyID]])
 			if perr != nil {
 				skip(line, perr)
 				return nil
 			}
-			key := domain.HabitatTypeKey{Typology: typologyID, Code: row[idx["code"]]}
+			fidelity, perr := parseOptionalFloat(r[idx["fidelity"]])
+			if perr != nil {
+				skip(line, perr)
+				return nil
+			}
+			constancy, perr := parseOptionalFloat(r[idx["constancy"]])
+			if perr != nil {
+				skip(line, perr)
+				return nil
+			}
+			rows = append(rows, speciesRow{
+				key:       domain.HabitatTypeKey{Typology: typologyID, Code: r[idx[colCode]]},
+				verbatim:  r[idx["verbatim_name"]],
+				role:      r[idx["role"]],
+				fidelity:  fidelity,
+				constancy: constancy,
+			})
+			return nil
+		})
+	return rows, err
+}
+
+// distinctNames returns the deduplicated verbatim names across rows, so
+// Resolve is called once for the set, not once per row.
+func distinctNames(rows []speciesRow) []string {
+	names := make(map[string]struct{}, len(rows))
+	for _, r := range rows {
+		names[r.verbatim] = struct{}{}
+	}
+	distinct := make([]string, 0, len(names))
+	for n := range names {
+		distinct = append(distinct, n)
+	}
+	return distinct
+}
+
+// upsertSpeciesRows stores every row via tx, setting ConceptID only where
+// resolved has an entry for its verbatim name, and tallies rep accordingly.
+func upsertSpeciesRows(tx output.IngestTx, rows []speciesRow, resolved map[string]string) (SpeciesReport, error) {
+	rep := SpeciesReport{Rows: len(rows)}
+	for _, r := range rows {
+		var conceptID *string
+		if id, ok := resolved[r.verbatim]; ok {
+			conceptID = &id
+			rep.Resolved++
+		} else {
+			rep.Unresolved++
+		}
+		sr := domain.SpeciesRole{
+			Key:          r.key,
+			ConceptID:    conceptID,
+			VerbatimName: r.verbatim,
+			Role:         r.role,
+			Fidelity:     r.fidelity,
+			Constancy:    r.constancy,
+		}
+		if err := tx.UpsertSpeciesRole(sr); err != nil {
+			return SpeciesReport{}, err
+		}
+	}
+	return rep, nil
+}
+
+// IngestSpeciesRoles loads csvPath (species_roles.csv, produced by
+// pipelines/eunis) into repo, crosswalking every distinct verbatim name to a
+// hostus concept ID in one Resolve call — the file's ~13800 rows carry far
+// fewer distinct names, and hostus is a network hop. A resolver error aborts
+// the ingest; it must never be recorded as "every name unresolvable". An
+// unresolved name is still stored, with ConceptID left nil.
+func IngestSpeciesRoles(ctx context.Context, repo output.Repository, resolver output.NameResolver,
+	csvPath string) (SpeciesReport, error) {
+	dir, file := filepath.Split(csvPath)
+
+	skipped := 0
+	rows, err := readSpeciesRows(ctx, dir, file, newRowSkipper(&skipped, file, "species role"))
+	if err != nil {
+		return SpeciesReport{}, err
+	}
+
+	resolved, err := resolver.Resolve(ctx, distinctNames(rows))
+	if err != nil {
+		return SpeciesReport{}, fmt.Errorf("resolving species names via hostus: %w", err)
+	}
+
+	tx, err := repo.Begin(ctx)
+	if err != nil {
+		return SpeciesReport{}, fmt.Errorf("beginning species-role ingest transaction: %w", err)
+	}
+
+	rep, err := upsertSpeciesRows(tx, rows, resolved)
+	if err != nil {
+		if rbErr := tx.Rollback(); rbErr != nil {
+			return SpeciesReport{}, fmt.Errorf("%w (rollback also failed: %w)", err, rbErr)
+		}
+		return SpeciesReport{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return SpeciesReport{}, fmt.Errorf("committing species-role ingest transaction: %w", err)
+	}
+	return rep, nil
+}
+
+func ingestSyntaxonLinks(ctx context.Context, tx output.IngestTx, dir string) (count, skipped int, err error) {
+	const file = "habitat_type_syntaxa.csv"
+	skip := newRowSkipper(&skipped, file, "syntaxon link")
+	err = readAll(ctx, dir, file, []string{colTypologyID, colCode, "syntaxon_id"}, skip,
+		func(idx map[string]int, row []string, line int) error {
+			typologyID, perr := domain.ParseTypologyID(row[idx[colTypologyID]])
+			if perr != nil {
+				skip(line, perr)
+				return nil
+			}
+			key := domain.HabitatTypeKey{Typology: typologyID, Code: row[idx[colCode]]}
 			if err := tx.LinkSyntaxon(key, row[idx["syntaxon_id"]]); err != nil {
 				return fmt.Errorf("%s:%d: %w", file, line, err)
 			}

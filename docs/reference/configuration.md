@@ -12,6 +12,7 @@ Defaults.
 | `server.shutdown_timeout` | `SITUS_SERVER_SHUTDOWN_TIMEOUT` | `15s` | Frist für den geordneten Stop |
 | `logging.level` | `SITUS_LOGGING_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `logging.format` | `SITUS_LOGGING_FORMAT` | `json` | `json` oder `text` |
+| `hostus.base_url` | `SITUS_HOSTUS_BASE_URL` | `http://localhost:8081` | Basis-URL des hostus-Namensauflösers (`POST /v1/match`); wird nur beim `ingest` der `species_roles.csv` aufgerufen, nie zur Laufzeit |
+| `hostus.timeout` | `SITUS_HOSTUS_TIMEOUT` | `30s` | Timeout des hostus-HTTP-Clients |
 
-Weitere Schlüssel (Index-Pfad, hostus-Endpunkt) kommen mit den Tasks, die sie
-brauchen.
+Weitere Schlüssel (Index-Pfad) kommen mit den Tasks, die sie brauchen.

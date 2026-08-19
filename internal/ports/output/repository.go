@@ -29,3 +29,10 @@ type Repository interface {
 	Begin(ctx context.Context) (IngestTx, error)
 	HabitatType(ctx context.Context, key domain.HabitatTypeKey) (domain.HabitatType, error)
 }
+
+// NameResolver crosswalks verbatim species names to concept IDs via hostus.
+// The returned map omits any name that did not resolve — an absent key means
+// unresolvable, never an empty-string concept id.
+type NameResolver interface {
+	Resolve(ctx context.Context, names []string) (map[string]string, error)
+}

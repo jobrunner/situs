@@ -20,6 +20,7 @@ const EnvPrefix = "SITUS"
 type Config struct {
 	Server  ServerConfig  `mapstructure:"server"`
 	Logging LoggingConfig `mapstructure:"logging"`
+	Hostus  HostusConfig  `mapstructure:"hostus"`
 }
 
 // ServerConfig configures the HTTP listener.
@@ -41,6 +42,13 @@ type LoggingConfig struct {
 	Format string `mapstructure:"format"` // json|text
 }
 
+// HostusConfig configures the name-resolution client used at ingest time
+// only — at runtime situs is autark for concept-ID queries.
+type HostusConfig struct {
+	BaseURL string        `mapstructure:"base_url"`
+	Timeout time.Duration `mapstructure:"timeout"`
+}
+
 // Defaults registers every default value.
 func Defaults(v *viper.Viper) {
 	v.SetDefault("server.host", "127.0.0.1")
@@ -50,6 +58,9 @@ func Defaults(v *viper.Viper) {
 
 	v.SetDefault("logging.level", "info")
 	v.SetDefault("logging.format", "json")
+
+	v.SetDefault("hostus.base_url", "http://localhost:8081")
+	v.SetDefault("hostus.timeout", 30*time.Second)
 }
 
 // Load merges defaults, an optional config file and the environment.

@@ -23,6 +23,24 @@ func TestLoadUsesTheDefaultsWithoutFileOrEnvironment(t *testing.T) {
 	if cfg.Logging.Format != "json" {
 		t.Errorf("logging.format = %q, want %q", cfg.Logging.Format, "json")
 	}
+	if cfg.Hostus.BaseURL != "http://localhost:8081" {
+		t.Errorf("hostus.base_url = %q, want the default", cfg.Hostus.BaseURL)
+	}
+	if cfg.Hostus.Timeout != 30*time.Second {
+		t.Errorf("hostus.timeout = %v, want 30s", cfg.Hostus.Timeout)
+	}
+}
+
+func TestLoadReadsTheHostusBaseURLFromTheEnvironment(t *testing.T) {
+	t.Setenv("SITUS_HOSTUS_BASE_URL", "http://hostus.internal:9000")
+
+	cfg, err := config.Load("")
+	if err != nil {
+		t.Fatalf("Load(\"\") = %v, want no error", err)
+	}
+	if cfg.Hostus.BaseURL != "http://hostus.internal:9000" {
+		t.Errorf("hostus.base_url = %q, want the value of SITUS_HOSTUS_BASE_URL", cfg.Hostus.BaseURL)
+	}
 }
 
 func TestLoadReadsTheEnvironmentWithTheSitusPrefix(t *testing.T) {

@@ -3,11 +3,25 @@ package main
 import (
 	"bytes"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// stubHostus points SITUS_HOSTUS_BASE_URL at a server that resolves nothing —
+// these tests exercise the ingest wiring, not the hostus crosswalk itself.
+func stubHostus(t *testing.T) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("SITUS_HOSTUS_BASE_URL", srv.URL)
+}
 
 // captureStdout redirects os.Stdout for the duration of fn and returns what
 // was written to it. The ingest command's logger writes there directly
@@ -53,10 +67,13 @@ func seedIngestDir(t *testing.T) string {
 		"from_typology,from_code,to_typology,to_code,qualifier\n")
 	writeIngestCSV(t, dir, "syntaxa.csv", "id,rank,name,parent_id\n")
 	writeIngestCSV(t, dir, "habitat_type_syntaxa.csv", "typology_id,code,syntaxon_id\n")
+	writeIngestCSV(t, dir, "species_roles.csv",
+		"typology_id,code,verbatim_name,role,fidelity,constancy\neunis@2021,R22,Inula hirta,diagnostic,0.8,\n")
 	return dir
 }
 
 func TestIngestCommandLoadsCSVsAndPrintsTheReport(t *testing.T) {
+	stubHostus(t)
 	csvDir := seedIngestDir(t)
 	dbPath := filepath.Join(t.TempDir(), "situs.db")
 
@@ -114,6 +131,7 @@ func TestIngestCommandRequiresBothFlags(t *testing.T) {
 // service's own logging config (SITUS_LOGGING_FORMAT), not slog's
 // unconfigured default text handler.
 func TestIngestCommandRoutesSkipWarningsThroughTheConfiguredLogger(t *testing.T) {
+	stubHostus(t)
 	dir := seedIngestDir(t)
 	writeIngestCSV(t, dir, "crosswalks.csv",
 		"from_typology,from_code,to_typology,to_code,qualifier\neunis@2021,R22,annex1,6510,~\n")

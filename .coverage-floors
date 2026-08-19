@@ -5,7 +5,8 @@
 # targets. Raise them as the real logic (Tasks 2-8) lands with its tests.
 #
 # package                                floor(%)
-cmd/situs                                  60
+cmd/situs                                  63
+internal/adapters/hostus                  97
 internal/adapters/http                    79
 internal/adapters/sqlite                  89
 internal/adapters/telemetry              100
@@ -14,4 +15,4 @@ internal/application                     100
 internal/config                           95
 internal/domain                          100
 internal/ports/output                     66
-TOTAL                                      88
+TOTAL                                      90
