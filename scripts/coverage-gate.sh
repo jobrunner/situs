@@ -43,7 +43,14 @@ fail=0
 while read -r pkg floor; do
   [ -z "$pkg" ] && continue
   case "$pkg" in \#*) continue ;; esac
-  read -r _ c t < <(grep -E "^${pkg} " "$BYPKG" || echo "$pkg 0 0")
+  # A floored package missing from the profile is a failure, not a pass: it was
+  # renamed, deleted or excluded from the test run, and skipping it silently turns
+  # the ratchet off for exactly the package someone just moved. Distinct from a
+  # package that genuinely has no statements.
+  if ! line=$(grep -E "^${pkg} " "$BYPKG"); then
+    printf "%-42s   ▼ NOT IN PROFILE (renamed, deleted, or untested?)\n" "$pkg"; fail=1; continue
+  fi
+  read -r _ c t <<<"$line"
   [ "$t" -eq 0 ] && { printf "%-42s   n/a   (no statements)\n" "$pkg"; continue; }
   pct=$(awk -v c="$c" -v t="$t" 'BEGIN{printf "%.1f", 100*c/t}')
   if awk -v p="$pct" -v f="$floor" 'BEGIN{exit !(p < f)}'; then

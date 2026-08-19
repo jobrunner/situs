@@ -1,5 +1,13 @@
 # situs Foundation Implementation Plan
 
+> **Historischer Stand, umgesetzt 2026-08-19.** Eine Abweichung ist bewusst nicht
+> nachträglich in den Text eingearbeitet: der Plan nennt an sechs Stellen
+> `vendor/claude-skills` als Ort des Submoduls. Es liegt unter
+> `third_party/claude-skills` — ein `vendor/` im Modul-Root schaltet die
+> Go-Toolchain in Vendor-Mode und bricht jedes nackte `go build`/`go test`
+> ("inconsistent vendoring"). Wer diesen Plan als Vorlage liest: `third_party/`
+> verwenden.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build **situs**, a new read-only Go service that answers EUNIS
