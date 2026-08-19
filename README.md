@@ -33,7 +33,20 @@ zu normalisieren; zur Laufzeit ist situs für Abfragen per Konzept-ID autark.
 
 ## Stand
 
-Im Aufbau. Fundament-Spec und Implementierungsplan liegen unter `docs/`:
+Im Aufbau. Das Gerüst steht (Go 1.26, hexagonal, Qualitäts-Gates, CI); die
+Fachlogik — Ingest und Lese-API — folgt Task für Task.
+
+```bash
+make verify      # fmt-check, vet, lint, test, arch, debt, build
+make build       # ./situs
+./situs serve    # HTTP auf 127.0.0.1:8080
+```
+
+Erreichbar sind heute `GET /health/live`, `GET /health/ready`, `GET /metrics`,
+`GET /openapi` und `GET /v1/info`. Die Lese-Endpunkte unter `/v1` kommen mit
+Task 8 des Plans.
+
+Fundament-Spec und Implementierungsplan liegen unter `docs/`:
 
 - `docs/superpowers/specs/2026-08-18-situs-foundation-design.md` — Design
 - `docs/superpowers/plans/2026-08-19-situs-foundation.md` — Umsetzungsplan

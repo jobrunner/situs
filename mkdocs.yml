@@ -1,0 +1,40 @@
+site_name: situs
+site_description: Lokaler, schreibgeschützter Dienst für EUNIS-Habitattypen
+repo_url: https://github.com/jobrunner/situs
+docs_dir: docs
+
+theme:
+  name: material
+  language: de
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+
+# Die Entwurfsdokumente (Spezifikation, Plan, Spikes) liegen im docs/-Baum, sind
+# aber nicht Teil der Website: sie verweisen aufeinander und auf hostus-Dokumente
+# und würden --strict an Querverweisen scheitern lassen.
+exclude_docs: |
+  superpowers/
+  research/
+
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: warn
+
+nav:
+  - Start: index.md
+  - Tutorials:
+      - tutorials/index.md
+  - How-to:
+      - how-to/index.md
+  - Referenz:
+      - reference/configuration.md
+      - reference/http-api.md
+  - Erklärung:
+      - explanation/architecture.md

@@ -1,0 +1,15 @@
+# gremlins mutation-testing configuration.
+#
+# The globals stay at 0 on purpose: the gate's thresholds are per package and
+# live in .github/workflows/mutation.yml and the Makefile's `mutation` target, so
+# an ad-hoc `gremlins unleash <pkg>` stays informational and never applies one
+# package's threshold to another.
+#
+# Coverage says a line ran; mutation says a test would have caught a bug in it.
+# The scaffold has no domain logic yet — Tasks 2-8 add it, and the workflow's
+# per-package thresholds are ratcheted up with them.
+#
+# NOTE: gremlins panics on macOS — validate in CI (ubuntu), never locally.
+unleash:
+  threshold-efficacy: 0
+  threshold-mcover: 0

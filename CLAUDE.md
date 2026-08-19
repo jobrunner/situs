@@ -22,19 +22,21 @@ IDs; at runtime it is autark for concept-ID queries.
 
 ## Current State — START HERE
 
-The repo is **bootstrapped but not yet built**. What exists:
+**Task 1 of the foundation plan is done:** the service is scaffolded with the
+full quality harness (module `github.com/jobrunner/situs`, Go 1.26, hexagonal
+package layout, ratchets, CI, release-please, MkDocs). There is **no business
+logic yet** — `internal/domain` and `internal/adapters/hostus` are placeholders,
+and the HTTP surface is the operations surface plus `GET /v1/info`.
 
-- `vendor/claude-skills` (git submodule, SSH remote) + `.claude/skills/*`
-  symlinks — the `new-go-service` skill is available and resolves.
-- The design documents (see below). **No Go code yet.**
+- `third_party/claude-skills` (git submodule, SSH remote) + `.claude/skills/*`
+  symlinks — the `new-go-service` skill resolves through them. The submodule is
+  **not** at `vendor/`: a `vendor/` directory at the module root switches the Go
+  toolchain into vendor mode and breaks every bare `go build`/`go test`.
+- The design documents (see below).
 
-**Next action:** implement `docs/superpowers/plans/2026-08-19-situs-foundation.md`
-using the **superpowers:subagent-driven-development** skill.
-
-Task 1 of that plan scaffolds the service via the `new-go-service` skill. Its
-**Steps 1, 2 and 5 are already done** (repo init, submodule, symlinks,
-`.gitignore`, docs copied) — start Task 1 at **Step 3** (read
-`.claude/skills/new-go-service/SKILL.md` and execute its Steps 1–10).
+**Next action:** continue
+`docs/superpowers/plans/2026-08-19-situs-foundation.md` at **Task 2** (domain
+value objects) using the **superpowers:subagent-driven-development** skill.
 
 ## Design documents (read these before implementing)
 
@@ -80,6 +82,20 @@ pipelines/eunis/    # XLSX -> normalized CSV (python3, stdlib only)
 ```
 
 Boundaries are enforced by depguard in the linter (`make arch`), not convention.
+`gomodguard_v2` enforces the allowed-library list the same way: a new direct
+dependency fails the build until it is added to `.golangci.yml` on purpose.
+
+### HTTP conventions (hostus twin)
+
+- Business routes live under **`/v1`** (not `/api/v1`); the spec is served at
+  **`GET /openapi`** as the embedded YAML, and `/metrics`, `/health/live`,
+  `/health/ready` are the operations surface.
+- Every mounted route must declare `.Methods()` and must appear in
+  `internal/adapters/http/openapi.yaml`; the contract test checks **both**
+  directions and fails on a route without an explicit method.
+- Error envelope: `{"error":{"code":"...","message":"..."}}` with the codes
+  `INVALID_QUERY`, `NOT_FOUND`, `UNRESOLVABLE`, `UPSTREAM_UNAVAILABLE`,
+  `INTERNAL_ERROR`.
 
 ## Technical Constraints
 
@@ -125,11 +141,17 @@ and region data), and full plot classification.
 
 ## Quality Gates
 
-- `make verify` (fmt-check, vet, lint, test, arch, debt) must be green before
-  every commit.
-- Zero `//nolint` / `#nosec` — the debt-guard baseline is 0.
+- `make verify` (fmt-check, vet, lint, test, arch, debt-guard, build) must be
+  green before every commit.
+- Zero `//nolint` / `#nosec` — the debt-guard baseline in `.debt-budget` is 0,
+  and zero `TODO`/`FIXME`/`HACK`/`XXX` markers in Go files.
+- `.coverage-floors` is a raise-only ratchet (`make debt-coverage`): lower a
+  floor only with a written justification, and raise it when coverage improves.
 - Mutation testing (gremlins) runs **in CI** — it panics on macOS.
 - TDD: write the failing test, watch it fail, then implement.
+- `golangci-lint` must be built with a Go ≥ the `go` directive in `go.mod`,
+  otherwise it refuses to load the config. Install a matching one with
+  `GOTOOLCHAIN=go1.26.6 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2`.
 
 ## Git Workflow
 

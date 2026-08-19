@@ -1,5 +1,14 @@
 # build output
 /situs
+/dist/
+
+# test + coverage output
+/coverage/
+*.test
+*.out
+
+# MkDocs build output
+/site/
 
 # local index + WAL sidecars
 *.sqlite
@@ -8,6 +17,12 @@
 
 # pinned source artifacts are fetched, never committed
 /pipelines/*/artifacts/
+
+# IDE / local environment
+.idea/
+.vscode/
+.env
+.envrc.local
 
 # keep the vendored skill symlinks under version control
 .claude/*

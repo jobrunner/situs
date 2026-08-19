@@ -1,0 +1,8 @@
+# Technical-debt suppression budget — total of #nosec + //nolint directives.
+# A RATCHET: this number may only go DOWN. A new suppression must either be
+# offset by removing an old one, or come with a justified increase here
+# (reviewed in the PR). Enforced by scripts/debt-guard.sh.
+#
+# situs starts at zero and intends to stay there (CLAUDE.md: zero //nolint,
+# zero #nosec).
+0

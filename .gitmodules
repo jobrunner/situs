@@ -1,4 +1,4 @@
-[submodule "vendor/claude-skills"]
-	path = vendor/claude-skills
+[submodule "third_party/claude-skills"]
+	path = third_party/claude-skills
 	url = git@github.com:jobrunner/claude-skills.git
 	branch = main

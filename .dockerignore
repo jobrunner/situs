@@ -1,0 +1,11 @@
+.git
+.github
+.githooks
+coverage
+site
+docs
+third_party
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+situs

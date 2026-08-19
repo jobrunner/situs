@@ -1,0 +1,104 @@
+# situs OpenAPI specification — the HTTP contract.
+#
+# Every path/method here must have a matching registered route and vice versa:
+# TestRoutesMatchOpenAPISpec fails otherwise, in both directions. The read API
+# (species -> habitat types, habitat type -> species/syntaxa/crosswalks) is added
+# in Task 8; what is documented here is the operations surface plus the build
+# info endpoint.
+#
+# This file is embedded into the binary and served at GET /openapi. It must stay
+# byte-identical to api/openapi/openapi.yaml (TestOpenAPICopiesAreIdentical).
+openapi: 3.0.3
+info:
+  title: situs API
+  description: >-
+    Lokaler, schreibgeschützter Dienst für EUNIS-Habitattypen: Art →
+    Habitattypen (mit Rolle) und Habitattyp → Arten / Syntaxa / Crosswalks,
+    aus gepinnten EEA- und ESy-Artefakten, mit deutschen Labels und einem
+    Anhang-I-Crosswalk (annex1).
+  version: 0.0.0
+  license:
+    name: MIT
+servers:
+  - url: http://localhost:8080
+    description: Lokale Entwicklung
+
+paths:
+  /health/live:
+    get:
+      summary: Liveness-Probe
+      description: Antwortet 200, solange der Prozess HTTP bedienen kann.
+      operationId: healthLive
+      responses:
+        "200":
+          description: Der Prozess lebt.
+  /health/ready:
+    get:
+      summary: Readiness-Probe
+      description: >-
+        Antwortet 503, solange der Index nicht benutzbar ist — ein Orchestrator
+        soll erst danach Verkehr zustellen.
+      operationId: healthReady
+      responses:
+        "200":
+          description: Der Dienst ist bereit.
+        "503":
+          description: Der Dienst ist noch nicht bereit.
+  /metrics:
+    get:
+      summary: Prometheus-Metriken
+      operationId: metrics
+      responses:
+        "200":
+          description: Metriken im Prometheus-Textformat.
+          content:
+            text/plain:
+              schema:
+                type: string
+  /openapi:
+    get:
+      summary: Diese Spezifikation
+      operationId: openapi
+      responses:
+        "200":
+          description: Die eingebettete OpenAPI-Spezifikation als YAML.
+          content:
+            application/yaml:
+              schema:
+                type: string
+  /v1/info:
+    get:
+      summary: Dienst- und Build-Information
+      operationId: info
+      responses:
+        "200":
+          description: Name und Version des Dienstes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Info"
+components:
+  schemas:
+    Info:
+      type: object
+      required: [service, version]
+      properties:
+        service:
+          type: string
+        version:
+          type: string
+    # Die einheitliche Fehlerhülle jeder Antwort (writeError) — identisch zu
+    # hostus. Codes: INVALID_QUERY, NOT_FOUND, UNRESOLVABLE,
+    # UPSTREAM_UNAVAILABLE, INTERNAL_ERROR.
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
