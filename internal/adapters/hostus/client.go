@@ -19,7 +19,14 @@ const errBodyLimit = 512
 // batchSize caps how many names go into one /v1/match request — hostus is a
 // network hop, and 13791 species rows resolve to far fewer distinct names,
 // but even that distinct set is chunked to keep any single request bounded.
-const batchSize = 500
+//
+// 50, not more: hostus applies a fixed 30s per-request timeout, and the cost of
+// a batch scales with its content. Measured against the real ESy names and a
+// full hostus index: 500 names exceeded the timeout (HTTP 500 after 30s), 200
+// still did on the most expensive stretch of names, the worst 100-name window
+// took 19.5s and the worst 50-name window 16.3s. 50 is the size that keeps a
+// margin on real data.
+const batchSize = 50
 
 // Client resolves verbatim species names to hostus concept IDs. It is used
 // at ingest time only; situs is autark for concept-ID queries at runtime.

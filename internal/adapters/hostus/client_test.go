@@ -74,13 +74,13 @@ func TestClient_ResolveMapsByIDNotByResponsePosition(t *testing.T) {
 	}
 }
 
-// 1001 names must split into batches of 500/500/1 — the id sent in each
+// 401 names must split into batches of 200/200/1 — the id sent in each
 // request is per-batch (0..len(batch)-1), not a global offset. A regression
 // to a global id (strconv.Itoa(start+i)) would silently misattribute every
 // concept id from the second batch onward, since the server always echoes
 // ids starting at 0 within its own view of the batch it received.
-func TestClient_ResolveBatchesAt500AndReindexesPerBatch(t *testing.T) {
-	const total = 1001
+func TestClient_ResolveBatchesAndReindexesPerBatch(t *testing.T) {
+	const total = 2*batchSize + 1
 	names := make([]string, total)
 	for i := range names {
 		names[i] = fmt.Sprintf("Species %d", i)
@@ -117,9 +117,9 @@ func TestClient_ResolveBatchesAt500AndReindexesPerBatch(t *testing.T) {
 		t.Fatalf("Resolve: %v", err)
 	}
 	if requests != 3 {
-		t.Errorf("requests = %d, want 3 (1001 names batched at 500)", requests)
+		t.Errorf("requests = %d, want 3 (%d names batched at %d)", requests, total, batchSize)
 	}
-	if want := []int{500, 500, 1}; !intSlicesEqual(batchSizes, want) {
+	if want := []int{batchSize, batchSize, 1}; !intSlicesEqual(batchSizes, want) {
 		t.Errorf("batch sizes = %v, want %v", batchSizes, want)
 	}
 	if len(got) != total {
