@@ -3,6 +3,8 @@
   "packages": {
     ".": {
       "release-type": "simple",
+      "bump-minor-pre-major": true,
+      "initial-version": "0.1.0",
       "changelog-path": "CHANGELOG.md",
       "include-component-in-tag": false,
       "extra-files": [
