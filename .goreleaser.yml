@@ -22,3 +22,46 @@ changelog:
   disable: true
 release:
   mode: append
+
+# Container-Images, gepusht bei jedem Release — auch beim ersten, weil der Push im
+# selben Job läuft, der schon auf release-pleases release_created wartet. Ein
+# `on: release`-Workflow würde bei einem von einer Action erzeugten Release nie
+# feuern. Der GHCR-Pfad muss kleingeschrieben sein.
+#
+# Klassische `dockers`/`docker_manifests`-Form (von goreleaser als "eventually
+# replaced by dockers_v2" markiert): sie legt das Binary der jeweiligen
+# Architektur als `situs` in den Build-Kontext, worauf Dockerfile.release setzt.
+# dockers_v2 übergibt den Kontext anders und verlangt ein am dist-Layout
+# ausgerichtetes Dockerfile — der Wechsel ist eine eigene Änderung, kein Nebenzug.
+dockers:
+  - id: situs-amd64
+    goarch: amd64
+    dockerfile: Dockerfile.release
+    use: buildx
+    image_templates: ["ghcr.io/jobrunner/situs:{{ .Version }}-amd64"]
+    build_flag_templates:
+      - --platform=linux/amd64
+      - --label=org.opencontainers.image.title=situs
+      - --label=org.opencontainers.image.version={{ .Version }}
+      - --label=org.opencontainers.image.revision={{ .FullCommit }}
+      - --label=org.opencontainers.image.source={{ .GitURL }}
+  - id: situs-arm64
+    goarch: arm64
+    dockerfile: Dockerfile.release
+    use: buildx
+    image_templates: ["ghcr.io/jobrunner/situs:{{ .Version }}-arm64"]
+    build_flag_templates:
+      - --platform=linux/arm64
+      - --label=org.opencontainers.image.title=situs
+      - --label=org.opencontainers.image.version={{ .Version }}
+      - --label=org.opencontainers.image.revision={{ .FullCommit }}
+      - --label=org.opencontainers.image.source={{ .GitURL }}
+docker_manifests:
+  - name_template: "ghcr.io/jobrunner/situs:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/jobrunner/situs:{{ .Version }}-amd64"
+      - "ghcr.io/jobrunner/situs:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/jobrunner/situs:latest"
+    image_templates:
+      - "ghcr.io/jobrunner/situs:{{ .Version }}-amd64"
+      - "ghcr.io/jobrunner/situs:{{ .Version }}-arm64"

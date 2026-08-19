@@ -1,0 +1,21 @@
+# Das Image, das goreleaser beim Release baut.
+#
+# Bewusst nicht das mehrstufige Dockerfile: dort wird das Binary selbst
+# kompiliert, was für lokale Builds richtig ist. Hier hat goreleaser bereits
+# cross-kompiliert und Version plus Build-Zeit eingestempelt — ein erneutes
+# Kompilieren lieferte ein anderes Artefakt als das am Release hängende.
+FROM gcr.io/distroless/static-debian12:nonroot
+
+# Der Config-Default 127.0.0.1 ist für ein lokales Binary richtig, macht im
+# Container aber jeden gemappten Port unerreichbar, während das Startlog wie
+# Erfolg aussieht. Die Isolationsgrenze ist das distroless/nonroot-Image, nicht
+# die Bind-Adresse.
+ENV SITUS_SERVER_HOST=0.0.0.0
+
+# goreleaser legt das Binary der passenden Architektur in den Build-Kontext.
+COPY situs /usr/local/bin/situs
+
+EXPOSE 8080
+USER nonroot:nonroot
+ENTRYPOINT ["/usr/local/bin/situs"]
+CMD ["serve"]

@@ -1,0 +1,12 @@
+# Eigene Ignore-Datei für Dockerfile.release (BuildKit bevorzugt
+# <dockerfile>.dockerignore vor .dockerignore).
+#
+# Nötig, weil .dockerignore `situs` ausschließt — richtig für den Multi-Stage-
+# Build, der das lokal gebaute Dev-Binary nicht einschleppen soll. goreleaser legt
+# das Release-Binary aber unter genau diesem Namen in den Build-Kontext, sodass
+# der Ausschluss ausgerechnet das Artefakt trifft, das kopiert werden soll:
+# "COPY situs: not found" bei ansonsten korrekter Konfiguration.
+#
+# Hier bleibt der Kontext deshalb absichtlich fast leer: goreleaser stellt genau
+# das Binary bereit, mehr braucht das Image nicht.
+.git
