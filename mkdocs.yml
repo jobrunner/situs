@@ -33,6 +33,7 @@ nav:
       - tutorials/index.md
   - How-to:
       - how-to/index.md
+      - how-to/ingest.md
   - Referenz:
       - reference/configuration.md
       - reference/http-api.md

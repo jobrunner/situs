@@ -5,9 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
 )
+
+// errBodyLimit bounds how much of a non-200 response body is quoted in the
+// error, so a hostus 400 ("unknown entry_backbone") is distinguishable from
+// any other 400 without risking an unbounded read.
+const errBodyLimit = 512
 
 // batchSize caps how many names go into one /v1/match request — hostus is a
 // network hop, and 13791 species rows resolve to far fewer distinct names,
@@ -22,8 +29,10 @@ type Client struct {
 }
 
 // NewClient builds a Client against baseURL, using httpClient for requests.
+// A trailing slash is trimmed so baseURL+"/v1/match" never doubles up into
+// "//v1/match" (a 404 whose cause a caller would otherwise have to guess).
 func NewClient(baseURL string, httpClient *http.Client) *Client {
-	return &Client{baseURL: baseURL, http: httpClient}
+	return &Client{baseURL: strings.TrimSuffix(baseURL, "/"), http: httpClient}
 }
 
 type matchRequestName struct {
@@ -100,7 +109,8 @@ func (c *Client) resolveBatch(ctx context.Context, batch []string) ([]matchResul
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("hostus /v1/match: unexpected status %s", resp.Status)
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, errBodyLimit))
+		return nil, fmt.Errorf("hostus /v1/match: unexpected status %s: %s", resp.Status, snippet)
 	}
 
 	var out matchResponse

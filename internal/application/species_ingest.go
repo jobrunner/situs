@@ -4,21 +4,29 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sort"
 
 	"github.com/jobrunner/situs/internal/domain"
 	"github.com/jobrunner/situs/internal/ports/output"
 )
 
-// SpeciesReport summarizes one species-role ingest run.
+// SpeciesReport summarizes one species-role ingest run. Skipped mirrors
+// IngestReport.SkippedRows — the same JSON object situs ingest prints
+// carries both reports, and a row dropped from one report but invisible in
+// the other is a trap for the operator reading that output.
 type SpeciesReport struct {
 	Rows       int
 	Resolved   int
 	Unresolved int
+	Skipped    int
 }
 
 // ResolutionRate is the fraction of rows whose verbatim name resolved to a
 // hostus concept ID, measured against the total row count (not the distinct
-// name count) — the same population the design spec's open point 3 asks for.
+// name count) — the same population the design spec's open point 3 asks
+// for. This is row-weighted, a different population from the ESy spike's
+// ~57% distinct-name floor; the two are not directly comparable — see
+// docs/how-to/ingest.md.
 func (r SpeciesReport) ResolutionRate() float64 {
 	if r.Rows == 0 {
 		return 0
@@ -71,8 +79,10 @@ func readSpeciesRows(ctx context.Context, dir, file string, skip rowSkipper) ([]
 	return rows, err
 }
 
-// distinctNames returns the deduplicated verbatim names across rows, so
-// Resolve is called once for the set, not once per row.
+// distinctNames returns the deduplicated verbatim names across rows, sorted
+// so batch composition (and thus which names land in which /v1/match
+// request) is reproducible run to run, not dependent on map iteration
+// order — a hostus-side discrepancy must be reproducible to be debuggable.
 func distinctNames(rows []speciesRow) []string {
 	names := make(map[string]struct{}, len(rows))
 	for _, r := range rows {
@@ -82,6 +92,7 @@ func distinctNames(rows []speciesRow) []string {
 	for n := range names {
 		distinct = append(distinct, n)
 	}
+	sort.Strings(distinct)
 	return distinct
 }
 
@@ -145,6 +156,7 @@ func IngestSpeciesRoles(ctx context.Context, repo output.Repository, resolver ou
 		}
 		return SpeciesReport{}, err
 	}
+	rep.Skipped = skipped
 
 	if err := tx.Commit(); err != nil {
 		return SpeciesReport{}, fmt.Errorf("committing species-role ingest transaction: %w", err)

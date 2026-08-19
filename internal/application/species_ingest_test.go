@@ -40,12 +40,8 @@ func seedSpeciesRolesDir(t *testing.T) string {
 }
 
 func TestIngestSpeciesRoles_KeepsUnresolvableNames(t *testing.T) {
-	dir := t.TempDir()
+	dir := seedSpeciesRolesDir(t)
 	path := filepath.Join(dir, "species_roles.csv")
-	writeCSV(t, dir, "species_roles.csv",
-		"typology_id,code,verbatim_name,role,fidelity,constancy\n"+
-			"eunis@2021,R22,Inula hirta,diagnostic,0.8,\n"+
-			"eunis@2021,R22,Nonexistent name,constant,,0.5\n")
 
 	repo := newFakeRepo()
 	resolver := fakeResolver{"Inula hirta": "wcvp:concept:1"}
@@ -59,13 +55,23 @@ func TestIngestSpeciesRoles_KeepsUnresolvableNames(t *testing.T) {
 	if len(repo.speciesRoles) != 2 {
 		t.Fatalf("stored %d roles, want 2 (the unresolvable one is kept)", len(repo.speciesRoles))
 	}
+	var sawResolved bool
 	for _, r := range repo.speciesRoles {
+		if r.VerbatimName == "Inula hirta" {
+			sawResolved = true
+			if r.ConceptID == nil || *r.ConceptID != "wcvp:concept:1" {
+				t.Errorf("Inula hirta ConceptID = %v, want a pointer to wcvp:concept:1", r.ConceptID)
+			}
+		}
 		if r.VerbatimName == "Nonexistent name" && r.ConceptID != nil {
 			t.Error("unresolvable name stored with a concept id")
 		}
 		if r.VerbatimName == "" {
 			t.Error("verbatim name must always be stored")
 		}
+	}
+	if !sawResolved {
+		t.Fatal("resolved row (Inula hirta) not found among stored roles")
 	}
 	if got := rep.ResolutionRate(); got != 0.5 {
 		t.Errorf("ResolutionRate() = %v, want 0.5", got)
@@ -97,6 +103,9 @@ func TestIngestSpeciesRoles_SkipsMalformedRows(t *testing.T) {
 	}
 	if rep.Rows != 1 {
 		t.Errorf("Rows = %d, want 1 (three malformed rows skipped)", rep.Rows)
+	}
+	if rep.Skipped != 3 {
+		t.Errorf("Skipped = %d, want 3 — SpeciesReport must report skips the same way IngestReport does", rep.Skipped)
 	}
 }
 
