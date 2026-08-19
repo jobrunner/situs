@@ -1,0 +1,279 @@
+package sqlite
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"path/filepath"
+	"testing"
+
+	"github.com/jobrunner/situs/internal/domain"
+	"github.com/jobrunner/situs/internal/ports/output"
+)
+
+func (d *DB) countHabitatTypes(ctx context.Context) (int, error) {
+	var n int
+	if err := d.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM habitat_type").Scan(&n); err != nil {
+		return 0, fmt.Errorf("counting habitat_type rows: %w", err)
+	}
+	return n, nil
+}
+
+func openTestDB(t *testing.T) *DB {
+	t.Helper()
+	db, err := Open(t.Context(), filepath.Join(t.TempDir(), "test.sqlite"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
+
+func TestIngestTx_RoundTripsAHabitatType(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	level := 3
+	if err := tx.UpsertTypology(domain.Typology{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}); err != nil {
+		t.Fatalf("UpsertTypology: %v", err)
+	}
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	if err := tx.UpsertHabitatType(domain.HabitatType{Key: key, Level: &level, NameEN: "Low and medium altitude hay meadow"}); err != nil {
+		t.Fatalf("UpsertHabitatType: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.HabitatType(ctx, key)
+	if err != nil {
+		t.Fatalf("HabitatType: %v", err)
+	}
+	if got.NameEN != "Low and medium altitude hay meadow" {
+		t.Errorf("NameEN = %q, want the ingested name", got.NameEN)
+	}
+	if got.Level == nil || *got.Level != 3 {
+		t.Errorf("Level = %v, want 3", got.Level)
+	}
+}
+
+// Re-ingesting the same source must not duplicate or fail — ingest is rerun
+// whenever an artifact is repinned.
+func TestIngestTx_UpsertIsIdempotent(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+
+	for i, name := range []string{"first", "second"} {
+		tx, err := db.Begin(ctx)
+		if err != nil {
+			t.Fatalf("Begin %d: %v", i, err)
+		}
+		if err := tx.UpsertTypology(domain.Typology{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}); err != nil {
+			t.Fatalf("UpsertTypology %d: %v", i, err)
+		}
+		if err := tx.UpsertHabitatType(domain.HabitatType{Key: key, NameEN: name}); err != nil {
+			t.Fatalf("UpsertHabitatType %d: %v", i, err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("Commit %d: %v", i, err)
+		}
+	}
+
+	got, err := db.HabitatType(ctx, key)
+	if err != nil {
+		t.Fatalf("HabitatType: %v", err)
+	}
+	if got.NameEN != "second" {
+		t.Errorf("NameEN = %q, want %q (the later ingest wins)", got.NameEN, "second")
+	}
+	n, err := db.countHabitatTypes(ctx)
+	if err != nil {
+		t.Fatalf("countHabitatTypes: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("habitat_type rows = %d, want 1 (upsert, not insert)", n)
+	}
+}
+
+// Rollback must leave nothing behind — a failed ingest may not half-populate.
+func TestIngestTx_RollbackDiscards(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertTypology(domain.Typology{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}); err != nil {
+		t.Fatalf("UpsertTypology: %v", err)
+	}
+	if err := tx.UpsertHabitatType(domain.HabitatType{
+		Key: domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}, NameEN: "x",
+	}); err != nil {
+		t.Fatalf("UpsertHabitatType: %v", err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+
+	n, err := db.countHabitatTypes(ctx)
+	if err != nil {
+		t.Fatalf("countHabitatTypes: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("habitat_type rows = %d after rollback, want 0", n)
+	}
+}
+
+func TestDB_HabitatType_NotFound(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	_, err := db.HabitatType(ctx, domain.HabitatTypeKey{Typology: "eunis@2021", Code: "does-not-exist"})
+	if !errors.Is(err, output.ErrNotFound) {
+		t.Errorf("HabitatType error = %v, want it to wrap output.ErrNotFound", err)
+	}
+}
+
+// UpsertCrosswalk, UpsertSyntaxon, LinkSyntaxon, UpsertSpeciesRole and
+// UpsertLocalization must each be idempotent, and nullable columns (concept_id,
+// fidelity, constancy) must round-trip NULL as nil, not a placeholder.
+func TestIngestTx_UpsertsCrosswalkSyntaxonSpeciesRoleAndLocalization(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	from := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	to := domain.HabitatTypeKey{Typology: "annex1", Code: "6510"}
+
+	ingestOnce := func(qualifier domain.Qualifier, fidelity *float64) {
+		tx, err := db.Begin(ctx)
+		if err != nil {
+			t.Fatalf("Begin: %v", err)
+		}
+		if err := tx.UpsertCrosswalk(domain.Crosswalk{From: from, To: to, Qualifier: qualifier}); err != nil {
+			t.Fatalf("UpsertCrosswalk: %v", err)
+		}
+		if err := tx.UpsertSyntaxon(domain.Syntaxon{ID: "arrhenatherion", Rank: "alliance", Name: "Arrhenatherion"}); err != nil {
+			t.Fatalf("UpsertSyntaxon: %v", err)
+		}
+		if err := tx.LinkSyntaxon(from, "arrhenatherion"); err != nil {
+			t.Fatalf("LinkSyntaxon: %v", err)
+		}
+		if err := tx.UpsertSpeciesRole(domain.SpeciesRole{
+			Key: from, VerbatimName: "Arrhenatherum elatius", Role: "diagnostic", Fidelity: fidelity,
+		}); err != nil {
+			t.Fatalf("UpsertSpeciesRole: %v", err)
+		}
+		if err := tx.UpsertLocalization(domain.Localization{
+			EntityType: "habitat_type", EntityKey: from.String(), Lang: "de", Field: "name",
+			Value: "Glatthaferwiese", Source: "eunis-de", Provenance: "official",
+		}); err != nil {
+			t.Fatalf("UpsertLocalization: %v", err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("Commit: %v", err)
+		}
+	}
+
+	ingestOnce(domain.QualifierNarrower, nil)
+	ingestOnce(domain.QualifierSame, floatPtr(0.8)) // repinned: qualifier and fidelity change
+
+	assertCrosswalkAndSpeciesRoleAfterRepin(ctx, t, db, from, to)
+	assertNoDuplicateRows(ctx, t, db)
+}
+
+func assertCrosswalkAndSpeciesRoleAfterRepin(
+	ctx context.Context, t *testing.T, db *DB, from, to domain.HabitatTypeKey,
+) {
+	t.Helper()
+
+	var qualifier string
+	if err := db.QueryRowContext(ctx,
+		"SELECT qualifier FROM habitat_type_crosswalk WHERE from_typology = ? AND from_code = ? AND to_typology = ? AND to_code = ?",
+		string(from.Typology), from.Code, string(to.Typology), to.Code,
+	).Scan(&qualifier); err != nil {
+		t.Fatalf("querying crosswalk: %v", err)
+	}
+	if qualifier != string(domain.QualifierSame) {
+		t.Errorf("qualifier = %q, want %q (the later ingest wins)", qualifier, domain.QualifierSame)
+	}
+
+	var conceptID *string
+	var fidelity *float64
+	if err := db.QueryRowContext(ctx,
+		"SELECT concept_id, fidelity FROM species_role WHERE typology_id = ? AND code = ? AND verbatim_name = ? AND role = ?",
+		string(from.Typology), from.Code, "Arrhenatherum elatius", "diagnostic",
+	).Scan(&conceptID, &fidelity); err != nil {
+		t.Fatalf("querying species_role: %v", err)
+	}
+	if conceptID != nil {
+		t.Errorf("concept_id = %v, want nil (unresolved verbatim name)", *conceptID)
+	}
+	if fidelity == nil || *fidelity != 0.8 {
+		t.Errorf("fidelity = %v, want 0.8 (the later ingest wins)", fidelity)
+	}
+}
+
+func assertNoDuplicateRows(ctx context.Context, t *testing.T, db *DB) {
+	t.Helper()
+
+	var n int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM habitat_type_crosswalk").Scan(&n); err != nil {
+		t.Fatalf("counting habitat_type_crosswalk: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("habitat_type_crosswalk rows = %d, want 1 (upsert, not insert)", n)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM habitat_type_syntaxon").Scan(&n); err != nil {
+		t.Fatalf("counting habitat_type_syntaxon: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("habitat_type_syntaxon rows = %d, want 1 (link is idempotent)", n)
+	}
+}
+
+func floatPtr(f float64) *float64 { return &f }
+
+// Every Upsert, Commit and Rollback wraps the driver error instead of
+// swallowing it — exercised here via a transaction that is already closed.
+func TestIngestTx_MethodsWrapErrorsOnAClosedTransaction(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	cases := map[string]func() error{
+		"UpsertTypology":    func() error { return tx.UpsertTypology(domain.Typology{ID: "eunis@2021"}) },
+		"UpsertHabitatType": func() error { return tx.UpsertHabitatType(domain.HabitatType{Key: key}) },
+		"UpsertCrosswalk": func() error {
+			return tx.UpsertCrosswalk(domain.Crosswalk{From: key, To: key, Qualifier: domain.QualifierSame})
+		},
+		"UpsertSyntaxon": func() error { return tx.UpsertSyntaxon(domain.Syntaxon{ID: "x", Rank: "class", Name: "x"}) },
+		"LinkSyntaxon":   func() error { return tx.LinkSyntaxon(key, "x") },
+		"UpsertSpeciesRole": func() error {
+			return tx.UpsertSpeciesRole(domain.SpeciesRole{Key: key, VerbatimName: "x", Role: "diagnostic"})
+		},
+		"UpsertLocalization": func() error {
+			return tx.UpsertLocalization(domain.Localization{EntityType: "habitat_type", EntityKey: "x", Lang: "de", Field: "name", Value: "x", Source: "x", Provenance: "official"})
+		},
+		"Commit":   func() error { return tx.Commit() },
+		"Rollback": func() error { return tx.Rollback() },
+	}
+	for name, call := range cases {
+		if err := call(); err == nil {
+			t.Errorf("%s on a closed transaction = nil error, want an error", name)
+		}
+	}
+}
