@@ -1,0 +1,15 @@
+# Conventional Commits validation. Load-bearing for release-please: it derives
+# the next version and the CHANGELOG from these commit types (feat -> minor,
+# fix -> patch, `!`/BREAKING CHANGE -> major).
+extends:
+  - "@commitlint/config-conventional"
+rules:
+  header-max-length: [2, always, 120]
+  type-enum:
+    - 2
+    - always
+    - [build, chore, ci, docs, feat, fix, perf, refactor, revert, style, test]
+  # Off: subjects legitimately begin with HTTP verbs, codes and proper nouns
+  # (`GET /v1/habitat-type/{typology}/{code}`, `EUNIS`, `annex1`), which
+  # config-conventional's sentence-case rule would reject or mangle.
+  subject-case: [0]

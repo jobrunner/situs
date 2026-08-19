@@ -11,10 +11,17 @@ Er beantwortet Fakten in beide Richtungen:
   Verband)?
 - **Crosswalks**: EUNIS 2012 ⇄ 2021 und EUNIS ⇄ **FFH-Lebensraumtyp**
   (Anhang I der FFH-Richtlinie), jeweils mit Abdeckungs-Qualifier
-  (`=`, `<`, `>`, `#`).
+  (`=`, `<`, `>`, `#`, `≈`).
 
-Habitattyp-Namen gibt es zusätzlich **auf Deutsch**; für Anhang-I-Typen im
-amtlichen Wortlaut der Richtlinie.
+Habitattyp-Namen liefert der Index derzeit **nur auf Englisch** (`name_en`).
+Der Mechanismus für deutsche Labels ist gebaut und getestet — Overlay statt
+Ersetzung, `provenance` ∈ `official` | `curated` | `derived`, und Ableitung
+ausschließlich über Qualifier `=` —, aber es ist noch **keine** deutsche
+Namensquelle gepinnt: `localizations.csv` erzeugt bislang niemand, gemessen
+sind entsprechend `Localizations: 0` und `DerivedLabels: 0`. Sobald die
+amtlichen Anhang-I-Bezeichnungen aus EUR-Lex gepinnt sind, erben **29**
+EUNIS-Typen mit `=`-Entsprechung ihr deutsches Label ohne Codeänderung.
+`?lang=de` ist bereits bedienbar und antwortet heute ohne `name_de`.
 
 ## Wozu
 
@@ -33,7 +40,38 @@ zu normalisieren; zur Laufzeit ist situs für Abfragen per Konzept-ID autark.
 
 ## Stand
 
-Im Aufbau. Fundament-Spec und Implementierungsplan liegen unter `docs/`:
+Im Aufbau. Das Gerüst steht (Go 1.26, hexagonal, Qualitäts-Gates, CI); Ingest
+und Lese-API des Fundaments sind implementiert.
+
+`make verify` braucht neben der Go-Toolchain ein **`python3`** im Pfad: die
+Tests der XLSX→CSV-Pipeline gehören zum kanonischen Grün-Check. Zusätzliche
+Python-Pakete sind nicht nötig — die Pipeline benutzt ausschließlich die
+Standardbibliothek.
+
+```bash
+make verify      # fmt-check, vet, lint, test, pipeline-test, arch, debt, build
+make build       # ./situs
+./situs serve    # HTTP auf 127.0.0.1:8080
+```
+
+Erreichbar sind `GET /health/live`, `GET /health/ready`, `GET /metrics`,
+`GET /openapi`, `GET /v1/info` und die Lese-Endpunkte:
+
+```bash
+# --db entfällt, wenn index.path (Default: situs.sqlite) passt.
+./situs ingest --csv-dir pipelines/eunis/out
+./situs serve
+
+curl -s 'localhost:8080/v1/habitat-type/eunis@2021/R22?lang=de'
+curl -s 'localhost:8080/v1/habitat-type/annex1/6510'
+curl -s 'localhost:8080/v1/species/<conceptId>/habitat-types'
+curl -s 'localhost:8080/v1/syntaxon/<syntaxonId>/habitat-types'
+```
+
+Details in `docs/reference/http-api.md`; die am gepinnten Datenstand
+**gemessenen** Kennzahlen in `docs/reference/measured-index.md`.
+
+Fundament-Spec und Implementierungsplan liegen unter `docs/`:
 
 - `docs/superpowers/specs/2026-08-18-situs-foundation-design.md` — Design
 - `docs/superpowers/plans/2026-08-19-situs-foundation.md` — Umsetzungsplan
@@ -46,7 +84,7 @@ Im Aufbau. Fundament-Spec und Implementierungsplan liegen unter `docs/`:
 | EUNIS terrestrial habitat classification 2021_1 (EEA) | Habitattypen, Syntaxa-Crosswalk, Versions- und Anhang-I-Crosswalk | EEA-Datenpolitik |
 | EUNIS-ESy `Characteristic-species-combinations` (Zenodo) | Kennarten / konstante / dominante Arten je Habitattyp | CC BY 4.0 |
 | Euroveg Checklist 2016 | Syntaxonomie (Klasse, Ordnung, Verband) | — |
-| FFH-Richtlinie Anhang I, deutsche Fassung (EUR-Lex) | amtliche deutsche LRT-Bezeichnungen | EU-Recht |
+| FFH-Richtlinie Anhang I, deutsche Fassung (EUR-Lex) | amtliche deutsche LRT-Bezeichnungen — **noch nicht gepinnt**, siehe oben | EU-Recht |
 
 Die Artefakte werden **gepinnt** (URL + Prüfsumme in
 `pipelines/eunis/manifest.yaml`) und **nicht** ins Repo eingecheckt.

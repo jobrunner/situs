@@ -1,0 +1,113 @@
+# CI — mirrors `make verify` so "green locally" means "green in CI".
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: make fmt-check
+      # Action v8 is the major that supports golangci-lint v2 (it requires
+      # >= v2.1.0); v6 supports the v1 line only and would reject this
+      # `version: "2"` config. install-mode: goinstall is not a preference: the
+      # published release binaries are built with Go 1.25, and golangci-lint
+      # refuses a module whose `go` directive is newer than its own build
+      # toolchain ("the Go language version used to build golangci-lint is lower
+      # than the targeted Go version"). goinstall compiles it with the toolchain
+      # actions/setup-go just installed from go.mod, which satisfies that.
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12.2
+          install-mode: goinstall
+          args: --timeout=5m
+
+  architecture:
+    name: Architecture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # `make arch` shells out to golangci-lint, so this job needs the binary
+      # too. Same version and install-mode as the lint job, and for the same
+      # reason (see the comment there).
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+      - name: Import boundaries, allowed libraries, module tidiness
+        run: make arch
+      - name: Debt ratchet
+        run: make debt-guard
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: go vet
+        run: make vet
+      - name: Tests with the race detector
+        run: go test -race ./...
+      - name: Coverage floors
+        run: make debt-coverage
+
+  # The XLSX->CSV pipeline produces every fact in the index, so its tests are a
+  # gate, not a courtesy. Its own job: stdlib-only python3, no Go toolchain.
+  pipeline:
+    name: Pipeline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Pipeline tests
+        run: make pipeline-test
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make build
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Known vulnerabilities
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: mkdocs build --strict
+        run: make docs

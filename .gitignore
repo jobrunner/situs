@@ -1,13 +1,34 @@
 # build output
 /situs
+/dist/
+
+# test + coverage output
+/coverage/
+*.test
+*.out
+
+# MkDocs build output
+/site/
 
 # local index + WAL sidecars
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
 
-# pinned source artifacts are fetched, never committed
+# pinned source artifacts are fetched, never committed; pipeline output is
+# generated from them and never committed either
 /pipelines/*/artifacts/
+/pipelines/*/out/
+
+# Python pipeline byte-compiled caches
+__pycache__/
+*.pyc
+
+# IDE / local environment
+.idea/
+.vscode/
+.env
+.envrc.local
 
 # keep the vendored skill symlinks under version control
 .claude/*

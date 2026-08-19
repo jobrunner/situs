@@ -1,0 +1,37 @@
+# Mutation testing (gremlins). Ubuntu only — gremlins panics on macOS.
+# The thresholds are a RATCHET: raise them as the tests of Tasks 2-8 land.
+name: Mutation
+
+on:
+  pull_request:
+  schedule:
+    - cron: "0 4 * * 1" # weekly, Monday 04:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    name: gremlins
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install gremlins
+        run: go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.5.1
+      - name: Run the mutation gate
+        run: |
+          fail=0
+          run_pkg() {
+            local pkg="$1" eff="$2" mcov="$3"
+            echo "===== gremlins: $pkg (min efficacy ${eff}%, min mutator-coverage ${mcov}%) ====="
+            if ! gremlins unleash --threshold-efficacy "$eff" --threshold-mcover "$mcov" "$pkg"; then
+              fail=1
+            fi
+          }
+          # Baselined on the Task 1 scaffold, which has no domain logic yet.
+          # Ratchet UP with every task that adds behavior.
+          run_pkg ./internal/... 0 0
+          exit $fail

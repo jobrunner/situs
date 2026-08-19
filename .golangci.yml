@@ -1,0 +1,175 @@
+# golangci-lint configuration for situs.
+#
+# The depguard block is the lint-time fitness function that enforces the
+# hexagonal import boundaries; gomodguard_v2 enforces CLAUDE.md's allowed-library
+# list. A violation of either fails `make arch`, `make verify` and CI.
+version: "2"
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    # Correctness / static analysis
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - errorlint
+    - nilerr
+    - noctx
+    - sqlclosecheck
+    # Style / complexity
+    - dupl
+    - gocognit
+    - gocyclo
+    - goconst
+    - gocritic
+    - godot
+    - misspell
+    - prealloc
+    - revive
+    - unconvert
+    - unparam
+    - whitespace
+    # Security
+    - gosec
+    # Architecture harness
+    - depguard # hexagonal import boundaries
+    - gomodguard_v2 # allowed-library list
+    # Debt harness
+    - nolintlint # every //nolint must name its linter and say why
+
+  settings:
+    gocyclo:
+      min-complexity: 15
+    gocognit:
+      min-complexity: 20
+    dupl:
+      threshold: 100
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+      # Test fixture literals are data, not a code smell (see the _test.go
+      # exclusion below); counting them would force constants into production
+      # code for the sake of the tests.
+      ignore-tests: true
+    misspell:
+      locale: US
+
+    # "exported" and "package-comments" are left out on purpose: CLAUDE.md asks
+    # for sparse comments, which conflicts with revive's demand for a doc comment
+    # on every exported symbol. The remaining rules police naming and API shape.
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: var-declaration
+        - name: var-naming
+
+    nolintlint:
+      require-explanation: true # every //nolint must say WHY
+      require-specific: true # ...and name the exact linter(s), never a bare //nolint
+      allow-unused: false # a //nolint that suppresses nothing is itself debt
+
+    # Hexagonal import boundaries. Allowed direction:
+    #   domain      -> nothing internal
+    #   ports       -> domain only
+    #   application -> domain, ports
+    #   adapters    -> domain, ports        (NOT application, NOT sibling adapters)
+    #   app / cmd   -> everything (composition root, intentionally unrestricted)
+    # depguard matches an import equal to a denied pkg OR below it, so denying
+    # "internal/adapters" also denies "internal/adapters/http". NOTE the trailing
+    # "/" on internal/app/: the match is a plain string prefix without a
+    # path-segment boundary, so a bare "internal/app" would also match
+    # "internal/application".
+    depguard:
+      rules:
+        domain:
+          files:
+            - "**/internal/domain/**"
+          deny:
+            - pkg: github.com/jobrunner/situs/internal
+              desc: "domain is the innermost layer and must not depend on any other internal package"
+        ports:
+          files:
+            - "**/internal/ports/**"
+          deny:
+            - pkg: github.com/jobrunner/situs/internal/application
+              desc: "ports define contracts over domain only, not the use cases that consume them"
+            - pkg: github.com/jobrunner/situs/internal/adapters
+              desc: "ports must not know about adapters"
+            - pkg: github.com/jobrunner/situs/internal/app/
+              desc: "ports must not know about the composition root"
+            - pkg: github.com/jobrunner/situs/internal/config
+              desc: "ports stay configuration-free"
+        application:
+          files:
+            - "**/internal/application/**"
+          deny:
+            - pkg: github.com/jobrunner/situs/internal/adapters
+              desc: "the core talks to adapters only through ports, never directly"
+            - pkg: github.com/jobrunner/situs/internal/app/
+              desc: "the core does not know about the composition root"
+        adapters:
+          files:
+            - "**/internal/adapters/**"
+          deny:
+            - pkg: github.com/jobrunner/situs/internal/application
+              desc: "adapters talk to the core only through ports"
+            - pkg: github.com/jobrunner/situs/internal/app/
+              desc: "adapters do not know about the composition root"
+            - pkg: github.com/jobrunner/situs/internal/adapters
+              desc: "no adapter-to-adapter imports; shared logic belongs in domain/ports"
+
+    # Allowed libraries only (CLAUDE.md). An allow-list, not a blocklist: a new
+    # direct dependency fails the build until it is added here on purpose.
+    # Notably absent and deliberately so: any ORM, any XLSX reader (XLSX is
+    # handled by the stdlib-only Python pipeline, never by Go) and any HTTP
+    # framework other than gorilla/mux.
+    gomodguard_v2:
+      allowed:
+        - module: github.com/gorilla/mux
+        - module: github.com/spf13/cobra
+        - module: github.com/spf13/viper
+        - module: github.com/prometheus/client_golang
+        - module: modernc.org/sqlite
+        # The OpenTelemetry Go SDK and its otelmux instrumentation ship as many
+        # modules under one domain.
+        - module: go.opentelemetry.io/
+          match-type: prefix
+
+  exclusions:
+    rules:
+      # Tests stay linted; only these are relaxed, each for a concrete reason:
+      - path: _test\.go
+        linters:
+          - dupl # table-driven tests intentionally repeat structure
+          - goconst # repeated literals are fixture data, not a smell
+          - noctx # httptest.NewRequest is the conventional context-free helper
+          - depguard # tests are the "test composition root": they may wire
+            # real adapters, application and domain together across
+            # boundaries; production code stays strictly bounded.
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/jobrunner/situs
