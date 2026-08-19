@@ -68,6 +68,33 @@ curl -s 'localhost:8080/v1/species/<conceptId>/habitat-types'
 curl -s 'localhost:8080/v1/syntaxon/<syntaxonId>/habitat-types'
 ```
 
+### Fertige Artefakte
+
+Jeder Release liefert Binaries für linux/darwin/windows × amd64/arm64 sowie ein
+Multi-Arch-Container-Image. Der Index gehört **nicht** ins Image — er wird
+eingehängt, damit dasselbe Image jeden Datenstand bedienen kann:
+
+```bash
+docker run --rm -p 8080:8080 \
+  --user "$(id -u):$(id -g)" \
+  -v "$PWD:/data" -e SITUS_INDEX_PATH=/data/situs.sqlite \
+  ghcr.io/jobrunner/situs:latest
+```
+
+Zwei Eigenheiten, die beide gemessen und nicht vermutet sind:
+
+- **Der Index muss schreibbar eingehängt werden**, obwohl der Dienst read-only
+  ist: `Open` setzt `journal_mode=WAL`, und WAL verlangt Schreibrechte auf Datei
+  und Verzeichnis. Ein `:ro`-Mount scheitert mit
+  `attempt to write a readonly database (1544)`.
+- Das Image läuft als `nonroot` (uid 65532), die Host-Datei gehört Dir — daher
+  `--user`, alternativ `chown 65532` auf dem Index.
+
+Das Image setzt `SITUS_SERVER_HOST=0.0.0.0` — der Config-Default `127.0.0.1` ist
+für ein lokales Binary richtig, macht im Container aber jeden gemappten Port
+unerreichbar. Die veröffentlichte Dokumentation liegt unter
+<https://jobrunner.github.io/situs/> und wird je Release erneuert.
+
 Details in `docs/reference/http-api.md`; die am gepinnten Datenstand
 **gemessenen** Kennzahlen in `docs/reference/measured-index.md`.
 
