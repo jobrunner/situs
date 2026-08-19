@@ -1,8 +1,10 @@
 package application
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,6 +97,80 @@ func TestIngestCSV_CountsSkippedRowsInsteadOfFailing(t *testing.T) {
 	}
 	if rep.SkippedRows != 1 {
 		t.Errorf("SkippedRows = %d, want 1 (the bad qualifier)", rep.SkippedRows)
+	}
+}
+
+// A short row (fewer fields than the header) is the shape a truncated,
+// hand-edited CSV row actually takes. It must be counted and skipped, not
+// abort the whole file — this is the scenario the CSV-syntax test below
+// (an unterminated quote) does not cover.
+func TestIngestCSV_SkipsShortRowInsteadOfAbortingTheFile(t *testing.T) {
+	dir := seedDir(t)
+	writeCSV(t, dir, "habitat_types.csv",
+		"typology_id,code,level,name_en,parent_code,priority\n"+
+			"eunis@2021,R22,3,Hay meadow,R2,\n"+
+			"annex1,6510,,Lowland hay meadows,,0\n"+
+			"eunis@2021,R23,3,Truncated\n") // only 4 of 6 fields
+
+	repo := newFakeRepo()
+	rep, err := IngestCSV(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestCSV: %v", err)
+	}
+	if rep.HabitatTypes != 2 {
+		t.Errorf("HabitatTypes = %d, want 2 (the two well-formed rows)", rep.HabitatTypes)
+	}
+	if rep.SkippedRows != 1 {
+		t.Errorf("SkippedRows = %d, want 1 (the short row)", rep.SkippedRows)
+	}
+}
+
+// A canceled context must stop the ingest before any file is committed —
+// otherwise a caller has no way to abandon a run mid-flight.
+func TestIngestCSV_CanceledContextStopsBeforeCommitting(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	repo := newFakeRepo()
+	if _, err := IngestCSV(ctx, repo, seedDir(t)); err == nil {
+		t.Fatal("IngestCSV with a canceled context = nil error, want an error")
+	}
+	if repo.committed {
+		t.Error("ingest committed despite a canceled context")
+	}
+	if !repo.rolledBack {
+		t.Error("ingest did not roll back after a canceled context")
+	}
+	if len(repo.typologies) != 0 {
+		t.Errorf("typologies = %v, want none read after cancellation", repo.typologies)
+	}
+}
+
+// "Logged with file and line" is a brief requirement a coverage count alone
+// does not verify — this pins the actual record content.
+func TestIngestCSV_SkipWarningNamesFileAndLine(t *testing.T) {
+	dir := seedDir(t)
+	writeCSV(t, dir, "crosswalks.csv",
+		"from_typology,from_code,to_typology,to_code,qualifier\n"+
+			"eunis@2021,R22,annex1,6510,=\n"+
+			"eunis@2021,R23,annex1,6520,~\n")
+
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	defer slog.SetDefault(prev)
+
+	repo := newFakeRepo()
+	if _, err := IngestCSV(context.Background(), repo, dir); err != nil {
+		t.Fatalf("IngestCSV: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "file=crosswalks.csv") {
+		t.Errorf("log = %q, want it to name the file", got)
+	}
+	if !strings.Contains(got, "line=3") {
+		t.Errorf("log = %q, want it to name the line", got)
 	}
 }
 

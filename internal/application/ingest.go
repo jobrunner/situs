@@ -5,6 +5,7 @@ package application
 import (
 	"context"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -26,18 +27,32 @@ type IngestReport struct {
 	SkippedRows   int
 }
 
+// rowSkipper counts and logs a row this file could not use, without aborting
+// the read. It is shared between a reader's per-value parse checks and
+// readAll's own field-count check, so there is exactly one skip path per
+// file instead of one per failure mode.
+type rowSkipper func(line int, cause error)
+
+func newRowSkipper(skipped *int, file, entity string) rowSkipper {
+	return func(line int, cause error) {
+		*skipped++
+		slog.Warn("skipping malformed row", "entity", entity, "file", file, "line", line, "error", cause)
+	}
+}
+
 // IngestCSV loads typologies, habitat types, crosswalks and syntaxa from the
 // CSVs in dir (produced by pipelines/eunis) into repo. It is one atomic
 // transaction: any repository error rolls back and is returned; a malformed
 // row is counted in SkippedRows and logged, never silently dropped and never
-// aborting the run.
+// aborting the run (the sole exception is typologies.csv, see
+// ingestTypologies).
 func IngestCSV(ctx context.Context, repo output.Repository, dir string) (IngestReport, error) {
 	tx, err := repo.Begin(ctx)
 	if err != nil {
 		return IngestReport{}, fmt.Errorf("beginning ingest transaction: %w", err)
 	}
 
-	rep, err := ingestAll(tx, dir)
+	rep, err := ingestAll(ctx, tx, dir)
 	if err != nil {
 		if rbErr := tx.Rollback(); rbErr != nil {
 			return IngestReport{}, fmt.Errorf("%w (rollback also failed: %w)", err, rbErr)
@@ -51,35 +66,37 @@ func IngestCSV(ctx context.Context, repo output.Repository, dir string) (IngestR
 	return rep, nil
 }
 
-func ingestAll(tx output.IngestTx, dir string) (IngestReport, error) {
+func ingestAll(ctx context.Context, tx output.IngestTx, dir string) (IngestReport, error) {
 	var rep IngestReport
 
-	if err := ingestTypologies(tx, dir); err != nil {
+	skippedTypologies, err := ingestTypologies(ctx, tx, dir)
+	if err != nil {
 		return IngestReport{}, err
 	}
+	rep.SkippedRows += skippedTypologies
 
-	habitatTypes, skipped, err := ingestHabitatTypes(tx, dir)
+	habitatTypes, skipped, err := ingestHabitatTypes(ctx, tx, dir)
 	if err != nil {
 		return IngestReport{}, err
 	}
 	rep.HabitatTypes = habitatTypes
 	rep.SkippedRows += skipped
 
-	crosswalks, skipped, err := ingestCrosswalks(tx, dir)
+	crosswalks, skipped, err := ingestCrosswalks(ctx, tx, dir)
 	if err != nil {
 		return IngestReport{}, err
 	}
 	rep.Crosswalks = crosswalks
 	rep.SkippedRows += skipped
 
-	syntaxa, skipped, err := ingestSyntaxa(tx, dir)
+	syntaxa, skipped, err := ingestSyntaxa(ctx, tx, dir)
 	if err != nil {
 		return IngestReport{}, err
 	}
 	rep.Syntaxa = syntaxa
 	rep.SkippedRows += skipped
 
-	links, skipped, err := ingestSyntaxonLinks(tx, dir)
+	links, skipped, err := ingestSyntaxonLinks(ctx, tx, dir)
 	if err != nil {
 		return IngestReport{}, err
 	}
@@ -123,7 +140,17 @@ func headerIndex(header []string, required ...string) (map[string]int, error) {
 	return idx, nil
 }
 
-func readAll(dir, name string, required []string, fn func(idx map[string]int, row []string, line int) error) error {
+// readAll drives one CSV file: header lookup, then one fn call per data row.
+// A row with the wrong number of fields (csv.ErrFieldCount — the shape a
+// truncated or hand-edited row takes) is reported through skip and the read
+// continues; every other reader error (unterminated quote, I/O) aborts, as
+// does an fn error.
+func readAll(ctx context.Context, dir, name string, required []string, skip rowSkipper,
+	fn func(idx map[string]int, row []string, line int) error) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("ingesting %s: %w", name, err)
+	}
+
 	r, f, err := csvReader(dir, name)
 	if err != nil {
 		return err
@@ -143,8 +170,12 @@ func readAll(dir, name string, required []string, fn func(idx map[string]int, ro
 	for {
 		row, err := r.Read()
 		line++
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return nil
+		}
+		if errors.Is(err, csv.ErrFieldCount) {
+			skip(line, err)
+			continue
 		}
 		if err != nil {
 			return fmt.Errorf("reading %s at line %d: %w", name, line, err)
@@ -180,13 +211,21 @@ func parseOptionalBool(s string) (*bool, error) {
 	return &b, nil
 }
 
-func ingestTypologies(tx output.IngestTx, dir string) error {
+// ingestTypologies is the one exception to "a malformed row is skipped, not
+// aborting": a typology is the join target for every habitat type,
+// crosswalk and syntaxon link. Skipping past an unparseable typology row
+// would let those rows reference a typology that was never inserted,
+// silently building an index with dangling references — worse than stopping
+// the ingest. A wrong field count (readAll's own check) still only counts as
+// a skip, matching every other file.
+func ingestTypologies(ctx context.Context, tx output.IngestTx, dir string) (skipped int, err error) {
 	const file = "typologies.csv"
-	return readAll(dir, file, []string{"id", "scheme", "version", "name", "source_ref"},
+	skip := newRowSkipper(&skipped, file, "typology")
+	err = readAll(ctx, dir, file, []string{"id", "scheme", "version", "name", "source_ref"}, skip,
 		func(idx map[string]int, row []string, line int) error {
-			id, err := domain.ParseTypologyID(row[idx["id"]])
-			if err != nil {
-				return fmt.Errorf("%s:%d: %w", file, line, err)
+			id, perr := domain.ParseTypologyID(row[idx["id"]])
+			if perr != nil {
+				return fmt.Errorf("%s:%d: %w", file, line, perr)
 			}
 			t := domain.Typology{
 				ID:        id,
@@ -200,29 +239,28 @@ func ingestTypologies(tx output.IngestTx, dir string) error {
 			}
 			return nil
 		})
+	return skipped, err
 }
 
-func ingestHabitatTypes(tx output.IngestTx, dir string) (count, skipped int, err error) {
+func ingestHabitatTypes(ctx context.Context, tx output.IngestTx, dir string) (count, skipped int, err error) {
 	const file = "habitat_types.csv"
-	err = readAll(dir, file,
-		[]string{"typology_id", "code", "level", "name_en", "parent_code", "priority"},
+	skip := newRowSkipper(&skipped, file, "habitat type")
+	err = readAll(ctx, dir, file,
+		[]string{"typology_id", "code", "level", "name_en", "parent_code", "priority"}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			typologyID, perr := domain.ParseTypologyID(row[idx["typology_id"]])
 			if perr != nil {
-				skipped++
-				slog.Warn("skipping malformed habitat type row", "file", file, "line", line, "error", perr)
+				skip(line, perr)
 				return nil
 			}
 			level, perr := parseOptionalInt(row[idx["level"]])
 			if perr != nil {
-				skipped++
-				slog.Warn("skipping malformed habitat type row", "file", file, "line", line, "error", perr)
+				skip(line, perr)
 				return nil
 			}
 			priority, perr := parseOptionalBool(row[idx["priority"]])
 			if perr != nil {
-				skipped++
-				slog.Warn("skipping malformed habitat type row", "file", file, "line", line, "error", perr)
+				skip(line, perr)
 				return nil
 			}
 			h := domain.HabitatType{
@@ -241,27 +279,25 @@ func ingestHabitatTypes(tx output.IngestTx, dir string) (count, skipped int, err
 	return count, skipped, err
 }
 
-func ingestCrosswalks(tx output.IngestTx, dir string) (count, skipped int, err error) {
+func ingestCrosswalks(ctx context.Context, tx output.IngestTx, dir string) (count, skipped int, err error) {
 	const file = "crosswalks.csv"
-	err = readAll(dir, file,
-		[]string{"from_typology", "from_code", "to_typology", "to_code", "qualifier"},
+	skip := newRowSkipper(&skipped, file, "crosswalk")
+	err = readAll(ctx, dir, file,
+		[]string{"from_typology", "from_code", "to_typology", "to_code", "qualifier"}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			fromTypology, perr := domain.ParseTypologyID(row[idx["from_typology"]])
 			if perr != nil {
-				skipped++
-				slog.Warn("skipping malformed crosswalk row", "file", file, "line", line, "error", perr)
+				skip(line, perr)
 				return nil
 			}
 			toTypology, perr := domain.ParseTypologyID(row[idx["to_typology"]])
 			if perr != nil {
-				skipped++
-				slog.Warn("skipping malformed crosswalk row", "file", file, "line", line, "error", perr)
+				skip(line, perr)
 				return nil
 			}
 			qualifier, perr := domain.ParseQualifier(row[idx["qualifier"]])
 			if perr != nil {
-				skipped++
-				slog.Warn("skipping malformed crosswalk row", "file", file, "line", line, "error", perr)
+				skip(line, perr)
 				return nil
 			}
 			c := domain.Crosswalk{
@@ -278,9 +314,10 @@ func ingestCrosswalks(tx output.IngestTx, dir string) (count, skipped int, err e
 	return count, skipped, err
 }
 
-func ingestSyntaxa(tx output.IngestTx, dir string) (count, skipped int, err error) {
+func ingestSyntaxa(ctx context.Context, tx output.IngestTx, dir string) (count, skipped int, err error) {
 	const file = "syntaxa.csv"
-	err = readAll(dir, file, []string{"id", "rank", "name", "parent_id"},
+	skip := newRowSkipper(&skipped, file, "syntaxon")
+	err = readAll(ctx, dir, file, []string{"id", "rank", "name", "parent_id"}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			s := domain.Syntaxon{
 				ID:       row[idx["id"]],
@@ -297,14 +334,14 @@ func ingestSyntaxa(tx output.IngestTx, dir string) (count, skipped int, err erro
 	return count, skipped, err
 }
 
-func ingestSyntaxonLinks(tx output.IngestTx, dir string) (count, skipped int, err error) {
+func ingestSyntaxonLinks(ctx context.Context, tx output.IngestTx, dir string) (count, skipped int, err error) {
 	const file = "habitat_type_syntaxa.csv"
-	err = readAll(dir, file, []string{"typology_id", "code", "syntaxon_id"},
+	skip := newRowSkipper(&skipped, file, "syntaxon link")
+	err = readAll(ctx, dir, file, []string{"typology_id", "code", "syntaxon_id"}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			typologyID, perr := domain.ParseTypologyID(row[idx["typology_id"]])
 			if perr != nil {
-				skipped++
-				slog.Warn("skipping malformed syntaxon link row", "file", file, "line", line, "error", perr)
+				skip(line, perr)
 				return nil
 			}
 			key := domain.HabitatTypeKey{Typology: typologyID, Code: row[idx["code"]]}

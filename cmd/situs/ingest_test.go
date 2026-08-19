@@ -2,11 +2,38 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// captureStdout redirects os.Stdout for the duration of fn and returns what
+// was written to it. The ingest command's logger writes there directly
+// (mirroring serve's setupLogger(cfg.Logging, os.Stdout)), separate from
+// cmd.OutOrStdout(), which carries the JSON report.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("creating pipe: %v", err)
+	}
+	os.Stdout = w
+	defer func() { os.Stdout = old }()
+
+	fn()
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("closing pipe writer: %v", err)
+	}
+	data, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("reading pipe: %v", err)
+	}
+	return string(data)
+}
 
 func writeIngestCSV(t *testing.T, dir, name, content string) {
 	t.Helper()
@@ -74,7 +101,44 @@ func TestIngestCommandRequiresBothFlags(t *testing.T) {
 	root.SetOut(&bytes.Buffer{})
 	root.SetArgs([]string{"ingest"})
 
-	if err := root.Execute(); err == nil {
+	err := root.Execute()
+	if err == nil {
 		t.Fatal("executing ingest without flags = nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "--csv-dir") || !strings.Contains(err.Error(), "--db") {
+		t.Errorf("error = %q, want it to name both required flags", err)
+	}
+}
+
+// The only record of a dropped row is the log stream; it must honor the
+// service's own logging config (SITUS_LOGGING_FORMAT), not slog's
+// unconfigured default text handler.
+func TestIngestCommandRoutesSkipWarningsThroughTheConfiguredLogger(t *testing.T) {
+	dir := seedIngestDir(t)
+	writeIngestCSV(t, dir, "crosswalks.csv",
+		"from_typology,from_code,to_typology,to_code,qualifier\neunis@2021,R22,annex1,6510,~\n")
+
+	t.Setenv("SITUS_LOGGING_FORMAT", "json")
+	t.Setenv("SITUS_LOGGING_LEVEL", "warn")
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", filepath.Join(t.TempDir(), "situs.db")})
+
+	logOutput := captureStdout(t, func() {
+		if err := root.Execute(); err != nil {
+			t.Fatalf("executing ingest: %v", err)
+		}
+	})
+
+	if !strings.Contains(out.String(), `"SkippedRows": 1`) {
+		t.Errorf("report = %q, want it to report the skipped row", out.String())
+	}
+	if !strings.Contains(logOutput, `"file":"crosswalks.csv"`) {
+		t.Errorf("log output = %q, want configured JSON logging naming the file", logOutput)
+	}
+	if !strings.Contains(logOutput, `"line":2`) {
+		t.Errorf("log output = %q, want configured JSON logging naming the line", logOutput)
 	}
 }
