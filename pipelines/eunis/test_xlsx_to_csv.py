@@ -7,6 +7,7 @@ import zipfile
 
 from xlsx_to_csv import (
     CSV_HEADERS,
+    HeaderError,
     _annex1_name_and_priority,
     _split_multi,
     _syntaxon_rank,
@@ -135,6 +136,16 @@ class Annex1NameAndPriorityTest(unittest.TestCase):
         self.assertEqual(name, "Dry grasslands")
         self.assertEqual(priority, "")
 
+    def test_unrecoverable_name_is_empty_not_a_placeholder_and_is_logged(self):
+        m = Measurements()
+        name, priority = _annex1_name_and_priority(
+            "Name A;\nName B", "9999", "6410;\n6420", m=m, source="src.xlsx", sheet="Sheet1",
+        )
+        self.assertEqual(name, "")  # never the code standing in as a fake name
+        self.assertEqual(priority, "")
+        self.assertEqual(len(m.skipped_rows), 1)
+        self.assertIn("9999", m.skipped_rows[0][2])
+
 
 EUNIS_HEADER = [
     "Level", "Code", "Name",
@@ -185,6 +196,84 @@ class ParseEunisClassificationTest(unittest.TestCase):
         self.assertEqual(m.syntaxa_ranks, {"alliance", "order"})
         links = {(l["code"], l["syntaxon_id"]) for l in result["habitat_type_syntaxa"]}
         self.assertEqual(links, {("R11", "ARR-01A"), ("R11", "MOL-99Z")})
+
+
+class ParseEunisClassificationHeaderAliasTest(unittest.TestCase):
+    """The real "Man-made" sheet names its code/name columns "Code 2018"/
+    "Name 2018" instead of the plain form every other sheet uses. A sheet
+    like this must not be silently dropped (it was — 89 habitat types)."""
+
+    def setUp(self):
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+        self.tmp.close()
+        self.addCleanup(os.unlink, self.tmp.name)
+        header = [
+            "Level", "Code 2018", "Name 2018",
+            "EUNIS 2012 relationship", "EUNIS 2012 code", "EUNIS 2012 name (english)",
+            "Syntaxa code", "Syntaxa name",
+        ]
+        rows = [
+            header,
+            ["1", "V", "Vegetated man-made habitats", "", "", "", "", ""],
+            ["2", "V1", "Arable land", "", "", "", "", ""],
+        ]
+        make_workbook([("Man-made", rows)], self.tmp.name)
+
+    def test_code_2018_alias_is_not_silently_dropped(self):
+        m = Measurements()
+        result = parse_eunis_classification(self.tmp.name, m)
+        codes = {r["code"] for r in result["habitat_types_2021"]}
+        self.assertEqual(codes, {"V", "V1"})
+        by_code = {r["code"]: r for r in result["habitat_types_2021"]}
+        self.assertEqual(by_code["V1"]["name_en"], "Arable land")
+        self.assertEqual(by_code["V1"]["parent_code"], "V")
+
+
+class RequiredHeadersFailLoudlyTest(unittest.TestCase):
+    """A renamed/missing column must raise, never silently default every
+    cell to empty and exit 0."""
+
+    def _workbook_with_header(self, header, path):
+        rows = [header, ["1", "R", "Grasslands", "", "", "", "", ""]]
+        make_workbook([("Grassland", rows)], path)
+
+    def test_eunis_classification_raises_on_missing_required_column(self):
+        tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+        tmp.close()
+        self.addCleanup(os.unlink, tmp.name)
+        # "Level" renamed to "Lvl" — a real column shift, not a missing cell.
+        header = [
+            "Lvl", "Code", "Name",
+            "EUNIS 2012 relationship", "EUNIS 2012 code", "EUNIS 2012 name (english)",
+            "Syntaxa code", "Syntaxa name",
+        ]
+        self._workbook_with_header(header, tmp.name)
+        with self.assertRaises(HeaderError):
+            parse_eunis_classification(tmp.name, Measurements())
+
+    def test_annex1_crosswalks_raises_on_missing_required_column(self):
+        tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+        tmp.close()
+        self.addCleanup(os.unlink, tmp.name)
+        header = [
+            "revised EUNIS Code", "Revised EUNIS name",
+            # "relationship EUNIS to Annex I" renamed/missing:
+            "Annex I code", "Annex I name", "Comment",
+        ]
+        make_workbook([("Grasslands", [header, ["R11", "x", "6210", "y", ""]])], tmp.name)
+        with self.assertRaises(HeaderError):
+            parse_annex1_crosswalks(tmp.name, Measurements())
+
+    def test_esy_species_roles_raises_on_missing_required_column(self):
+        tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+        tmp.close()
+        self.addCleanup(os.unlink, tmp.name)
+        # Has "Habitat code" (so it is recognized as the data table) but is
+        # missing "Value" — a partial, not total, header match.
+        header = ["Habitat code", "Habitat name", "Species type", "Species"]
+        make_workbook([("Data", [header, ["N11", "x", "Diagnostic", "Cakile maritima"]])], tmp.name)
+        with self.assertRaises(HeaderError):
+            parse_esy_species_roles(tmp.name, Measurements())
 
 
 ANNEX1_HEADER = [

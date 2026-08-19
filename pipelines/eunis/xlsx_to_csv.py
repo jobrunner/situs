@@ -38,6 +38,34 @@ _NON_DATA_SHEETS = {"read me", "legend"}
 # Design invariant: absence is expressed as absence of rows, never a placeholder.
 _NO_TARGET_SENTINELS = {"", "x"}
 
+# habitat_typology.source_ref: the provenance of the pinned artifact (see
+# manifest.yaml), never the caller's local filesystem path.
+_EUNIS_DATASET_REF = "https://doi.org/10.2909/bfe4c237-e378-4a83-ab21-b3807f96c2e2"
+
+# The "Man-made" sheet of the real 2021 workbook names its code/name/
+# description columns "... 2018" instead of the plain form every other
+# sheet uses (measured: 89 habitat types live only under this alias).
+_EUNIS_HEADER_ALIASES = {
+    "Code": ["Code", "Code 2018"],
+    "Name": ["Name", "Name 2018"],
+}
+
+_EUNIS_REQUIRED_HEADERS = [
+    "Level", "Code", "Name", "EUNIS 2012 relationship", "EUNIS 2012 code",
+    "EUNIS 2012 name (english)", "Syntaxa code", "Syntaxa name",
+]
+_ANNEX1_REQUIRED_HEADERS = [
+    "revised EUNIS Code", "Revised EUNIS name", "relationship EUNIS to Annex I",
+    "Annex I code", "Annex I name",
+]
+_ESY_REQUIRED_HEADERS = ["Habitat code", "Habitat name", "Species type", "Species", "Value"]
+
+
+class HeaderError(RuntimeError):
+    """A data sheet is missing a column a parser needs. Raised instead of
+    silently defaulting every cell to empty — a renamed/shifted column must
+    fail loudly, not produce a quietly-wrong CSV."""
+
 
 def _shared_strings(zf):
     try:
@@ -96,13 +124,33 @@ def _data_sheets(xlsx_path):
 def _split_multi(value):
     """Split a cell that bundles several values with ';' (sometimes with a
     newline instead of, or in addition to, the surrounding space). Measured
-    on the real EUNIS artifacts: e.g. 'e1.1;\\ne1.12' or '#; \\n#'.
+    on the real EUNIS artifacts: e.g. 'e1.1;\\ne1.12' or '#; \\n#'. A
+    newline becomes a space, not nothing — a genuinely multi-line label
+    without a ';' must not have its words fused together.
     """
-    return [p.strip() for p in value.replace("\n", "").split(";") if p.strip()]
+    return [p.strip() for p in value.replace("\n", " ").split(";") if p.strip()]
 
 
-def _row_index(header):
-    return {h.strip(): i for i, h in enumerate(header)}
+def _row_index(header, aliases=None):
+    """Map header name -> column index. `aliases` additionally exposes a
+    canonical name (e.g. "Code") under whichever alternate spelling the
+    sheet actually uses (e.g. "Code 2018"), so callers can look up the
+    canonical name unconditionally."""
+    idx = {h.strip(): i for i, h in enumerate(header)}
+    for canonical, alternatives in (aliases or {}).items():
+        if canonical in idx:
+            continue
+        for alt in alternatives:
+            if alt in idx:
+                idx[canonical] = idx[alt]
+                break
+    return idx
+
+
+def _require_headers(idx, required, source, sheet):
+    missing = [h for h in required if h not in idx]
+    if missing:
+        raise HeaderError(f"{source} [{sheet}]: missing required column(s) {missing}")
 
 
 def _cell(row, idx, name, default=""):
@@ -147,7 +195,8 @@ def parse_eunis_classification(xlsx_path, m):
         rows = read_sheet(xlsx_path, sheet_path)
         if not rows:
             continue
-        idx = _row_index(rows[0])
+        idx = _row_index(rows[0], aliases=_EUNIS_HEADER_ALIASES)
+        _require_headers(idx, _EUNIS_REQUIRED_HEADERS, xlsx_path, sheet_name)
         stack = []  # (level, code) ancestors, shallow-to-deep
         for row in rows[1:]:
             code = _cell(row, idx, "Code")
@@ -263,6 +312,7 @@ def parse_annex1_crosswalks(xlsx_path, m):
         if not rows:
             continue
         idx = _row_index(rows[0])
+        _require_headers(idx, _ANNEX1_REQUIRED_HEADERS, xlsx_path, sheet_name)
         for row in rows[1:]:
             eunis_code = _cell(row, idx, "revised EUNIS Code")
             if not eunis_code:
@@ -278,20 +328,29 @@ def parse_annex1_crosswalks(xlsx_path, m):
             for c in crosswalks[before:]:
                 m.note_annex1_qualifier(c["qualifier"])
                 if c["to_code"] not in habitat_types_annex1:
-                    habitat_types_annex1[c["to_code"]] = _annex1_name_and_priority(a1_name, c["to_code"], a1_code)
+                    habitat_types_annex1[c["to_code"]] = _annex1_name_and_priority(
+                        a1_name, c["to_code"], a1_code, m=m, source=xlsx_path, sheet=sheet_name,
+                    )
     return {"crosswalks": crosswalks, "habitat_types_annex1": habitat_types_annex1}
 
 
-def _annex1_name_and_priority(bundled_name, target_code, bundled_code):
+def _annex1_name_and_priority(bundled_name, target_code, bundled_code, m=None, source=None, sheet=None):
     """Recover the (name, priority) pair for one code out of a possibly
     bundled Annex I name/code cell. A leading '*' in the official Habitats
     Directive listing marks a priority habitat type — it is documentation
-    syntax, not part of the name, so it becomes the `priority` flag."""
+    syntax, not part of the name, so it becomes the `priority` flag.
+
+    If the code can't be matched back to a name (never observed on the real
+    artifacts, but not provably impossible), the name is left empty and the
+    gap is logged — never the code standing in as a fake name."""
     codes = _split_multi(bundled_code)
     names = _split_multi(bundled_name)
-    name = target_code
     if target_code in codes and len(names) == len(codes):
         name = names[codes.index(target_code)]
+    else:
+        name = ""
+        if m is not None:
+            m.skip(source, sheet, f"could not recover Annex I name for {target_code!r}")
     priority = 1 if name.startswith("*") else ""
     return (name.lstrip("*").strip(), priority)
 
@@ -306,9 +365,13 @@ def parse_esy_species_roles(xlsx_path, m):
     rows_out = []
     for sheet_name, sheet_path in _data_sheets(xlsx_path):
         rows = read_sheet(xlsx_path, sheet_path)
-        if not rows or "Habitat code" not in [h.strip() for h in rows[0]]:
-            continue  # skip sheets that aren't the Data table (e.g. any left-over legend)
+        if not rows:
+            continue
         idx = _row_index(rows[0])
+        present = [h for h in _ESY_REQUIRED_HEADERS if h in idx]
+        if not present:
+            continue  # unrelated sheet (e.g. a left-over legend), not this table
+        _require_headers(idx, _ESY_REQUIRED_HEADERS, xlsx_path, sheet_name)
         for row in rows[1:]:
             code = _cell(row, idx, "Habitat code")
             verbatim_name = _cell(row, idx, "Species")
@@ -371,13 +434,15 @@ def convert(eunis_xlsx, annex1_xlsx, esy_xlsx, out_dir):
     for source, sheet, reason in m.skipped_rows:
         print(f"skipped: {source} [{sheet}]: {reason}", file=sys.stderr)
 
+    # source_ref is the artifact's provenance (the pinned dataset DOI, see
+    # manifest.yaml) — never the caller's local --*-xlsx filesystem path.
     typologies = [
         {"id": "eunis@2021", "scheme": "eunis", "version": "2021",
-         "name": "EUNIS 2021", "source_ref": eunis_xlsx},
+         "name": "EUNIS 2021", "source_ref": _EUNIS_DATASET_REF},
         {"id": "eunis@2012", "scheme": "eunis", "version": "2012",
-         "name": "EUNIS 2012", "source_ref": eunis_xlsx},
+         "name": "EUNIS 2012", "source_ref": _EUNIS_DATASET_REF},
         {"id": "annex1", "scheme": "annex1", "version": "92/43/EEC",
-         "name": "Habitats Directive Annex I", "source_ref": annex1_xlsx},
+         "name": "Habitats Directive Annex I", "source_ref": _EUNIS_DATASET_REF},
     ]
 
     habitat_types = list(classification["habitat_types_2021"])
@@ -410,7 +475,7 @@ def convert(eunis_xlsx, annex1_xlsx, esy_xlsx, out_dir):
         "habitat_types": len(habitat_types),
         "annex1_crosswalks": annex1["crosswalks"],
     })
-    with open(f"{out_dir}/report.json", "w", encoding="utf-8") as f:
+    with open(os.path.join(out_dir, "report.json"), "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False, sort_keys=True)
         f.write("\n")
     return report
@@ -423,7 +488,11 @@ def main(argv=None):
     parser.add_argument("--esy-xlsx", required=True)
     parser.add_argument("--out-dir", required=True)
     args = parser.parse_args(argv)
-    report = convert(args.eunis_xlsx, args.annex1_xlsx, args.esy_xlsx, args.out_dir)
+    try:
+        report = convert(args.eunis_xlsx, args.annex1_xlsx, args.esy_xlsx, args.out_dir)
+    except HeaderError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(1)
     print(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True))
 
 

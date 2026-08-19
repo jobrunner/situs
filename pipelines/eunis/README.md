@@ -54,7 +54,29 @@ Schreibt nach `out/`: `typologies.csv`, `habitat_types.csv`,
 `species_roles.csv` und `report.json` (die Messungen — Syntaxa-Tiefe,
 Qualifier-Werte, Annex-I-Abdeckung; siehe Design-Spec, offene Punkte 1, 2, 5).
 Übersprungene, nicht parsbare Zeilen werden gezählt und mit Grund auf
-`stderr` protokolliert, nie kommentarlos verworfen.
+`stderr` protokolliert, nie kommentarlos verworfen. Fehlt einer Quelle eine
+Spalte, die ein Parser braucht (umbenannt/verschoben), bricht der Lauf mit
+einer klaren Fehlermeldung und Exit-Code 1 ab — ein Schema-Wechsel in der
+Quelle darf nie zu leise falschen CSVs führen.
+
+### `report.json` — was jeder Schlüssel zählt
+
+Die acht Schlüssel zählen **zwei unterschiedliche Populationen**; sie sind
+keine Ausschnitte derselben Grundgesamtheit:
+
+| Schlüssel | Zählt |
+|---|---|
+| `habitat_types` | **alle** Zeilen von `habitat_types.csv`, über **alle drei** Typologien (`eunis@2021` + `eunis@2012` + `annex1`) summiert. |
+| `max_habitat_level` | das höchste `Level` der eunis@2021-Klassifikationshierarchie selbst (nicht der Crosswalks). |
+| `syntaxa_ranks` | die Menge der tatsächlich vorkommenden Syntaxa-Ränge (gemessen pro Namenssuffix). |
+| `qualifier_values` | die Menge der tatsächlich vorkommenden Qualifier-Symbole, über Versions- **und** Annex-I-Crosswalk zusammen. |
+| `annex1_crosswalks` | die Anzahl der eunis@2021→annex1-Crosswalk-**Zeilen** (nicht Typen). |
+| `annex1_qualifier_histogram` | dieselben Zeilen wie `annex1_crosswalks`, aufgeschlüsselt nach Qualifier. |
+| `types_with_annex1` | die Anzahl **distinkter eunis@2021-Codes** (nur diese Typologie, i.d.R. Level 3) mit ≥1 Annex-I-Crosswalk. |
+| `types_with_annex1_same` | dieselbe Population wie `types_with_annex1`, aber nur Codes mit ≥1 Zeile mit Qualifier `=`. |
+
+`habitat_types` ist also kein Nenner für `types_with_annex1` — Ersteres
+läuft über drei Typologien, Letzteres nur über eunis@2021.
 
 ## Tests
 
@@ -67,6 +89,12 @@ siehe `test_xlsx_to_csv.py`) — kein Netzwerk, keine Binärdatei im Repo nötig
 
 ## Bekannte Eigenheiten der Rohdaten (gemessen, nicht angenommen)
 
+- Das Tabellenblatt **"Man-made"** benennt seine Code-/Name-/
+  Beschreibungs-Spalten `Code 2018`/`Name 2018`/`Description 2018` statt
+  der schlichten Form, die jedes andere Blatt benutzt. Ohne Alias-Auflösung
+  fällt der komplette `V`-Zweig (vegetated man-made habitats) unter den
+  Tisch — die Pipeline löst `Code`/`Name` explizit über eine Alias-Liste
+  auf und deckt das mit einem eigenen Test ab.
 - Die EUNIS-Klassifikationshierarchie selbst reicht bis **Level 8**; die
   Crosswalks (Annex I, Syntaxa, EUNIS-2012-Version) sind aber ausschließlich
   auf **Level 3** befüllt — das deckt sich mit der bekannten Deckelung des

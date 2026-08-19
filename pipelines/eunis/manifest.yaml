@@ -6,8 +6,8 @@
 # and under which license.
 #
 # None of the .xlsx files themselves are committed to this repository —
-# pipelines/eunis/artifacts/ is gitignored. Run `make fetch` (or the curl
-# commands in README.md) to re-download them before running the pipeline.
+# pipelines/eunis/artifacts/ is gitignored. Run the curl commands in
+# README.md to re-download them before running the pipeline.
 
 sources:
   - id: eunis-2021-including-crosswalks
