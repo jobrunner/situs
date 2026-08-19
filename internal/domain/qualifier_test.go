@@ -12,6 +12,8 @@ func TestParseQualifier(t *testing.T) {
 		{in: "<", want: QualifierNarrower},
 		{in: ">", want: QualifierBroader},
 		{in: "#", want: QualifierPartial},
+		{in: "≈", want: QualifierApproximate},
+		{in: " ≈ ", want: QualifierApproximate},
 		{in: " = ", want: QualifierSame},
 		{in: "", wantErr: true},
 		{in: "==", wantErr: true},
@@ -46,7 +48,11 @@ func TestQualifierInverse(t *testing.T) {
 		QualifierBroader:  QualifierNarrower,
 		QualifierSame:     QualifierSame,
 		QualifierPartial:  QualifierPartial,
-		Qualifier("≈"):    Qualifier("≈"),
+		// Symmetric by nature, and deliberately so: approximate from one end is
+		// approximate from the other.
+		QualifierApproximate: QualifierApproximate,
+		// An unknown symbol is returned unchanged rather than guessed.
+		Qualifier("?"): Qualifier("?"),
 	} {
 		if got := in.Inverse(); got != want {
 			t.Errorf("%q.Inverse() = %q, want %q", in, got, want)
@@ -63,7 +69,7 @@ func TestQualifierIsSame(t *testing.T) {
 	if !QualifierSame.IsSame() {
 		t.Error("QualifierSame.IsSame() = false, want true")
 	}
-	for _, q := range []Qualifier{QualifierNarrower, QualifierBroader, QualifierPartial} {
+	for _, q := range []Qualifier{QualifierNarrower, QualifierBroader, QualifierPartial, QualifierApproximate} {
 		if q.IsSame() {
 			t.Errorf("%q.IsSame() = true, want false", q)
 		}

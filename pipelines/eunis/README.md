@@ -99,10 +99,17 @@ siehe `test_xlsx_to_csv.py`) — kein Netzwerk, keine Binärdatei im Repo nötig
   Crosswalks (Annex I, Syntaxa, EUNIS-2012-Version) sind aber ausschließlich
   auf **Level 3** befüllt — das deckt sich mit der bekannten Deckelung des
   Fundaments.
-- Der Annex-I-Qualifier kennt neben `= < > #` auch **`≈`** (2 von 341
-  Zeilen in der realen Datei) — ein von der Design-Spec nicht vorgesehenes
-  Symbol. Die Pipeline gibt es **verbatim** weiter (kein Silent-Drop, keine
-  erfundene Zuordnung); `report.json` zählt es in `qualifier_values`.
+- Der Annex-I-Qualifier kennt neben `= < > #` auch **`≈`** (2 von 339
+  Zeilen in der realen Datei) — ein von der Design-Spec ursprünglich nicht
+  vorgesehenes Symbol. Die Pipeline gibt es **verbatim** weiter (kein
+  Silent-Drop, keine erfundene Zuordnung); `report.json` zählt es in
+  `qualifier_values`. Der Go-Ingest **überspringt `≈` nicht mehr**: das
+  Symbol ist ein vollwertiger fünfter Qualifier
+  (`domain.QualifierApproximate`), damit die beiden echten
+  Naturschutz-Entsprechungen `eunis@2021:R1S → annex1:6130` und
+  `eunis@2021:U28 → annex1:8130` erhalten bleiben. Für abgeleitete deutsche
+  Labels bleibt es unerheblich — diese Regel hängt an `Qualifier.IsSame()`,
+  und das ist für `≈` false.
 - Der Syntaxa-Bezug ist praktisch durchgehend auf **Verband**-Ebene (Suffix
   `-ion`), mit einer einzigen gemessenen Ausnahme auf **Ordnung**-Ebene
   (`Moltkeetalia petraeae`, Suffix `-etalia`). Der Rang wird pro Syntaxon aus

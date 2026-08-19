@@ -46,7 +46,11 @@ func TestDeriveGermanLabels_CopiesOfficialNameAcrossSameQualifier(t *testing.T) 
 
 // '<', '>' and '#' are too imprecise to lend a name.
 func TestDeriveGermanLabels_IgnoresNonSameQualifiers(t *testing.T) {
-	for _, q := range []domain.Qualifier{domain.QualifierNarrower, domain.QualifierBroader, domain.QualifierPartial} {
+	for _, q := range []domain.Qualifier{
+		domain.QualifierNarrower, domain.QualifierBroader, domain.QualifierPartial,
+		// '≈' is ingested (it carries real correspondences) but must lend no name.
+		domain.QualifierApproximate,
+	} {
 		repo := newFakeRepo()
 		repo.crosswalks = []domain.Crosswalk{{
 			From:      domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"},
