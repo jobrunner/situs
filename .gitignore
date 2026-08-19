@@ -15,8 +15,10 @@
 *.sqlite-wal
 *.sqlite-shm
 
-# pinned source artifacts are fetched, never committed
+# pinned source artifacts are fetched, never committed; pipeline output is
+# generated from them and never committed either
 /pipelines/*/artifacts/
+/pipelines/*/out/
 
 # Python pipeline byte-compiled caches
 __pycache__/
