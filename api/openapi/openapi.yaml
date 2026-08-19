@@ -148,8 +148,16 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/HabitatTypeRole"
+        "400":
+          $ref: "#/components/responses/InvalidQuery"
         "404":
-          $ref: "#/components/responses/NotFound"
+          description: >-
+            Der Index kennt keine Fakten zu dieser Konzept-ID (NOT_FOUND). Eine
+            Konzept-ID existiert hier nur, weil eine Artenzeile sie trägt.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/species/habitat-types:
     post:
       summary: Habitattypen zu verbatim Artnamen (Batch)
@@ -222,8 +230,10 @@ components:
       in: path
       required: true
       description: >-
-        Typologie in ihrer Fassung. Wird sie weggelassen, gilt eunis@2021. Eine
-        unbekannte Typologie ist INVALID_QUERY, kein NOT_FOUND.
+        Typologie in ihrer Fassung. Ein leeres Segment fällt auf eunis@2021
+        zurück (der Pfad selbst verlangt ein Segment, weglassen lässt sich es
+        also nicht). Eine unbekannte Typologie ist INVALID_QUERY, kein
+        NOT_FOUND.
       schema:
         type: string
         example: eunis@2021
@@ -390,8 +400,10 @@ components:
         version:
           type: string
     # Die einheitliche Fehlerhülle jeder Antwort (writeError) — identisch zu
-    # hostus. Codes: INVALID_QUERY, NOT_FOUND, UNRESOLVABLE,
-    # UPSTREAM_UNAVAILABLE, INTERNAL_ERROR.
+    # hostus. Codes: INVALID_QUERY, NOT_FOUND, UPSTREAM_UNAVAILABLE,
+    # INTERNAL_ERROR. Ein nicht auflösbarer verbatim Name ist ausdrücklich KEIN
+    # Fehler: der Batch-Endpunkt meldet ihn je Eingabe mit resolved=false
+    # zurück, damit eine Teilauflösung nicht die ganze Anfrage verwirft.
     Error:
       type: object
       required: [error]

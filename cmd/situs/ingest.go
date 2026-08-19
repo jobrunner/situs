@@ -66,7 +66,7 @@ func runIngest(cmd *cobra.Command, csvDir, dbPath string) error {
 		return fmt.Errorf("ingesting %q: %w", csvDir, err)
 	}
 
-	resolver := hostus.NewClient(cfg.Hostus.BaseURL, &http.Client{Timeout: cfg.Hostus.Timeout})
+	resolver := hostus.NewClient(cfg.Hostus.BaseURL, &http.Client{Timeout: cfg.Hostus.Timeout}, cfg.Hostus.BatchSize)
 	speciesReport, err := application.IngestSpeciesRoles(ctx, db, resolver, filepath.Join(csvDir, "species_roles.csv"))
 	if err != nil {
 		return fmt.Errorf("ingesting species roles from %q: %w", csvDir, err)

@@ -55,7 +55,7 @@ func New(ctx context.Context, cfg *config.Config, logger *slog.Logger, version s
 	query := application.NewQueryService(a.Index)
 	// hostus is needed for the verbatim-name path only; concept-ID queries are
 	// autark and keep working while hostus is down.
-	resolver := hostus.NewClient(cfg.Hostus.BaseURL, &http.Client{Timeout: cfg.Hostus.Timeout})
+	resolver := hostus.NewClient(cfg.Hostus.BaseURL, &http.Client{Timeout: cfg.Hostus.Timeout}, cfg.Hostus.BatchSize)
 
 	a.HTTPServer = httpapi.NewServer(cfg.Server.Addr(), httpapi.Deps{
 		Health: a.Health,

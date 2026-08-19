@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jobrunner/situs/internal/adapters/hostus"
 	"github.com/jobrunner/situs/internal/config"
 )
 
@@ -28,6 +29,10 @@ func TestLoadUsesTheDefaultsWithoutFileOrEnvironment(t *testing.T) {
 	}
 	if cfg.Hostus.Timeout != 30*time.Second {
 		t.Errorf("hostus.timeout = %v, want 30s", cfg.Hostus.Timeout)
+	}
+	if cfg.Hostus.BatchSize != hostus.DefaultBatchSize {
+		t.Errorf("hostus.batch_size = %d, want hostus.DefaultBatchSize (%d) — config duplicates the value, so it must not drift",
+			cfg.Hostus.BatchSize, hostus.DefaultBatchSize)
 	}
 	if cfg.Index.Path != "situs.sqlite" {
 		t.Errorf("index.path = %q, want the default", cfg.Index.Path)
@@ -103,5 +108,17 @@ func TestAddrJoinsHostAndPort(t *testing.T) {
 	got := config.ServerConfig{Host: "127.0.0.1", Port: 8080}.Addr()
 	if got != "127.0.0.1:8080" {
 		t.Errorf("Addr() = %q, want %q", got, "127.0.0.1:8080")
+	}
+}
+
+func TestLoadReadsTheHostusBatchSizeFromTheEnvironment(t *testing.T) {
+	t.Setenv("SITUS_HOSTUS_BATCH_SIZE", "17")
+
+	cfg, err := config.Load("")
+	if err != nil {
+		t.Fatalf("Load(\"\") = %v, want no error", err)
+	}
+	if cfg.Hostus.BatchSize != 17 {
+		t.Errorf("hostus.batch_size = %d, want the value of SITUS_HOSTUS_BATCH_SIZE", cfg.Hostus.BatchSize)
 	}
 }

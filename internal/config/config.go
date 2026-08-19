@@ -12,6 +12,11 @@ import (
 	"github.com/spf13/viper"
 )
 
+// defaultHostusBatchSize mirrors hostus.DefaultBatchSize. It is duplicated
+// rather than imported because config must not depend on an adapter; a test
+// pins the two values to each other.
+const defaultHostusBatchSize = 50
+
 // EnvPrefix is the prefix for all environment variables.
 const EnvPrefix = "SITUS"
 
@@ -54,6 +59,11 @@ type LoggingConfig struct {
 type HostusConfig struct {
 	BaseURL string        `mapstructure:"base_url"`
 	Timeout time.Duration `mapstructure:"timeout"`
+	// BatchSize is how many verbatim names go into one POST /v1/match. hostus
+	// applies a fixed per-request timeout and the cost of a batch depends on its
+	// content, so the size that fits is machine-dependent and must be tunable
+	// without a recompile.
+	BatchSize int `mapstructure:"batch_size"`
 }
 
 // Defaults registers every default value.
@@ -70,6 +80,7 @@ func Defaults(v *viper.Viper) {
 
 	v.SetDefault("hostus.base_url", "http://localhost:8081")
 	v.SetDefault("hostus.timeout", 30*time.Second)
+	v.SetDefault("hostus.batch_size", defaultHostusBatchSize)
 }
 
 // Load merges defaults, an optional config file and the environment.

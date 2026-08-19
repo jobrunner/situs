@@ -473,7 +473,7 @@ func TestNameQueryService_ResolvedButUnknownConceptIsAnEmptyList(t *testing.T) {
 }
 
 func TestNameQueryService_UpstreamFailureIsMarkedAsSuch(t *testing.T) {
-	cause := errors.New("connection refused")
+	cause := fmt.Errorf("connection refused: %w", output.ErrResolverUnavailable)
 	svc := NewNameQueryService(NewQueryService(seedQueryRepo()), failingResolver{err: cause})
 
 	_, err := svc.SpeciesHabitatTypesByName(context.Background(), []string{"Bromus erectus"}, "en")
@@ -484,6 +484,25 @@ func TestNameQueryService_UpstreamFailureIsMarkedAsSuch(t *testing.T) {
 	// what actually failed.
 	if !errors.Is(err, cause) {
 		t.Errorf("error = %v, want the resolver's cause still reachable", err)
+	}
+}
+
+// A resolver that answered and refused the request is a fault on this side. If
+// that surfaced as UPSTREAM_UNAVAILABLE, an operator would go looking at hostus
+// for a bug that lives here.
+func TestNameQueryService_AResolverRejectionIsNotAnUpstreamOutage(t *testing.T) {
+	cause := fmt.Errorf("status 400: unknown entry_backbone: %w", output.ErrResolverRejected)
+	svc := NewNameQueryService(NewQueryService(seedQueryRepo()), failingResolver{err: cause})
+
+	_, err := svc.SpeciesHabitatTypesByName(context.Background(), []string{"Bromus erectus"}, "en")
+	if err == nil {
+		t.Fatal("SpeciesHabitatTypesByName = nil error, want the rejection reported")
+	}
+	if errors.Is(err, input.ErrUpstreamUnavailable) {
+		t.Errorf("error = %v, must not be classified as hostus being unavailable", err)
+	}
+	if !errors.Is(err, output.ErrResolverRejected) {
+		t.Errorf("error = %v, want the rejection still reachable", err)
 	}
 }
 

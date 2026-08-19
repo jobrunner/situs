@@ -90,9 +90,16 @@ func (s *Server) habitatTypeKey(w http.ResponseWriter, r *http.Request) (domain.
 // anything the service has no labels for falls back to English rather than
 // rejecting the request — a browser's Accept-Language is not a query error.
 // The choice is additive only: name_en is served either way.
+//
+// An explicit ?lang= the service does not support short-circuits to English: a
+// caller that asked for French must not be answered in German just because the
+// browser also sent an Accept-Language header it never chose.
 func language(r *http.Request) string {
-	if lang, ok := supportedLanguage(r.URL.Query().Get("lang")); ok {
-		return lang
+	if raw := strings.TrimSpace(r.URL.Query().Get("lang")); raw != "" {
+		if lang, ok := supportedLanguage(raw); ok {
+			return lang
+		}
+		return langEN
 	}
 	for _, tag := range strings.Split(r.Header.Get("Accept-Language"), ",") {
 		// Drop any q-value and narrow "de-DE" to its base subtag.

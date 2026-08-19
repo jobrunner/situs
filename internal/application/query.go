@@ -275,7 +275,13 @@ func NewNameQueryService(query *QueryService, resolver output.NameResolver) *Nam
 func (n *NameQueryService) SpeciesHabitatTypesByName(ctx context.Context, names []string, lang string) ([]input.NameResolution, error) {
 	resolved, err := n.resolver.Resolve(ctx, names)
 	if err != nil {
-		return nil, fmt.Errorf("resolving %d names: %w: %w", len(names), input.ErrUpstreamUnavailable, err)
+		// Only the resolver not answering is an upstream outage. A resolver that
+		// answered and refused the request (its 4xx) is a fault on this side and
+		// must not send an operator looking at hostus.
+		if errors.Is(err, output.ErrResolverUnavailable) {
+			return nil, fmt.Errorf("resolving %d names: %w: %w", len(names), input.ErrUpstreamUnavailable, err)
+		}
+		return nil, fmt.Errorf("resolving %d names: %w", len(names), err)
 	}
 
 	out := make([]input.NameResolution, 0, len(names))

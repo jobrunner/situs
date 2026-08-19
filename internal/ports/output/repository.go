@@ -54,6 +54,16 @@ type Repository interface {
 	Localization(ctx context.Context, entityType, entityKey, lang, field string) ([]domain.Localization, error)
 }
 
+// A NameResolver can fail in two ways that must not be confused, because they
+// point at different systems: ErrResolverUnavailable is the resolver not
+// answering (transport failure, timeout, its own 5xx), ErrResolverRejected is
+// the resolver answering that the request was wrong (its 4xx) — that is a bug or
+// misconfiguration on this side.
+var (
+	ErrResolverUnavailable = errors.New("name resolver unavailable")
+	ErrResolverRejected    = errors.New("name resolver rejected the request")
+)
+
 // NameResolver crosswalks verbatim species names to concept IDs via hostus.
 // The returned map omits any name that did not resolve — an absent key means
 // unresolvable, never an empty-string concept id.

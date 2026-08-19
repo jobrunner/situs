@@ -279,6 +279,29 @@ func TestSpeciesHabitatTypes_UnsupportedLanguageFallsBackToEnglish(t *testing.T)
 	}
 }
 
+// An explicit ?lang= the service cannot serve must not silently fall through to
+// Accept-Language: the caller asked for neither German nor English, so it gets
+// the documented default, not the browser's preference.
+func TestSpeciesHabitatTypes_ExplicitUnsupportedLanguageDoesNotFallThroughToTheHeader(t *testing.T) {
+	q := seededQueryService()
+	srv := newTestServer(t, q)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/species/wcvp-1/habitat-types?lang=fr", nil)
+	req.Header.Set("Accept-Language", "de-DE,de;q=0.9")
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if q.lang != "en" {
+		t.Errorf("lang reached the use case as %q, want the en fallback — ?lang= wins over the header", q.lang)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte(`"name_de"`)) {
+		t.Errorf("body = %s, want no German overlay for a caller that asked for French", rec.Body)
+	}
+}
+
 func TestSpeciesHabitatTypes_UnknownConceptIsNotFound(t *testing.T) {
 	srv := newTestServer(t, seededQueryService())
 
@@ -287,6 +310,26 @@ func TestSpeciesHabitatTypes_UnknownConceptIsNotFound(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"NOT_FOUND"`)) {
+		t.Errorf("body = %s, want the NOT_FOUND error envelope", rec.Body)
+	}
+}
+
+// A blank path segment is reachable (%20) and is a malformed question, not a
+// missing answer.
+func TestSpeciesHabitatTypes_BlankConceptIDIsInvalidQuery(t *testing.T) {
+	q := seededQueryService()
+	srv := newTestServer(t, q)
+
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/species/%20/habitat-types", nil))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"INVALID_QUERY"`)) {
+		t.Errorf("body = %s, want the INVALID_QUERY error envelope", rec.Body)
 	}
 }
 
@@ -316,6 +359,9 @@ func TestSyntaxonHabitatTypes_UnknownSyntaxonIsNotFound(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"NOT_FOUND"`)) {
+		t.Errorf("body = %s, want the NOT_FOUND error envelope", rec.Body)
 	}
 }
 

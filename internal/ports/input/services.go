@@ -1,6 +1,11 @@
 // Package input holds the driving ports — what the application offers to
 // primary adapters. The HTTP adapter depends on these interfaces, never on
 // concrete application services.
+//
+// The response DTOs below carry JSON tags because the HTTP contract has one
+// definition rather than two that can drift. They are view models, not a wire
+// format any adapter must accept: a non-HTTP driving adapter (MCP, CLI, gRPC)
+// must map them to its own representation instead of reusing these tags.
 package input
 
 import (
@@ -10,9 +15,15 @@ import (
 	"github.com/jobrunner/situs/internal/domain"
 )
 
-// HealthChecker backs the readiness probe: /health/ready must report NOT ready
-// until the index and every dependency are usable, so an orchestrator does not
-// route traffic prematurely.
+// HealthChecker backs the readiness probe, so an orchestrator does not route
+// traffic prematurely.
+//
+// What the current wiring guarantees, and no more: startup fails outright when
+// the index cannot be opened, so a serving process had a usable index at
+// construction time. The probe does NOT re-check the index while serving — an
+// index that becomes unreadable later still reports ready. Making that real
+// needs a Ping on output.Repository, which is a deliberate follow-up, not
+// something this comment may promise in advance.
 type HealthChecker interface {
 	Ready(ctx context.Context) bool
 }
