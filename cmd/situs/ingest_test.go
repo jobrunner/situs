@@ -113,7 +113,7 @@ func TestIngestCommandFailsOnAnUnreachableDB(t *testing.T) {
 	}
 }
 
-func TestIngestCommandRequiresBothFlags(t *testing.T) {
+func TestIngestCommandRequiresTheCSVDirectory(t *testing.T) {
 	root := newRootCmd()
 	root.SetOut(&bytes.Buffer{})
 	root.SetArgs([]string{"ingest"})
@@ -122,8 +122,54 @@ func TestIngestCommandRequiresBothFlags(t *testing.T) {
 	if err == nil {
 		t.Fatal("executing ingest without flags = nil error, want an error")
 	}
-	if !strings.Contains(err.Error(), "--csv-dir") || !strings.Contains(err.Error(), "--db") {
-		t.Errorf("error = %q, want it to name both required flags", err)
+	if !strings.Contains(err.Error(), "--csv-dir") {
+		t.Errorf("error = %q, want it to name the required flag", err)
+	}
+}
+
+// Ingesting into one file while serving another yields an empty-but-healthy
+// service, so --db falls back to the same index.path that serve reads.
+func TestIngestCommandDefaultsTheDBToTheConfiguredIndexPath(t *testing.T) {
+	stubHostus(t)
+	dbPath := filepath.Join(t.TempDir(), "from-config.sqlite")
+	t.Setenv("SITUS_INDEX_PATH", dbPath)
+
+	root := newRootCmd()
+	root.SetOut(&bytes.Buffer{})
+	root.SetArgs([]string{"ingest", "--csv-dir", seedIngestDir(t)})
+
+	captureStdout(t, func() {
+		if err := root.Execute(); err != nil {
+			t.Errorf("executing ingest without --db = %v, want it to use index.path", err)
+		}
+	})
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Errorf("stat %s = %v, want ingest to have written the configured index", dbPath, err)
+	}
+}
+
+// The flag overrides config, as everywhere else in this codebase.
+func TestIngestCommandDBFlagOverridesTheConfiguredIndexPath(t *testing.T) {
+	stubHostus(t)
+	dir := t.TempDir()
+	fromConfig := filepath.Join(dir, "from-config.sqlite")
+	fromFlag := filepath.Join(dir, "from-flag.sqlite")
+	t.Setenv("SITUS_INDEX_PATH", fromConfig)
+
+	root := newRootCmd()
+	root.SetOut(&bytes.Buffer{})
+	root.SetArgs([]string{"ingest", "--csv-dir", seedIngestDir(t), "--db", fromFlag})
+
+	captureStdout(t, func() {
+		if err := root.Execute(); err != nil {
+			t.Errorf("executing ingest = %v, want no error", err)
+		}
+	})
+	if _, err := os.Stat(fromFlag); err != nil {
+		t.Errorf("stat %s = %v, want the flag to have won", fromFlag, err)
+	}
+	if _, err := os.Stat(fromConfig); err == nil {
+		t.Errorf("%s exists, want the flag to override index.path entirely", fromConfig)
 	}
 }
 

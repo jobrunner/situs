@@ -23,14 +23,28 @@ func newIngestCmd() *cobra.Command {
 		Use:   "ingest",
 		Short: "Typologien, Habitattypen, Crosswalks, Syntaxa und Artenrollen aus CSVs laden",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if csvDir == "" || dbPath == "" {
-				return fmt.Errorf("both --csv-dir and --db are required")
+			if csvDir == "" {
+				return fmt.Errorf("--csv-dir is required")
 			}
-			return runIngest(cmd, csvDir, dbPath)
+			cfg, err := config.Load(configFile)
+			if err != nil {
+				return err
+			}
+			// serve reads only index.path. Defaulting --db to it keeps ingest and
+			// serve pointed at the same file, so an operator cannot silently fill
+			// one index while serving another empty one.
+			if dbPath == "" {
+				dbPath = cfg.Index.Path
+			}
+			if dbPath == "" {
+				return fmt.Errorf("no index path: pass --db or set index.path (SITUS_INDEX_PATH)")
+			}
+			return runIngest(cmd, cfg, csvDir, dbPath)
 		},
 	}
 	cmd.Flags().StringVar(&csvDir, "csv-dir", "", "directory holding the pipeline CSVs (required)")
-	cmd.Flags().StringVar(&dbPath, "db", "", "path to the sqlite index file (required)")
+	cmd.Flags().StringVar(&dbPath, "db", "",
+		"path to the sqlite index file (default: index.path / SITUS_INDEX_PATH)")
 	return cmd
 }
 
@@ -44,13 +58,9 @@ type ingestOutput struct {
 	DerivedLabels  int
 }
 
-func runIngest(cmd *cobra.Command, csvDir, dbPath string) error {
+func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath string) error {
 	ctx := cmd.Context()
 
-	cfg, err := config.Load(configFile)
-	if err != nil {
-		return err
-	}
 	// A dropped row's only record is this log stream — route it through the
 	// configured logger (SITUS_LOG_*), not slog's unconfigured default.
 	slog.SetDefault(setupLogger(cfg.Logging, os.Stdout))
@@ -66,7 +76,7 @@ func runIngest(cmd *cobra.Command, csvDir, dbPath string) error {
 		return fmt.Errorf("ingesting %q: %w", csvDir, err)
 	}
 
-	resolver := hostus.NewClient(cfg.Hostus.BaseURL, &http.Client{Timeout: cfg.Hostus.Timeout}, cfg.Hostus.BatchSize)
+	resolver := hostus.NewClient(cfg.Hostus.BaseURL, &http.Client{Timeout: cfg.Hostus.Timeout}, cfg.Hostus.BatchSize, cfg.Hostus.EntryBackbone)
 	speciesReport, err := application.IngestSpeciesRoles(ctx, db, resolver, filepath.Join(csvDir, "species_roles.csv"))
 	if err != nil {
 		return fmt.Errorf("ingesting species roles from %q: %w", csvDir, err)

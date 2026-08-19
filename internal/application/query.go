@@ -287,8 +287,10 @@ func (n *NameQueryService) SpeciesHabitatTypesByName(ctx context.Context, names 
 	out := make([]input.NameResolution, 0, len(names))
 	for _, name := range names {
 		res := input.NameResolution{Verbatim: name, HabitatTypes: []input.HabitatTypeRole{}}
+		// A present key is enough: output.NameResolver guarantees no
+		// empty-string concept id ever reaches this map.
 		conceptID, ok := resolved[name]
-		if ok && conceptID != "" {
+		if ok {
 			res.ConceptID, res.Resolved = conceptID, true
 			types, err := n.query.SpeciesHabitatTypes(ctx, conceptID, lang)
 			switch {

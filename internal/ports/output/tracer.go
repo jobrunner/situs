@@ -1,6 +1,6 @@
 // Package output holds the driven ports — what the application needs from the
 // outside world. Adapters implement them; the composition root injects them.
-// Later tasks add Repository, IngestTx and NameResolver here.
+// Repository, IngestTx and NameResolver live in repository.go.
 package output
 
 import "context"

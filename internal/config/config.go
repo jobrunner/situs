@@ -17,6 +17,10 @@ import (
 // pins the two values to each other.
 const defaultHostusBatchSize = 50
 
+// defaultHostusEntryBackbone mirrors hostus.DefaultEntryBackbone, duplicated
+// for the same reason as the batch size; a test pins the two together.
+const defaultHostusEntryBackbone = "wcvp"
+
 // EnvPrefix is the prefix for all environment variables.
 const EnvPrefix = "SITUS"
 
@@ -64,6 +68,10 @@ type HostusConfig struct {
 	// content, so the size that fits is machine-dependent and must be tunable
 	// without a recompile.
 	BatchSize int `mapstructure:"batch_size"`
+	// EntryBackbone names the hostus taxonomic backbone to match against. A
+	// hostus instance built on a different backbone would otherwise leave an
+	// operator no lever.
+	EntryBackbone string `mapstructure:"entry_backbone"`
 }
 
 // Defaults registers every default value.
@@ -81,6 +89,7 @@ func Defaults(v *viper.Viper) {
 	v.SetDefault("hostus.base_url", "http://localhost:8081")
 	v.SetDefault("hostus.timeout", 30*time.Second)
 	v.SetDefault("hostus.batch_size", defaultHostusBatchSize)
+	v.SetDefault("hostus.entry_backbone", defaultHostusEntryBackbone)
 }
 
 // Load merges defaults, an optional config file and the environment.

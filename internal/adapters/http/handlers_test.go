@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -394,6 +395,62 @@ func TestSpeciesBatch_ReportsResolvedAndUnresolvedNames(t *testing.T) {
 	}
 }
 
+// A field recording repeats names; each 50 distinct names is one hostus round
+// trip, so a duplicate must not buy a second one.
+func TestSpeciesBatch_DeduplicatesNamesPreservingInputOrder(t *testing.T) {
+	names := seededNameQueryService()
+	srv := newServerWithNames(t, seededQueryService(), names)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/species/habitat-types",
+		strings.NewReader(`{"names":["Salvia pratensis","Bromus erectus"," Salvia pratensis ","Bromus erectus"]}`))
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if want := []string{"Salvia pratensis", "Bromus erectus"}; !slices.Equal(names.gotNames, want) {
+		t.Errorf("resolver saw %q, want %q — deduplicated in input order", names.gotNames, want)
+	}
+	var got []input.NameResolution
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding body %s: %v", rec.Body, err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d entries, want one per distinct input name", len(got))
+	}
+}
+
+// The 1 MiB body cap does not bound the item count, and each 50 names is a
+// hostus round trip — so the item count needs its own bound.
+func TestSpeciesBatch_TooManyNamesIsInvalidQuery(t *testing.T) {
+	names := seededNameQueryService()
+	srv := newServerWithNames(t, seededQueryService(), names)
+
+	list := make([]string, 0, 301)
+	for i := range 301 {
+		list = append(list, fmt.Sprintf("Genus species%d", i))
+	}
+	body, err := json.Marshal(map[string][]string{"names": list})
+	if err != nil {
+		t.Fatalf("encoding body: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/species/habitat-types", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"INVALID_QUERY"`)) {
+		t.Errorf("body = %s, want the INVALID_QUERY error envelope", rec.Body)
+	}
+	if names.gotNames != nil {
+		t.Errorf("resolver was called with %d names, want no upstream call at all", len(names.gotNames))
+	}
+}
+
 func TestSpeciesBatch_MalformedBodyIsInvalidQuery(t *testing.T) {
 	for name, body := range map[string]string{
 		"not json":   `{`,
@@ -605,6 +662,9 @@ func (f *fakeQueryService) SyntaxonHabitatTypes(_ context.Context, syntaxonID, l
 type fakeNameQueryService struct {
 	query *fakeQueryService
 	err   error
+	// gotNames records what the handler passed down, so the dedupe and the
+	// preserved input order can be asserted at the seam that matters.
+	gotNames []string
 }
 
 func seededNameQueryService() *fakeNameQueryService {
@@ -612,6 +672,7 @@ func seededNameQueryService() *fakeNameQueryService {
 }
 
 func (f *fakeNameQueryService) SpeciesHabitatTypesByName(ctx context.Context, names []string, lang string) ([]input.NameResolution, error) {
+	f.gotNames = append([]string(nil), names...)
 	if f.err != nil {
 		return nil, f.err
 	}

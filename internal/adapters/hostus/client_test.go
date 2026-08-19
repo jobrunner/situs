@@ -50,7 +50,7 @@ func TestClient_ResolveMapsVerbatimToConceptID(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	got, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize).Resolve(
+	got, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize, DefaultEntryBackbone).Resolve(
 		context.Background(), []string{"Inula hirta", "Nonexistent name"})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
@@ -76,7 +76,7 @@ func TestClient_ResolveMapsByIDNotByResponsePosition(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	got, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize).Resolve(
+	got, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize, DefaultEntryBackbone).Resolve(
 		context.Background(), []string{"First name", "Second name"})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
@@ -127,7 +127,7 @@ func TestClient_ResolveBatchesAndReindexesPerBatch(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	got, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize).Resolve(context.Background(), names)
+	got, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize, DefaultEntryBackbone).Resolve(context.Background(), names)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestClient_ResolveReturnsErrorOnUpstreamFailure(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize).Resolve(context.Background(), []string{"X"}); err == nil {
+	if _, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize, DefaultEntryBackbone).Resolve(context.Background(), []string{"X"}); err == nil {
 		t.Error("Resolve returned nil error on 503; ingest must not silently record every name as unresolvable")
 	}
 }
@@ -165,7 +165,7 @@ func TestClient_ResolveReturnsErrorOnUnparseableResultID(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize).Resolve(context.Background(), []string{"X"}); err == nil {
+	if _, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize, DefaultEntryBackbone).Resolve(context.Background(), []string{"X"}); err == nil {
 		t.Error("Resolve returned nil error on an unparseable result id, want an error")
 	}
 }
@@ -177,7 +177,7 @@ func TestClient_ResolveReturnsErrorOnOutOfRangeResultID(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize).Resolve(context.Background(), []string{"X"}); err == nil {
+	if _, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize, DefaultEntryBackbone).Resolve(context.Background(), []string{"X"}); err == nil {
 		t.Error("Resolve returned nil error on an out-of-range result id, want an error")
 	}
 }
@@ -186,7 +186,7 @@ func TestClient_ResolveReturnsErrorOnMalformedRequestURL(t *testing.T) {
 	// A control character makes http.NewRequestWithContext itself fail —
 	// this exercises the request-build error path, distinct from a network
 	// or upstream-status failure.
-	if _, err := NewClient("http://\x7f", http.DefaultClient, DefaultBatchSize).Resolve(context.Background(), []string{"X"}); err == nil {
+	if _, err := NewClient("http://\x7f", http.DefaultClient, DefaultBatchSize, DefaultEntryBackbone).Resolve(context.Background(), []string{"X"}); err == nil {
 		t.Error("Resolve returned nil error on a malformed base URL, want an error")
 	}
 }
@@ -198,7 +198,7 @@ func TestClient_ResolveReturnsErrorWhenTheServerIsUnreachable(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	srv.Close()
 
-	if _, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize).Resolve(context.Background(), []string{"X"}); err == nil {
+	if _, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize, DefaultEntryBackbone).Resolve(context.Background(), []string{"X"}); err == nil {
 		t.Error("Resolve returned nil error against an unreachable server, want an error")
 	}
 }
@@ -212,7 +212,7 @@ func TestNewClient_TrimsATrailingSlashFromBaseURL(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := NewClient(srv.URL+"/", srv.Client(), DefaultBatchSize).Resolve(context.Background(), []string{"X"}); err != nil {
+	if _, err := NewClient(srv.URL+"/", srv.Client(), DefaultBatchSize, DefaultEntryBackbone).Resolve(context.Background(), []string{"X"}); err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 	if gotPath != "/v1/match" {
@@ -227,7 +227,7 @@ func TestClient_ResolveErrorIncludesABoundedResponseBodySnippet(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize).Resolve(context.Background(), []string{"X"})
+	_, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize, DefaultEntryBackbone).Resolve(context.Background(), []string{"X"})
 	if err == nil {
 		t.Fatal("Resolve returned nil error on a 400, want an error")
 	}
@@ -243,7 +243,7 @@ func TestClient_ResolveReturnsErrorOnMalformedResponseBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize).Resolve(context.Background(), []string{"X"}); err == nil {
+	if _, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize, DefaultEntryBackbone).Resolve(context.Background(), []string{"X"}); err == nil {
 		t.Error("Resolve returned nil error on a malformed response body, want an error")
 	}
 }
@@ -280,7 +280,7 @@ func TestNewClient_BatchSizeIsConfigurableAndFallsBackToTheDefault(t *testing.T)
 	defer srv.Close()
 
 	names := []string{"a", "b", "c", "d", "e"}
-	if _, err := NewClient(srv.URL, srv.Client(), 2).Resolve(context.Background(), names); err != nil {
+	if _, err := NewClient(srv.URL, srv.Client(), 2, DefaultEntryBackbone).Resolve(context.Background(), names); err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 	if want := []int{2, 2, 1}; !slices.Equal(batchSizes, want) {
@@ -288,11 +288,44 @@ func TestNewClient_BatchSizeIsConfigurableAndFallsBackToTheDefault(t *testing.T)
 	}
 
 	batchSizes = nil
-	if _, err := NewClient(srv.URL, srv.Client(), 0).Resolve(context.Background(), names); err != nil {
+	if _, err := NewClient(srv.URL, srv.Client(), 0, DefaultEntryBackbone).Resolve(context.Background(), names); err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 	if want := []int{len(names)}; !slices.Equal(batchSizes, want) {
 		t.Errorf("batch sizes = %v, want %v (a size <= 0 must fall back to the default)", batchSizes, want)
+	}
+}
+
+// The entry backbone is a hostus parameter like base_url, timeout and
+// batch_size: a hostus index built on another backbone must be reachable by
+// configuration, not by recompiling. An empty value falls back to the default.
+func TestClient_SendsTheConfiguredEntryBackbone(t *testing.T) {
+	for name, tc := range map[string]struct{ configured, want string }{
+		"configured":                      {configured: "gbif", want: "gbif"},
+		"empty falls back to the default": {configured: "", want: DefaultEntryBackbone},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var got string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var req matchRequest
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Errorf("decoding request: %v", err)
+					return
+				}
+				got = req.EntryBackbone
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"results":[]}`))
+			}))
+			defer srv.Close()
+
+			if _, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize, tc.configured).
+				Resolve(context.Background(), []string{"Inula hirta"}); err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("entry_backbone = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -316,7 +349,7 @@ func TestClient_ResolveDistinguishesUnavailableFromRejected(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			_, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize).Resolve(context.Background(), []string{"X"})
+			_, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize, DefaultEntryBackbone).Resolve(context.Background(), []string{"X"})
 			if !errors.Is(err, tc.want) {
 				t.Errorf("error = %v, want it to wrap %v", err, tc.want)
 			}
@@ -332,7 +365,7 @@ func TestClient_TransportFailureIsUnavailability(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	srv.Close()
 
-	_, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize).Resolve(context.Background(), []string{"X"})
+	_, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize, DefaultEntryBackbone).Resolve(context.Background(), []string{"X"})
 	if !errors.Is(err, output.ErrResolverUnavailable) {
 		t.Errorf("error = %v, want it to wrap output.ErrResolverUnavailable", err)
 	}
@@ -377,7 +410,7 @@ func TestClient_DownshiftsTheBatchWhenTheResolverCannotAnswerIt(t *testing.T) {
 		names[i] = fmt.Sprintf("Species %d", i)
 	}
 
-	got, err := NewClient(srv.URL, srv.Client(), 40).Resolve(context.Background(), names)
+	got, err := NewClient(srv.URL, srv.Client(), 40, DefaultEntryBackbone).Resolve(context.Background(), names)
 	if err != nil {
 		t.Fatalf("Resolve = %v, want the downshift to carry the ingest through", err)
 	}
@@ -414,7 +447,7 @@ func TestClient_DoesNotDownshiftARejectedRequest(t *testing.T) {
 		names[i] = fmt.Sprintf("Species %d", i)
 	}
 
-	_, err := NewClient(srv.URL, srv.Client(), 20).Resolve(context.Background(), names)
+	_, err := NewClient(srv.URL, srv.Client(), 20, DefaultEntryBackbone).Resolve(context.Background(), names)
 	if !errors.Is(err, output.ErrResolverRejected) {
 		t.Fatalf("error = %v, want it to wrap output.ErrResolverRejected", err)
 	}
@@ -440,7 +473,7 @@ func TestClient_DownshiftStopsAtTheFloor(t *testing.T) {
 		names[i] = fmt.Sprintf("Species %d", i)
 	}
 
-	_, err := NewClient(srv.URL, srv.Client(), 20).Resolve(context.Background(), names)
+	_, err := NewClient(srv.URL, srv.Client(), 20, DefaultEntryBackbone).Resolve(context.Background(), names)
 	if !errors.Is(err, output.ErrResolverUnavailable) {
 		t.Fatalf("error = %v, want it to wrap output.ErrResolverUnavailable", err)
 	}

@@ -6,7 +6,9 @@
       "changelog-path": "CHANGELOG.md",
       "include-component-in-tag": false,
       "extra-files": [
-        { "type": "generic", "path": "VERSION" }
+        { "type": "generic", "path": "VERSION" },
+        { "type": "generic", "path": "internal/adapters/http/openapi.yaml" },
+        { "type": "generic", "path": "api/openapi/openapi.yaml" }
       ]
     }
   }

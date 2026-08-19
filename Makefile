@@ -1,5 +1,5 @@
 # situs Makefile — every standard task for development and CI.
-.PHONY: all build run test test-coverage lint vet fmt fmt-check arch debt \
+.PHONY: all build run test test-coverage pipeline-test lint vet fmt fmt-check arch debt \
         debt-guard debt-coverage mutation verify docs docs-serve \
         hooks security vuln licenses release-dry help
 
@@ -26,6 +26,12 @@ run: build ## Build and run
 ## Test
 test: ## Run all tests
 	$(GO) test ./...
+
+# The pipeline produces every fact in the index, including the header-drift
+# guard that exists because silently dropping a whole sheet branch already
+# happened once. Stdlib-only python3, so there is nothing to install.
+pipeline-test: ## Run the XLSX->CSV pipeline's Python tests
+	cd pipelines/eunis && python3 -m unittest discover
 
 test-coverage: ## Tests with a coverage report
 	@mkdir -p $(COVERAGE_DIR)
@@ -69,7 +75,7 @@ mutation: ## Mutation testing (ubuntu only — gremlins panics on macOS)
 	gremlins unleash --threshold-efficacy 0 --threshold-mcover 0 ./internal/...
 
 ## Canonical, non-mutating "is it green?" — mirrored in CI.
-verify: fmt-check vet lint test arch debt ## Authoritative green check
+verify: fmt-check vet lint test pipeline-test arch debt ## Authoritative green check
 	@echo "Compile-check (go build ./...)…"
 	@$(GO) build ./...
 	@echo "verify passed."

@@ -11,9 +11,18 @@ set -euo pipefail
 # assume the repository root.
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
-# Only act when Go files are staged. NUL-delimited so paths with spaces survive.
-staged=$(git diff --cached --name-only --diff-filter=ACM -z -- '*.go' | tr '\0' '\n')
-if [ -z "$staged" ]; then
+# NUL-delimited so paths with spaces survive.
+staged_go=$(git diff --cached --name-only --diff-filter=ACM -z -- '*.go' | tr '\0' '\n')
+staged_py=$(git diff --cached --name-only --diff-filter=ACM -z -- 'pipelines/**/*.py' | tr '\0' '\n')
+
+# The pipeline produces every fact in the index; its tests are stdlib-only and
+# run in milliseconds, so they are cheap enough for the hook.
+if [ -n "$staged_py" ]; then
+	(cd pipelines/eunis && python3 -m unittest discover -q)
+fi
+
+# The Go checks below only apply when Go files are staged.
+if [ -z "$staged_go" ]; then
 	exit 0
 fi
 

@@ -33,6 +33,11 @@ const errBodyLimit = 512
 // SITUS_HOSTUS_BATCH_SIZE and the downshift below.
 const DefaultBatchSize = 50
 
+// DefaultEntryBackbone is the hostus taxonomic backbone situs matches against.
+// The pinned ESy species names are vascular plants, which is what wcvp covers;
+// a hostus instance built on another backbone is configured, not recompiled.
+const DefaultEntryBackbone = "wcvp"
+
 // minBatchSize is the floor the downshift stops at. Below this, halving stops
 // buying anything: the failure is then hostus being unreachable or broken, not
 // the batch being too large.
@@ -41,20 +46,30 @@ const minBatchSize = 5
 // Client resolves verbatim species names to hostus concept IDs. It is used
 // at ingest time only; situs is autark for concept-ID queries at runtime.
 type Client struct {
-	baseURL   string
-	http      *http.Client
-	batchSize int
+	baseURL       string
+	http          *http.Client
+	batchSize     int
+	entryBackbone string
 }
 
 // NewClient builds a Client against baseURL, using httpClient for requests and
-// batchSize names per request (DefaultBatchSize when <= 0).
+// batchSize names per request (DefaultBatchSize when <= 0) against the named
+// entryBackbone (DefaultEntryBackbone when empty).
 // A trailing slash is trimmed so baseURL+"/v1/match" never doubles up into
 // "//v1/match" (a 404 whose cause a caller would otherwise have to guess).
-func NewClient(baseURL string, httpClient *http.Client, batchSize int) *Client {
+func NewClient(baseURL string, httpClient *http.Client, batchSize int, entryBackbone string) *Client {
 	if batchSize <= 0 {
 		batchSize = DefaultBatchSize
 	}
-	return &Client{baseURL: strings.TrimSuffix(baseURL, "/"), http: httpClient, batchSize: batchSize}
+	if entryBackbone == "" {
+		entryBackbone = DefaultEntryBackbone
+	}
+	return &Client{
+		baseURL:       strings.TrimSuffix(baseURL, "/"),
+		http:          httpClient,
+		batchSize:     batchSize,
+		entryBackbone: entryBackbone,
+	}
 }
 
 type matchRequestName struct {
@@ -128,7 +143,7 @@ func (c *Client) resolveInto(ctx context.Context, batch []string, resolved map[s
 }
 
 func (c *Client) resolveBatch(ctx context.Context, batch []string) ([]matchResult, error) {
-	req := matchRequest{EntryBackbone: "wcvp"}
+	req := matchRequest{EntryBackbone: c.entryBackbone}
 	req.Names = make([]matchRequestName, len(batch))
 	for i, name := range batch {
 		req.Names[i] = matchRequestName{ID: strconv.Itoa(i), Verbatim: name}

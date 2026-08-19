@@ -34,8 +34,24 @@ func TestLoadUsesTheDefaultsWithoutFileOrEnvironment(t *testing.T) {
 		t.Errorf("hostus.batch_size = %d, want hostus.DefaultBatchSize (%d) — config duplicates the value, so it must not drift",
 			cfg.Hostus.BatchSize, hostus.DefaultBatchSize)
 	}
+	if cfg.Hostus.EntryBackbone != hostus.DefaultEntryBackbone {
+		t.Errorf("hostus.entry_backbone = %q, want hostus.DefaultEntryBackbone (%q) — config duplicates the value, so it must not drift",
+			cfg.Hostus.EntryBackbone, hostus.DefaultEntryBackbone)
+	}
 	if cfg.Index.Path != "situs.sqlite" {
 		t.Errorf("index.path = %q, want the default", cfg.Index.Path)
+	}
+}
+
+func TestLoadReadsTheHostusEntryBackboneFromTheEnvironment(t *testing.T) {
+	t.Setenv("SITUS_HOSTUS_ENTRY_BACKBONE", "gbif")
+
+	cfg, err := config.Load("")
+	if err != nil {
+		t.Fatalf("Load(\"\") = %v, want no error", err)
+	}
+	if cfg.Hostus.EntryBackbone != "gbif" {
+		t.Errorf("hostus.entry_backbone = %q, want the value of SITUS_HOSTUS_ENTRY_BACKBONE", cfg.Hostus.EntryBackbone)
 	}
 }
 

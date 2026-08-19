@@ -89,7 +89,8 @@ func (d *DB) HabitatType(ctx context.Context, key domain.HabitatTypeKey) (domain
 func (d *DB) CrosswalksTo(ctx context.Context, typology domain.TypologyID) ([]domain.Crosswalk, error) {
 	rows, err := d.QueryContext(ctx,
 		`SELECT from_typology, from_code, to_typology, to_code, qualifier
-		 FROM habitat_type_crosswalk WHERE to_typology = ?`,
+		 FROM habitat_type_crosswalk WHERE to_typology = ?
+		 ORDER BY from_typology, from_code, to_code`,
 		string(typology))
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: querying crosswalks to %s: %w", typology, err)
@@ -120,7 +121,8 @@ func (d *DB) CrosswalksTo(ctx context.Context, typology domain.TypologyID) ([]do
 func (d *DB) Localization(ctx context.Context, entityType, entityKey, lang, field string) ([]domain.Localization, error) {
 	rows, err := d.QueryContext(ctx,
 		`SELECT value, source, provenance, derived_from FROM localization
-		 WHERE entity_type = ? AND entity_key = ? AND lang = ? AND field = ?`,
+		 WHERE entity_type = ? AND entity_key = ? AND lang = ? AND field = ?
+		 ORDER BY source`,
 		entityType, entityKey, lang, field)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: querying localization %s/%s: %w", entityType, entityKey, err)

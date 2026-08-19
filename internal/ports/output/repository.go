@@ -66,7 +66,9 @@ var (
 
 // NameResolver crosswalks verbatim species names to concept IDs via hostus.
 // The returned map omits any name that did not resolve — an absent key means
-// unresolvable, never an empty-string concept id.
+// unresolvable, never an empty-string concept id, so a present key alone is
+// enough to treat a name as resolved. Callers deduplicate names before calling;
+// an implementation batches and posts whatever it is given.
 type NameResolver interface {
 	Resolve(ctx context.Context, names []string) (map[string]string, error)
 }

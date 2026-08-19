@@ -14,6 +14,10 @@ RUN CGO_ENABLED=0 go build \
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/situs /usr/local/bin/situs
+# The config default 127.0.0.1 is right for a local binary but makes a mapped
+# port unreachable in a container. The distroless/nonroot image is the isolation
+# boundary here, not the bind address.
+ENV SITUS_SERVER_HOST=0.0.0.0
 EXPOSE 8080
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/situs"]

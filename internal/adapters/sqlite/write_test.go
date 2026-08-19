@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -272,6 +273,86 @@ func TestCrosswalksTo_ReturnsOnlyCrosswalksToTheGivenTypology(t *testing.T) {
 	}
 	if len(got) != 1 || got[0] != annex1 {
 		t.Errorf("CrosswalksTo(annex1) = %+v, want exactly [%+v]", got, annex1)
+	}
+}
+
+// Two documented guarantees rest on these two queries returning rows in a
+// stable order: application.officialOrCuratedName promises byte-identical
+// derived labels across repeated ingests, and DeriveGermanLabels' "first
+// crosswalk wins" is order-dependent by design. Provenance ranking alone does
+// not disambiguate two official rows from different sources, so the SQL, not
+// sqlite's discretion, has to fix the order.
+func TestLocalization_OrdersRowsBySource(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	// Inserted in reverse of the wanted order, so an unordered query would
+	// most likely hand them back the other way round.
+	for _, source := range []string{"eur-lex", "bfn", "arge"} {
+		if err := tx.UpsertLocalization(domain.Localization{
+			EntityType: "habitat_type", EntityKey: "annex1:6510", Lang: "de", Field: "name",
+			Value: "Wiese laut " + source, Source: source, Provenance: "official",
+		}); err != nil {
+			t.Fatalf("UpsertLocalization(%s): %v", source, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.Localization(ctx, "habitat_type", "annex1:6510", "de", "name")
+	if err != nil {
+		t.Fatalf("Localization: %v", err)
+	}
+	sources := make([]string, 0, len(got))
+	for _, l := range got {
+		sources = append(sources, l.Source)
+	}
+	if want := []string{"arge", "bfn", "eur-lex"}; !slices.Equal(sources, want) {
+		t.Errorf("Localization sources = %q, want %q (ORDER BY source)", sources, want)
+	}
+}
+
+func TestCrosswalksTo_OrdersRowsDeterministically(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	// Again inserted out of order on purpose.
+	for _, c := range []domain.Crosswalk{
+		{From: domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"},
+			To: domain.HabitatTypeKey{Typology: "annex1", Code: "6520"}, Qualifier: domain.QualifierSame},
+		{From: domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"},
+			To: domain.HabitatTypeKey{Typology: "annex1", Code: "6510"}, Qualifier: domain.QualifierSame},
+		{From: domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R12"},
+			To: domain.HabitatTypeKey{Typology: "annex1", Code: "6130"}, Qualifier: domain.QualifierApproximate},
+	} {
+		if err := tx.UpsertCrosswalk(c); err != nil {
+			t.Fatalf("UpsertCrosswalk(%+v): %v", c, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.CrosswalksTo(ctx, "annex1")
+	if err != nil {
+		t.Fatalf("CrosswalksTo: %v", err)
+	}
+	pairs := make([]string, 0, len(got))
+	for _, c := range got {
+		pairs = append(pairs, c.From.Code+"->"+c.To.Code)
+	}
+	want := []string{"R12->6130", "R22->6510", "R22->6520"}
+	if !slices.Equal(pairs, want) {
+		t.Errorf("CrosswalksTo order = %q, want %q (ORDER BY from_typology, from_code, to_code)", pairs, want)
 	}
 }
 

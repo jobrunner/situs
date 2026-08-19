@@ -62,6 +62,19 @@ jobs:
       - name: Coverage floors
         run: make debt-coverage
 
+  # The XLSX->CSV pipeline produces every fact in the index, so its tests are a
+  # gate, not a courtesy. Its own job: stdlib-only python3, no Go toolchain.
+  pipeline:
+    name: Pipeline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Pipeline tests
+        run: make pipeline-test
+
   build:
     name: Build
     runs-on: ubuntu-latest

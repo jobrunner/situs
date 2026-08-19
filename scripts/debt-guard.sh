@@ -20,11 +20,12 @@ status=0
 
 [ -f "$BUDGET_FILE" ] || { echo "debt-guard: baseline file not found: $BUDGET_FILE" >&2; exit 2; }
 
-# count <pattern> — matching directive lines in first-party *.go. Tolerant of
-# zero matches (grep exits 1 with no hits, which would abort under pipefail).
+# count <pattern> — matching directive lines in first-party *.go. third_party/
+# is excluded: situs' debt budget must not be spent by a vendored submodule bump.
+# Tolerant of zero matches (grep exits 1 with no hits, aborting under pipefail).
 count() {
-  { grep -rn "$1" --include='*.go' . || true; } \
-    | { grep -vc '/\.go/mod/' || true; } | tr -d ' '
+  { grep -rn "$1" --include='*.go' --exclude-dir=third_party . || true; } \
+    | { grep -c '' || true; } | tr -d ' '
 }
 
 # 1. Suppression budget.
@@ -43,8 +44,8 @@ elif [ "$total" -lt "$baseline" ]; then
 fi
 
 # 2. No new debt markers (leading-marker form only, so prose doesn't trip it).
-markers=$(grep -rnE '//[[:space:]]*(TODO|FIXME|HACK|XXX)([[:space:]:(]|$)' --include='*.go' . \
-  | grep -v '/\.go/mod/' || true)
+markers=$(grep -rnE '//[[:space:]]*(TODO|FIXME|HACK|XXX)([[:space:]:(]|$)' \
+  --include='*.go' --exclude-dir=third_party . || true)
 if [ -n "$markers" ]; then
   echo "  ▼ debt-guard: FAIL — debt markers found (track in docs instead):" >&2
   echo "$markers" | sed 's/^/      /' >&2
