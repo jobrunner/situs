@@ -12,6 +12,7 @@ decken).
 | `GET /health/ready` | Readiness-Probe |
 | `GET /metrics` | Prometheus-Metriken |
 | `GET /openapi` | diese Spezifikation |
+| `GET /docs` | Swagger-UI für diese Spezifikation, offline-fähig (Assets eingebettet) |
 | `GET /v1/info` | Name und Version des Dienstes |
 | `GET /v1/habitat-type/{typology}/{code}` | Habitattyp mit Arten, Syntaxa und Crosswalks |
 | `GET /v1/habitat-type/{typology}/{code}/species?role=` | Artenliste, optional nach Rolle gefiltert |

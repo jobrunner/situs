@@ -63,6 +63,22 @@ paths:
             application/yaml:
               schema:
                 type: string
+  /docs:
+    get:
+      summary: API-Dokumentation (Swagger-UI)
+      description: >-
+        Eine selbst-enthaltene Swagger-UI-Seite für diese Spezifikation. Stylesheet
+        und Bundle sind eingebettet, nicht von einem CDN geladen — situs läuft
+        lokal und im Feld ohne Netz. Die Seite lädt die Spezifikation von
+        `GET /openapi` desselben Servers.
+      operationId: docs
+      responses:
+        "200":
+          description: Die Swagger-UI-Seite als HTML.
+          content:
+            text/html:
+              schema:
+                type: string
   /v1/info:
     get:
       summary: Dienst- und Build-Information
