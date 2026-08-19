@@ -37,5 +37,6 @@ nav:
   - Referenz:
       - reference/configuration.md
       - reference/http-api.md
+      - reference/measured-index.md
   - Erklärung:
       - explanation/architecture.md

@@ -75,7 +75,7 @@ func seedIngestDir(t *testing.T) string {
 func TestIngestCommandLoadsCSVsAndPrintsTheReport(t *testing.T) {
 	stubHostus(t)
 	csvDir := seedIngestDir(t)
-	dbPath := filepath.Join(t.TempDir(), "situs.db")
+	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
 
 	root := newRootCmd()
 	var out bytes.Buffer
@@ -96,7 +96,7 @@ func TestIngestCommandLoadsCSVsAndPrintsTheReport(t *testing.T) {
 func TestIngestCommandFailsOnAMissingCSVDirectory(t *testing.T) {
 	root := newRootCmd()
 	root.SetOut(&bytes.Buffer{})
-	root.SetArgs([]string{"ingest", "--csv-dir", filepath.Join(t.TempDir(), "missing"), "--db", filepath.Join(t.TempDir(), "situs.db")})
+	root.SetArgs([]string{"ingest", "--csv-dir", filepath.Join(t.TempDir(), "missing"), "--db", filepath.Join(t.TempDir(), "situs.sqlite")})
 
 	if err := root.Execute(); err == nil {
 		t.Fatal("executing ingest with a missing csv-dir = nil error, want an error")
@@ -188,7 +188,7 @@ func TestIngestCommandRoutesSkipWarningsThroughTheConfiguredLogger(t *testing.T)
 	root := newRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
-	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", filepath.Join(t.TempDir(), "situs.db")})
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", filepath.Join(t.TempDir(), "situs.sqlite")})
 
 	logOutput := captureStdout(t, func() {
 		if err := root.Execute(); err != nil {

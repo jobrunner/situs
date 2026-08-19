@@ -1,3 +1,18 @@
+-- No table here declares a FOREIGN KEY, deliberately. The sources are pinned
+-- third-party artifacts: a crosswalk whose target code is absent from the
+-- classification sheet would abort the whole ingest over one upstream
+-- inconsistency, which is the wrong trade for a rebuildable local index.
+--
+-- Referential integrity rests on two things instead: the ingest is the single
+-- writer and runs each stage in one transaction, and the read path detects a
+-- dangling reference and reports it as an index inconsistency rather than
+-- serving garbage. That detection is the mitigation, not an afterthought.
+--
+-- db.go still sets PRAGMA foreign_keys=ON. That pragma is currently INERT —
+-- with no constraints declared there is nothing for it to enforce, and it must
+-- not be read as evidence that references are checked. It is set so the
+-- behaviour is correct from the start should constraints ever be added.
+
 CREATE TABLE IF NOT EXISTS habitat_typology (
   id         TEXT PRIMARY KEY,
   scheme     TEXT NOT NULL,

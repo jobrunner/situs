@@ -94,8 +94,12 @@ dependency fails the build until it is added to `.golangci.yml` on purpose.
   `internal/adapters/http/openapi.yaml`; the contract test checks **both**
   directions and fails on a route without an explicit method.
 - Error envelope: `{"error":{"code":"...","message":"..."}}` with the codes
-  `INVALID_QUERY`, `NOT_FOUND`, `UNRESOLVABLE`, `UPSTREAM_UNAVAILABLE`,
-  `INTERNAL_ERROR`.
+  `INVALID_QUERY`, `NOT_FOUND`, `UPSTREAM_UNAVAILABLE`, `INTERNAL_ERROR`.
+  **Deviation, decided:** the originally mandated `UNRESOLVABLE` code is *not*
+  emitted. An unresolvable verbatim name is a normal 200 answer carrying
+  `resolved: false` — the input is reported back, never dropped, and a batch of
+  50 names must not fail because one of them is unknown. Recorded in
+  `openapi.yaml` and `docs/reference/http-api.md`.
 
 ## Technical Constraints
 

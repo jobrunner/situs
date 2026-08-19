@@ -21,9 +21,20 @@ decken).
 
 Ein Habitattyp wird immer über `(typology, code)` adressiert — dieselbe Route
 trägt EUNIS und Anhang I (`annex1`), ein weiteres System braucht keinen neuen
-Endpunkt. Ohne Angabe gilt `eunis@2021`. Eine **unbekannte** Typologie ist
+Endpunkt. Ein **leeres** Segment fällt auf `eunis@2021` zurück — weglassen lässt
+sich das Segment nicht, weil der Pfad es verlangt und der Router einen fehlenden
+Pfadteil gar nicht auf die Route abbildet. Eine **unbekannte** Typologie ist
 `INVALID_QUERY` (400), ein unbekannter Code innerhalb einer bekannten Typologie
 `NOT_FOUND` (404).
+
+**Ko-Kennarten** (welche weiteren Kennarten lohnen sich zu suchen, wenn eine
+bekannt ist?) haben absichtlich **keinen** eigenen Endpunkt: die Frage ist mit
+zwei Aufrufen der vorhandenen Routen beantwortet — erst
+`GET /v1/species/{conceptId}/habitat-types`, dann je Treffer
+`GET /v1/habitat-type/{typology}/{code}/species?role=diagnostic`. Ein
+zusammenfassender Endpunkt wäre nur eine Bequemlichkeit und würde die Gewichtung
+mehrerer Habitattypen vorwegnehmen — genau das, was dieses Fundament bewusst
+offen lässt (kein Scoring/Ranking). Nicht vergessen, sondern entschieden.
 
 Die Crosswalk-Liste trägt beides: andere EUNIS-Fassungen und
 Anhang-I-Entsprechungen, in beiden Richtungen abfragbar. Sie ist leer, wenn es

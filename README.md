@@ -11,10 +11,17 @@ Er beantwortet Fakten in beide Richtungen:
   Verband)?
 - **Crosswalks**: EUNIS 2012 ⇄ 2021 und EUNIS ⇄ **FFH-Lebensraumtyp**
   (Anhang I der FFH-Richtlinie), jeweils mit Abdeckungs-Qualifier
-  (`=`, `<`, `>`, `#`).
+  (`=`, `<`, `>`, `#`, `≈`).
 
-Habitattyp-Namen gibt es zusätzlich **auf Deutsch**; für Anhang-I-Typen im
-amtlichen Wortlaut der Richtlinie.
+Habitattyp-Namen liefert der Index derzeit **nur auf Englisch** (`name_en`).
+Der Mechanismus für deutsche Labels ist gebaut und getestet — Overlay statt
+Ersetzung, `provenance` ∈ `official` | `curated` | `derived`, und Ableitung
+ausschließlich über Qualifier `=` —, aber es ist noch **keine** deutsche
+Namensquelle gepinnt: `localizations.csv` erzeugt bislang niemand, gemessen
+sind entsprechend `Localizations: 0` und `DerivedLabels: 0`. Sobald die
+amtlichen Anhang-I-Bezeichnungen aus EUR-Lex gepinnt sind, erben **29**
+EUNIS-Typen mit `=`-Entsprechung ihr deutsches Label ohne Codeänderung.
+`?lang=de` ist bereits bedienbar und antwortet heute ohne `name_de`.
 
 ## Wozu
 
@@ -46,8 +53,9 @@ Erreichbar sind `GET /health/live`, `GET /health/ready`, `GET /metrics`,
 `GET /openapi`, `GET /v1/info` und die Lese-Endpunkte:
 
 ```bash
-./situs ingest --csv-dir pipelines/eunis/out --db /tmp/situs.sqlite
-SITUS_INDEX_PATH=/tmp/situs.sqlite ./situs serve
+# --db entfällt, wenn index.path (Default: situs.sqlite) passt.
+./situs ingest --csv-dir pipelines/eunis/out
+./situs serve
 
 curl -s 'localhost:8080/v1/habitat-type/eunis@2021/R22?lang=de'
 curl -s 'localhost:8080/v1/habitat-type/annex1/6510'
@@ -55,7 +63,8 @@ curl -s 'localhost:8080/v1/species/<conceptId>/habitat-types'
 curl -s 'localhost:8080/v1/syntaxon/<syntaxonId>/habitat-types'
 ```
 
-Details in `docs/reference/http-api.md`.
+Details in `docs/reference/http-api.md`; die am gepinnten Datenstand
+**gemessenen** Kennzahlen in `docs/reference/measured-index.md`.
 
 Fundament-Spec und Implementierungsplan liegen unter `docs/`:
 
@@ -70,7 +79,7 @@ Fundament-Spec und Implementierungsplan liegen unter `docs/`:
 | EUNIS terrestrial habitat classification 2021_1 (EEA) | Habitattypen, Syntaxa-Crosswalk, Versions- und Anhang-I-Crosswalk | EEA-Datenpolitik |
 | EUNIS-ESy `Characteristic-species-combinations` (Zenodo) | Kennarten / konstante / dominante Arten je Habitattyp | CC BY 4.0 |
 | Euroveg Checklist 2016 | Syntaxonomie (Klasse, Ordnung, Verband) | — |
-| FFH-Richtlinie Anhang I, deutsche Fassung (EUR-Lex) | amtliche deutsche LRT-Bezeichnungen | EU-Recht |
+| FFH-Richtlinie Anhang I, deutsche Fassung (EUR-Lex) | amtliche deutsche LRT-Bezeichnungen — **noch nicht gepinnt**, siehe oben | EU-Recht |
 
 Die Artefakte werden **gepinnt** (URL + Prüfsumme in
 `pipelines/eunis/manifest.yaml`) und **nicht** ins Repo eingecheckt.
