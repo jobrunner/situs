@@ -412,6 +412,15 @@ type fakeRepo struct {
 	commitErr       error
 	rollbackErr     error
 	crosswalksToErr error
+	// The read side's injectable failures (Task 8): each fails exactly one
+	// Repository read so a query test can pin that the failure surfaces.
+	typologyErr     error
+	habitatTypeErr  error
+	crosswalksErr   error
+	speciesRolesErr error
+	syntaxonErr     error
+	syntaxaErr      error
+	syntaxonKeysErr error
 	// localizationErr fails every Localization call; localizationErrOnCall,
 	// if non-zero, instead fails only the n-th call (1-indexed) — needed to
 	// exercise DeriveGermanLabels' second Localization lookup (the Annex I
@@ -441,6 +450,9 @@ func (r *fakeRepo) failIfNamed(name string) error {
 }
 
 func (r *fakeRepo) HabitatType(_ context.Context, key domain.HabitatTypeKey) (domain.HabitatType, error) {
+	if r.habitatTypeErr != nil {
+		return domain.HabitatType{}, r.habitatTypeErr
+	}
 	for _, h := range r.types {
 		if h.Key == key {
 			return h, nil

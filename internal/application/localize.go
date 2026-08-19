@@ -19,6 +19,14 @@ const (
 	nameField = "name"
 )
 
+// The provenance vocabulary of localization: an overlay is either the official
+// wording of a source, a curated one, or computed from a crosswalk.
+const (
+	provenanceOfficial = "official"
+	provenanceCurated  = "curated"
+	provenanceDerived  = "derived"
+)
+
 // IngestLocalizations loads csvPath (localizations.csv:
 // entity_type,entity_key,lang,field,value,source,provenance) into repo. No
 // source in this foundation produces this file yet — the amtliche German
@@ -44,7 +52,7 @@ func IngestLocalizations(ctx context.Context, repo output.Repository, csvPath st
 		[]string{"entity_type", "entity_key", "lang", "field", "value", "source", "provenance"}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			provenance := row[idx["provenance"]]
-			if provenance != "official" && provenance != "curated" && provenance != "derived" {
+			if provenance != provenanceOfficial && provenance != provenanceCurated && provenance != provenanceDerived {
 				skip(line, fmt.Errorf("provenance %q is none of official/curated/derived", provenance))
 				return nil
 			}
@@ -157,7 +165,7 @@ func deriveOne(ctx context.Context, repo output.Repository, tx output.IngestTx, 
 		Field:       nameField,
 		Value:       name,
 		Source:      "derived-annex1",
-		Provenance:  "derived",
+		Provenance:  provenanceDerived,
 		DerivedFrom: fmt.Sprintf("%s qualifier==", c.To),
 	}
 	if err := tx.UpsertLocalization(l); err != nil {
@@ -181,10 +189,10 @@ func officialOrCuratedName(ls []domain.Localization) (string, bool) {
 	var curated string
 	var sawCurated bool
 	for _, l := range ls {
-		if l.Provenance == "official" {
+		if l.Provenance == provenanceOfficial {
 			return l.Value, true
 		}
-		if l.Provenance == "curated" && !sawCurated {
+		if l.Provenance == provenanceCurated && !sawCurated {
 			curated, sawCurated = l.Value, true
 		}
 	}

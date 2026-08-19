@@ -38,6 +38,25 @@ func TestParseQualifier(t *testing.T) {
 	}
 }
 
+// A crosswalk row is stored once and answered from both ends, so the inverse
+// must flip the direction and only the direction.
+func TestQualifierInverse(t *testing.T) {
+	for in, want := range map[Qualifier]Qualifier{
+		QualifierNarrower: QualifierBroader,
+		QualifierBroader:  QualifierNarrower,
+		QualifierSame:     QualifierSame,
+		QualifierPartial:  QualifierPartial,
+		Qualifier("≈"):    Qualifier("≈"),
+	} {
+		if got := in.Inverse(); got != want {
+			t.Errorf("%q.Inverse() = %q, want %q", in, got, want)
+		}
+		if got := in.Inverse().Inverse(); got != in {
+			t.Errorf("%q.Inverse().Inverse() = %q, want the original", in, got)
+		}
+	}
+}
+
 // Only '=' means full correspondence — the derived German label rule depends
 // on exactly this distinction, so it is pinned here.
 func TestQualifierIsSame(t *testing.T) {

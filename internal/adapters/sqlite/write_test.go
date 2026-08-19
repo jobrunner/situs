@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -59,6 +60,55 @@ func TestIngestTx_RoundTripsAHabitatType(t *testing.T) {
 	}
 	if got.Level == nil || *got.Level != 3 {
 		t.Errorf("Level = %v, want 3", got.Level)
+	}
+	if got.Priority != nil {
+		t.Errorf("Priority = %v, want nil — a EUNIS type has no priority flag at all", *got.Priority)
+	}
+}
+
+// The nullable columns of habitat_type must round-trip NULL as nil in BOTH
+// directions: a level that was never given must not come back as 0, and a
+// priority that was never given must not come back as false. That difference is
+// the whole point of the pointer fields, and nothing else in the suite pins it.
+func TestIngestTx_HabitatTypeNullablesRoundTripBothWays(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	priority := true
+	unset := domain.HabitatTypeKey{Typology: "annex1", Code: "0000"}
+	set := domain.HabitatTypeKey{Typology: "annex1", Code: "6510"}
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertHabitatType(domain.HabitatType{Key: unset, NameEN: "no level, no priority"}); err != nil {
+		t.Fatalf("UpsertHabitatType(unset): %v", err)
+	}
+	if err := tx.UpsertHabitatType(domain.HabitatType{Key: set, NameEN: "Lowland hay meadows", Priority: &priority}); err != nil {
+		t.Fatalf("UpsertHabitatType(set): %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	gotUnset, err := db.HabitatType(ctx, unset)
+	if err != nil {
+		t.Fatalf("HabitatType(unset): %v", err)
+	}
+	if gotUnset.Level != nil {
+		t.Errorf("Level = %v, want nil — an absent level must not become 0", *gotUnset.Level)
+	}
+	if gotUnset.Priority != nil {
+		t.Errorf("Priority = %v, want nil — an absent flag must not become false", *gotUnset.Priority)
+	}
+
+	gotSet, err := db.HabitatType(ctx, set)
+	if err != nil {
+		t.Fatalf("HabitatType(set): %v", err)
+	}
+	if gotSet.Priority == nil || !*gotSet.Priority {
+		t.Errorf("Priority = %v, want a non-nil true", gotSet.Priority)
 	}
 }
 
@@ -405,8 +455,18 @@ func TestIngestTx_MethodsWrapErrorsOnAClosedTransaction(t *testing.T) {
 		"Rollback": func() error { return tx.Rollback() },
 	}
 	for name, call := range cases {
-		if err := call(); err == nil {
+		err := call()
+		if err == nil {
 			t.Errorf("%s on a closed transaction = nil error, want an error", name)
+			continue
+		}
+		// Wrapping, not just failing: the driver's cause must stay reachable
+		// with errors.Is, and the message must say which operation failed.
+		if !errors.Is(err, sql.ErrTxDone) {
+			t.Errorf("%s error = %v, want it to wrap sql.ErrTxDone", name, err)
+		}
+		if !strings.HasPrefix(err.Error(), "sqlite: ") {
+			t.Errorf("%s error = %q, want the adapter's own context prefixed", name, err)
 		}
 	}
 }

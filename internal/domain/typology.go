@@ -9,6 +9,10 @@ import (
 // e.g. "eunis@2021" or "annex1" (which carries no version).
 type TypologyID string
 
+// DefaultTypologyID is the typology a caller gets when it names none: the
+// current EUNIS fassung is the one the excursion app asks about.
+const DefaultTypologyID TypologyID = "eunis@2021"
+
 // ParseTypologyID validates "<scheme>" or "<scheme>@<version>".
 func ParseTypologyID(s string) (TypologyID, error) {
 	s = strings.TrimSpace(s)

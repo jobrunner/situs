@@ -15,6 +15,7 @@ import (
 	"github.com/gorilla/mux"
 
 	httpapi "github.com/jobrunner/situs/internal/adapters/http"
+	"github.com/jobrunner/situs/internal/ports/input"
 )
 
 // TestRoutesMatchOpenAPISpec is the routes<->spec fitness function: it walks
@@ -53,7 +54,7 @@ func TestOpenAPICopiesAreIdentical(t *testing.T) {
 // routerSurface returns the set of "METHOD /path" the router mounts.
 func routerSurface(t *testing.T) map[string]bool {
 	t.Helper()
-	srv := newTestServer(t)
+	srv := newTestServer(t, seededQueryService())
 
 	got := map[string]bool{}
 	err := srv.Router().Walk(func(route *mux.Route, _ *mux.Router, _ []*mux.Route) error {
@@ -130,10 +131,20 @@ func specSurface(t *testing.T, specPath string) map[string]bool {
 
 // newTestServer builds a server with a stub health checker — enough to register
 // every route.
-func newTestServer(t *testing.T) *httpapi.Server {
+func newTestServer(t *testing.T, query input.QueryService) *httpapi.Server {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
-	return httpapi.NewServer(":0", stubHealth{ready: true}, logger, httpapi.Options{})
+	return httpapi.NewServer(":0", httpapi.Deps{
+		Health: stubHealth{ready: true},
+		Query:  query,
+		Names:  seededNameQueryService(),
+	}, logger, httpapi.Options{})
+}
+
+// testDeps keeps the health-probe tests focused on the probe while still
+// wiring a complete set of ports.
+func testDeps(health input.HealthChecker) httpapi.Deps {
+	return httpapi.Deps{Health: health, Query: seededQueryService(), Names: seededNameQueryService()}
 }
 
 type stubHealth struct{ ready bool }

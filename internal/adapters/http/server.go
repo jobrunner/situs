@@ -25,16 +25,30 @@ import (
 	"github.com/jobrunner/situs/internal/ports/input"
 )
 
-// CodeInternalError is the error-envelope code for an unexpected failure. The
-// read API's remaining codes (INVALID_QUERY, NOT_FOUND, UNRESOLVABLE,
-// UPSTREAM_UNAVAILABLE) arrive with the routes that can return them (Task 8).
-const CodeInternalError = "INTERNAL_ERROR"
+// The error-envelope codes, identical to hostus (see the spec's
+// Fehlerbehandlung).
+const (
+	CodeInternalError = "INTERNAL_ERROR"
+	CodeInvalidQuery  = "INVALID_QUERY"
+	CodeNotFound      = "NOT_FOUND"
+	// CodeUpstreamUnavailable is reserved for the verbatim-name path, the only
+	// read path that talks to hostus at runtime.
+	CodeUpstreamUnavailable = "UPSTREAM_UNAVAILABLE"
+)
+
+// Deps are the driving ports the server serves its routes from. The composition
+// root injects them; the adapter never constructs an application service.
+type Deps struct {
+	Health input.HealthChecker
+	Query  input.QueryService
+	Names  input.SpeciesNameQueryService
+}
 
 // Server wraps the HTTP server and its router. It holds only driving ports.
 type Server struct {
 	server         *http.Server
 	router         *mux.Router
-	health         input.HealthChecker
+	deps           Deps
 	logger         *slog.Logger
 	serviceName    string
 	version        string
@@ -52,7 +66,7 @@ type Options struct {
 }
 
 // NewServer builds the server, wires the routes and prepares the http.Server.
-func NewServer(addr string, health input.HealthChecker, logger *slog.Logger, opts Options) *Server {
+func NewServer(addr string, deps Deps, logger *slog.Logger, opts Options) *Server {
 	name := opts.ServiceName
 	if name == "" {
 		name = "situs"
@@ -62,7 +76,7 @@ func NewServer(addr string, health input.HealthChecker, logger *slog.Logger, opt
 		version = "dev"
 	}
 	s := &Server{
-		health:         health,
+		deps:           deps,
 		logger:         logger,
 		serviceName:    name,
 		version:        version,
@@ -99,10 +113,13 @@ func (s *Server) setupRoutes() *mux.Router {
 	r.Handle("/metrics", promhttp.Handler()).Methods(http.MethodGet)
 	r.HandleFunc("/openapi", s.handleOpenAPI).Methods(http.MethodGet)
 
-	// Versioned read surface. Task 8 mounts the habitat-type and species routes
-	// here; /v1/info is the build-info endpoint the contract test asserts on
-	// until then.
+	// Versioned read surface.
 	r.HandleFunc("/v1/info", s.handleInfo).Methods(http.MethodGet)
+	r.HandleFunc("/v1/habitat-type/{typology}/{code}", s.handleHabitatType).Methods(http.MethodGet)
+	r.HandleFunc("/v1/habitat-type/{typology}/{code}/species", s.handleHabitatTypeSpecies).Methods(http.MethodGet)
+	r.HandleFunc("/v1/species/{conceptId}/habitat-types", s.handleSpeciesHabitatTypes).Methods(http.MethodGet)
+	r.HandleFunc("/v1/species/habitat-types", s.handleSpeciesBatch).Methods(http.MethodPost)
+	r.HandleFunc("/v1/syntaxon/{id}/habitat-types", s.handleSyntaxonHabitatTypes).Methods(http.MethodGet)
 
 	return r
 }
@@ -133,7 +150,7 @@ func (s *Server) handleLiveness(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
-	if !s.health.Ready(r.Context()) {
+	if !s.deps.Health.Ready(r.Context()) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}

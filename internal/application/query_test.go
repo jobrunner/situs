@@ -1,0 +1,609 @@
+package application
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"testing"
+
+	"github.com/jobrunner/situs/internal/domain"
+	"github.com/jobrunner/situs/internal/ports/input"
+	"github.com/jobrunner/situs/internal/ports/output"
+)
+
+var (
+	queryR22 = domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	queryR99 = domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R99"}
+	queryLRT = domain.HabitatTypeKey{Typology: "annex1", Code: "6510"}
+	query212 = domain.HabitatTypeKey{Typology: "eunis@2012", Code: "E2.2"}
+)
+
+// seedQueryRepo builds the little world the query tests ask about: R22 with one
+// resolved and one unresolved species, a syntaxon, an outgoing '=' crosswalk to
+// Annex I and an incoming '<' crosswalk from the 2012 fassung.
+func seedQueryRepo() *fakeRepo {
+	repo := newFakeRepo()
+	level := 3
+	priority := true
+	concept := "wcvp-1"
+	fidelity := 49.6
+
+	repo.typologies = []domain.Typology{
+		{ID: "eunis@2021", Scheme: "eunis", Version: "2021"},
+		{ID: "eunis@2012", Scheme: "eunis", Version: "2012"},
+		{ID: "annex1", Scheme: "annex1"},
+	}
+	repo.types = []domain.HabitatType{
+		{Key: queryR22, Level: &level, NameEN: "Low and medium altitude hay meadow"},
+		{Key: queryR99, NameEN: "Lonely type"},
+		{Key: queryLRT, NameEN: "Lowland hay meadows", Priority: &priority},
+		{Key: query212, NameEN: "Hay meadow (2012)"},
+	}
+	repo.crosswalks = []domain.Crosswalk{
+		{From: queryR22, To: queryLRT, Qualifier: domain.QualifierSame},
+		{From: query212, To: queryR22, Qualifier: domain.QualifierNarrower},
+	}
+	repo.syntaxa = []domain.Syntaxon{{ID: "BRO-01A", Rank: "alliance", Name: "Bromion erecti"}}
+	repo.syntaxaLinks = []struct {
+		key        domain.HabitatTypeKey
+		syntaxonID string
+	}{{key: queryR22, syntaxonID: "BRO-01A"}}
+	repo.speciesRoles = []domain.SpeciesRole{
+		{Key: queryR22, ConceptID: &concept, VerbatimName: "Bromus erectus", Role: "diagnostic", Fidelity: &fidelity},
+		{Key: queryR22, VerbatimName: "Unresolvable dubia", Role: "constant"},
+	}
+	repo.localizations = []domain.Localization{{
+		EntityType: "habitat_type", EntityKey: queryR22.String(), Lang: "de", Field: "name",
+		Value: "Magere Flachland-Mähwiese", Source: "derived-annex1", Provenance: "derived",
+	}}
+	return repo
+}
+
+func TestQueryService_HabitatTypeCarriesSpeciesSyntaxaAndCrosswalks(t *testing.T) {
+	q := NewQueryService(seedQueryRepo())
+
+	got, err := q.HabitatType(context.Background(), queryR22, "en")
+	if err != nil {
+		t.Fatalf("HabitatType: %v", err)
+	}
+	if got.NameEN != "Low and medium altitude hay meadow" || got.Level == nil || *got.Level != 3 {
+		t.Errorf("got %+v, want the seeded name and level", got.HabitatTypeSummary)
+	}
+	if got.NameDE != "" || got.NameDEProvenance != "" {
+		t.Errorf("name_de = %q — an English request must not carry the overlay", got.NameDE)
+	}
+	if len(got.Species["diagnostic"]) != 1 || len(got.Species["constant"]) != 1 {
+		t.Errorf("species = %+v, want one diagnostic and one constant entry", got.Species)
+	}
+	if len(got.Species["dominant"]) != 0 {
+		t.Errorf("species[dominant] = %+v, want an empty bucket", got.Species["dominant"])
+	}
+	if got.Species["constant"][0].ConceptID != "" {
+		t.Error("the unresolved species must arrive without a concept id, not with an invented one")
+	}
+	if len(got.Syntaxa) != 1 || got.Syntaxa[0].ID != "BRO-01A" {
+		t.Errorf("syntaxa = %+v, want the linked alliance", got.Syntaxa)
+	}
+	if len(got.Crosswalks) != 2 {
+		t.Fatalf("crosswalks = %+v, want both directions", got.Crosswalks)
+	}
+}
+
+// The stored row eunis@2012:E2.2 -< R22 must read, from R22's side, as R22 being
+// BROADER than E2.2 — otherwise the answer inverts the meaning of the source.
+func TestQueryService_IncomingCrosswalkIsInverted(t *testing.T) {
+	q := NewQueryService(seedQueryRepo())
+
+	got, err := q.HabitatType(context.Background(), queryR22, "en")
+	if err != nil {
+		t.Fatalf("HabitatType: %v", err)
+	}
+	byCode := map[string]input.CrosswalkRef{}
+	for _, c := range got.Crosswalks {
+		byCode[c.Code] = c
+	}
+	if ref := byCode["6510"]; ref.Typology != "annex1" || ref.Qualifier != domain.QualifierSame {
+		t.Errorf("outgoing crosswalk = %+v, want annex1:6510 with '='", ref)
+	}
+	if ref := byCode["E2.2"]; ref.Qualifier != domain.QualifierBroader {
+		t.Errorf("incoming crosswalk = %+v, want the inverted '>' qualifier", ref)
+	}
+}
+
+// Localization is an overlay: name_en stays the identity, name_de is added and
+// says where it came from.
+func TestQueryService_GermanLabelIsAdditiveAndCarriesProvenance(t *testing.T) {
+	q := NewQueryService(seedQueryRepo())
+
+	got, err := q.HabitatType(context.Background(), queryR22, "de")
+	if err != nil {
+		t.Fatalf("HabitatType: %v", err)
+	}
+	if got.NameEN != "Low and medium altitude hay meadow" {
+		t.Errorf("name_en = %q, want the English name kept", got.NameEN)
+	}
+	if got.NameDE != "Magere Flachland-Mähwiese" || got.NameDEProvenance != "derived" {
+		t.Errorf("name_de/provenance = %q/%q, want the derived overlay", got.NameDE, got.NameDEProvenance)
+	}
+}
+
+// An official label outranks a curated one and both outrank a derived one, so
+// the served wording never depends on row order.
+func TestQueryService_PreferredLabelOrdersOfficialCuratedDerived(t *testing.T) {
+	for name, tc := range map[string]struct {
+		provenances []string
+		want        string
+	}{
+		"official wins":            {provenances: []string{"derived", "official", "curated"}, want: "official"},
+		"curated beats derived":    {provenances: []string{"derived", "curated"}, want: "curated"},
+		"derived is served lastly": {provenances: []string{"derived"}, want: "derived"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo := seedQueryRepo()
+			repo.localizations = nil
+			for _, p := range tc.provenances {
+				repo.localizations = append(repo.localizations, domain.Localization{
+					EntityType: "habitat_type", EntityKey: queryR22.String(), Lang: "de", Field: "name",
+					Value: p + " label", Source: p, Provenance: p,
+				})
+			}
+
+			got, err := NewQueryService(repo).HabitatType(context.Background(), queryR22, "de")
+			if err != nil {
+				t.Fatalf("HabitatType: %v", err)
+			}
+			if got.NameDEProvenance != tc.want || got.NameDE != tc.want+" label" {
+				t.Errorf("name_de/provenance = %q/%q, want the %s label", got.NameDE, got.NameDEProvenance, tc.want)
+			}
+		})
+	}
+}
+
+func TestQueryService_NoGermanLabelLeavesTheOverlayEmpty(t *testing.T) {
+	q := NewQueryService(seedQueryRepo())
+
+	got, err := q.HabitatType(context.Background(), queryR99, "de")
+	if err != nil {
+		t.Fatalf("HabitatType: %v", err)
+	}
+	if got.NameDE != "" || got.NameDEProvenance != "" {
+		t.Errorf("name_de/provenance = %q/%q, want both empty when nothing is localized",
+			got.NameDE, got.NameDEProvenance)
+	}
+}
+
+// A type with no crosswalks and no syntaxa is the normal case, not an error, and
+// its lists must be empty rather than nil.
+func TestQueryService_EmptyListsAreEmptyNotNil(t *testing.T) {
+	q := NewQueryService(seedQueryRepo())
+
+	got, err := q.HabitatType(context.Background(), queryR99, "en")
+	if err != nil {
+		t.Fatalf("HabitatType: %v", err)
+	}
+	if got.Crosswalks == nil || len(got.Crosswalks) != 0 {
+		t.Errorf("crosswalks = %+v, want an empty, non-nil slice", got.Crosswalks)
+	}
+	if got.Syntaxa == nil || len(got.Syntaxa) != 0 {
+		t.Errorf("syntaxa = %+v, want an empty, non-nil slice", got.Syntaxa)
+	}
+	for _, role := range []string{input.RoleDiagnostic, input.RoleConstant, input.RoleDominant} {
+		if got.Species[role] == nil {
+			t.Errorf("species[%q] is nil, want an empty bucket", role)
+		}
+	}
+}
+
+func TestQueryService_UnknownTypologyIsDistinctFromUnknownCode(t *testing.T) {
+	q := NewQueryService(seedQueryRepo())
+
+	_, err := q.HabitatType(context.Background(), domain.HabitatTypeKey{Typology: "bogus@1", Code: "R22"}, "en")
+	if !errors.Is(err, input.ErrUnknownTypology) {
+		t.Errorf("unknown typology error = %v, want input.ErrUnknownTypology", err)
+	}
+	if errors.Is(err, input.ErrNotFound) {
+		t.Error("an unknown typology must not also report ErrNotFound — the status codes differ")
+	}
+
+	_, err = q.HabitatType(context.Background(), domain.HabitatTypeKey{Typology: "eunis@2021", Code: "NOPE"}, "en")
+	if !errors.Is(err, input.ErrNotFound) {
+		t.Errorf("unknown code error = %v, want input.ErrNotFound", err)
+	}
+}
+
+func TestQueryService_SpeciesHabitatTypes(t *testing.T) {
+	q := NewQueryService(seedQueryRepo())
+
+	got, err := q.SpeciesHabitatTypes(context.Background(), "wcvp-1", "de")
+	if err != nil {
+		t.Fatalf("SpeciesHabitatTypes: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %+v, want the one habitat type the concept has a role in", got)
+	}
+	if got[0].Role != "diagnostic" || got[0].Code != "R22" {
+		t.Errorf("got %+v, want R22 as diagnostic", got[0])
+	}
+	if got[0].Fidelity == nil || *got[0].Fidelity != 49.6 {
+		t.Errorf("fidelity = %v, want the seeded 49.6", got[0].Fidelity)
+	}
+	if got[0].NameDE == "" {
+		t.Error("name_de missing — lang must reach the species answer too")
+	}
+	if len(got[0].Syntaxa) != 1 {
+		t.Errorf("syntaxa = %+v, want the type's syntaxa", got[0].Syntaxa)
+	}
+}
+
+func TestQueryService_UnknownConceptIsNotFound(t *testing.T) {
+	q := NewQueryService(seedQueryRepo())
+
+	if _, err := q.SpeciesHabitatTypes(context.Background(), "wcvp-nope", "en"); !errors.Is(err, input.ErrNotFound) {
+		t.Errorf("error = %v, want input.ErrNotFound", err)
+	}
+}
+
+// A species role pointing at a habitat type the index does not carry is an
+// inconsistent index. It must be reported, not smoothed over with an empty name
+// and not turned into a 404 for the whole species.
+func TestQueryService_DanglingSpeciesRoleIsReportedAsInconsistency(t *testing.T) {
+	repo := seedQueryRepo()
+	concept := "wcvp-dangling"
+	repo.speciesRoles = append(repo.speciesRoles, domain.SpeciesRole{
+		Key: domain.HabitatTypeKey{Typology: "eunis@2021", Code: "GONE"}, ConceptID: &concept,
+		VerbatimName: "Dangling reference", Role: "diagnostic",
+	})
+
+	_, err := NewQueryService(repo).SpeciesHabitatTypes(context.Background(), concept, "en")
+	if err == nil {
+		t.Fatal("SpeciesHabitatTypes = nil error, want the inconsistency reported")
+	}
+	if errors.Is(err, input.ErrNotFound) {
+		t.Errorf("error = %v, want an internal inconsistency, not a NOT_FOUND for the species", err)
+	}
+}
+
+func TestQueryService_HabitatTypeSpeciesFiltersByRole(t *testing.T) {
+	q := NewQueryService(seedQueryRepo())
+
+	all, err := q.HabitatTypeSpecies(context.Background(), queryR22, "")
+	if err != nil {
+		t.Fatalf("HabitatTypeSpecies(all): %v", err)
+	}
+	if len(all) != 2 {
+		t.Errorf("got %+v, want every species when no role is given", all)
+	}
+
+	diagnostic, err := q.HabitatTypeSpecies(context.Background(), queryR22, "diagnostic")
+	if err != nil {
+		t.Fatalf("HabitatTypeSpecies(diagnostic): %v", err)
+	}
+	if len(diagnostic) != 1 || diagnostic[0].VerbatimName != "Bromus erectus" {
+		t.Errorf("got %+v, want only the diagnostic species", diagnostic)
+	}
+
+	none, err := q.HabitatTypeSpecies(context.Background(), queryR99, "")
+	if err != nil {
+		t.Fatalf("HabitatTypeSpecies(R99): %v", err)
+	}
+	if none == nil || len(none) != 0 {
+		t.Errorf("got %+v, want an empty, non-nil slice", none)
+	}
+}
+
+func TestQueryService_HabitatTypeSpeciesRejectsUnknownTypologyAndCode(t *testing.T) {
+	q := NewQueryService(seedQueryRepo())
+
+	_, err := q.HabitatTypeSpecies(context.Background(), domain.HabitatTypeKey{Typology: "bogus@1", Code: "R22"}, "")
+	if !errors.Is(err, input.ErrUnknownTypology) {
+		t.Errorf("error = %v, want input.ErrUnknownTypology", err)
+	}
+	_, err = q.HabitatTypeSpecies(context.Background(), domain.HabitatTypeKey{Typology: "eunis@2021", Code: "NOPE"}, "")
+	if !errors.Is(err, input.ErrNotFound) {
+		t.Errorf("error = %v, want input.ErrNotFound", err)
+	}
+}
+
+func TestQueryService_SyntaxonHabitatTypes(t *testing.T) {
+	q := NewQueryService(seedQueryRepo())
+
+	got, err := q.SyntaxonHabitatTypes(context.Background(), "BRO-01A", "de")
+	if err != nil {
+		t.Fatalf("SyntaxonHabitatTypes: %v", err)
+	}
+	if len(got) != 1 || got[0].Code != "R22" {
+		t.Fatalf("got %+v, want the single linked type", got)
+	}
+	if got[0].NameEN == "" || got[0].NameDE == "" {
+		t.Errorf("got %+v, want both the English identity and the German overlay", got[0])
+	}
+
+	if _, err := q.SyntaxonHabitatTypes(context.Background(), "NOPE", "en"); !errors.Is(err, input.ErrNotFound) {
+		t.Errorf("unknown syntaxon error = %v, want input.ErrNotFound", err)
+	}
+}
+
+// A syntaxon that exists but is linked to nothing answers with an empty list —
+// that is different from not existing at all.
+func TestQueryService_SyntaxonWithoutLinksIsAnEmptyList(t *testing.T) {
+	repo := seedQueryRepo()
+	repo.syntaxa = append(repo.syntaxa, domain.Syntaxon{ID: "UNLINKED", Rank: "order", Name: "Nothing links here"})
+
+	got, err := NewQueryService(repo).SyntaxonHabitatTypes(context.Background(), "UNLINKED", "en")
+	if err != nil {
+		t.Fatalf("SyntaxonHabitatTypes: %v", err)
+	}
+	if got == nil || len(got) != 0 {
+		t.Errorf("got %+v, want an empty, non-nil list", got)
+	}
+}
+
+func TestQueryService_SyntaxonLinkedToUnknownTypeIsReportedAsInconsistency(t *testing.T) {
+	repo := seedQueryRepo()
+	repo.syntaxaLinks = append(repo.syntaxaLinks, struct {
+		key        domain.HabitatTypeKey
+		syntaxonID string
+	}{key: domain.HabitatTypeKey{Typology: "eunis@2021", Code: "GONE"}, syntaxonID: "BRO-01A"})
+
+	_, err := NewQueryService(repo).SyntaxonHabitatTypes(context.Background(), "BRO-01A", "en")
+	if err == nil {
+		t.Fatal("SyntaxonHabitatTypes = nil error, want the inconsistency reported")
+	}
+	if errors.Is(err, input.ErrNotFound) {
+		t.Errorf("error = %v, want an internal inconsistency, not a NOT_FOUND", err)
+	}
+}
+
+// Every repository failure must surface, never be answered with a partial result.
+func TestQueryService_RepositoryFailuresSurface(t *testing.T) {
+	boom := errors.New("boom")
+	ctx := context.Background()
+
+	cases := map[string]struct {
+		arrange func(r *fakeRepo)
+		call    func(q *QueryService) error
+	}{
+		"Typology fails": {
+			arrange: func(r *fakeRepo) { r.typologyErr = boom },
+			call:    func(q *QueryService) error { _, err := q.HabitatType(ctx, queryR22, "en"); return err },
+		},
+		"HabitatType fails": {
+			arrange: func(r *fakeRepo) { r.habitatTypeErr = boom },
+			call:    func(q *QueryService) error { _, err := q.HabitatType(ctx, queryR22, "en"); return err },
+		},
+		"SpeciesRoles fails": {
+			arrange: func(r *fakeRepo) { r.speciesRolesErr = boom },
+			call:    func(q *QueryService) error { _, err := q.HabitatType(ctx, queryR22, "en"); return err },
+		},
+		"Syntaxa fails": {
+			arrange: func(r *fakeRepo) { r.syntaxaErr = boom },
+			call:    func(q *QueryService) error { _, err := q.HabitatType(ctx, queryR22, "en"); return err },
+		},
+		"Crosswalks fails": {
+			arrange: func(r *fakeRepo) { r.crosswalksErr = boom },
+			call:    func(q *QueryService) error { _, err := q.HabitatType(ctx, queryR22, "en"); return err },
+		},
+		"Localization fails": {
+			arrange: func(r *fakeRepo) { r.localizationErr = boom },
+			call:    func(q *QueryService) error { _, err := q.HabitatType(ctx, queryR22, "de"); return err },
+		},
+		"SpeciesRolesByConcept fails": {
+			arrange: func(r *fakeRepo) { r.speciesRolesErr = boom },
+			call:    func(q *QueryService) error { _, err := q.SpeciesHabitatTypes(ctx, "wcvp-1", "en"); return err },
+		},
+		"Syntaxa fails on the species path": {
+			arrange: func(r *fakeRepo) { r.syntaxaErr = boom },
+			call:    func(q *QueryService) error { _, err := q.SpeciesHabitatTypes(ctx, "wcvp-1", "en"); return err },
+		},
+		"Localization fails on the species path": {
+			arrange: func(r *fakeRepo) { r.localizationErr = boom },
+			call:    func(q *QueryService) error { _, err := q.SpeciesHabitatTypes(ctx, "wcvp-1", "de"); return err },
+		},
+		"Localization fails on the syntaxon path": {
+			arrange: func(r *fakeRepo) { r.localizationErr = boom },
+			call:    func(q *QueryService) error { _, err := q.SyntaxonHabitatTypes(ctx, "BRO-01A", "de"); return err },
+		},
+		"Syntaxon fails": {
+			arrange: func(r *fakeRepo) { r.syntaxonErr = boom },
+			call:    func(q *QueryService) error { _, err := q.SyntaxonHabitatTypes(ctx, "BRO-01A", "en"); return err },
+		},
+		"keys for syntaxon fail": {
+			arrange: func(r *fakeRepo) { r.syntaxonKeysErr = boom },
+			call:    func(q *QueryService) error { _, err := q.SyntaxonHabitatTypes(ctx, "BRO-01A", "en"); return err },
+		},
+		"HabitatType fails on the species-list path": {
+			arrange: func(r *fakeRepo) { r.habitatTypeErr = boom },
+			call:    func(q *QueryService) error { _, err := q.HabitatTypeSpecies(ctx, queryR22, ""); return err },
+		},
+		"SpeciesRoles fails on the species-list path": {
+			arrange: func(r *fakeRepo) { r.speciesRolesErr = boom },
+			call:    func(q *QueryService) error { _, err := q.HabitatTypeSpecies(ctx, queryR22, ""); return err },
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			repo := seedQueryRepo()
+			tc.arrange(repo)
+
+			err := tc.call(NewQueryService(repo))
+			if !errors.Is(err, boom) {
+				t.Errorf("error = %v, want it to wrap the repository failure", err)
+			}
+		})
+	}
+}
+
+func TestNameQueryService_KeepsUnresolvableNames(t *testing.T) {
+	repo := seedQueryRepo()
+	resolver := fakeResolver{"Bromus erectus": "wcvp-1"}
+	svc := NewNameQueryService(NewQueryService(repo), resolver)
+
+	got, err := svc.SpeciesHabitatTypesByName(context.Background(),
+		[]string{"Bromus erectus", "Nonexistens dubia"}, "en")
+	if err != nil {
+		t.Fatalf("SpeciesHabitatTypesByName: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d entries, want one per input name", len(got))
+	}
+	if !got[0].Resolved || got[0].ConceptID != "wcvp-1" || len(got[0].HabitatTypes) != 1 {
+		t.Errorf("got[0] = %+v, want the resolved name with its habitat types", got[0])
+	}
+	if got[1].Resolved || got[1].Verbatim != "Nonexistens dubia" {
+		t.Errorf("got[1] = %+v, want the unresolved name kept and marked", got[1])
+	}
+	if got[1].HabitatTypes == nil || len(got[1].HabitatTypes) != 0 {
+		t.Errorf("got[1].HabitatTypes = %+v, want an empty, non-nil list", got[1].HabitatTypes)
+	}
+}
+
+// A name hostus resolves but the index has no facts about is a normal answer:
+// resolved, no habitat types — not a 404 and not a failed batch.
+func TestNameQueryService_ResolvedButUnknownConceptIsAnEmptyList(t *testing.T) {
+	svc := NewNameQueryService(NewQueryService(seedQueryRepo()),
+		fakeResolver{"Ginkgo biloba": "wcvp-ginkgo"})
+
+	got, err := svc.SpeciesHabitatTypesByName(context.Background(), []string{"Ginkgo biloba"}, "en")
+	if err != nil {
+		t.Fatalf("SpeciesHabitatTypesByName: %v", err)
+	}
+	if len(got) != 1 || !got[0].Resolved || len(got[0].HabitatTypes) != 0 {
+		t.Errorf("got %+v, want the resolved name with an empty habitat-type list", got)
+	}
+}
+
+func TestNameQueryService_UpstreamFailureIsMarkedAsSuch(t *testing.T) {
+	cause := errors.New("connection refused")
+	svc := NewNameQueryService(NewQueryService(seedQueryRepo()), failingResolver{err: cause})
+
+	_, err := svc.SpeciesHabitatTypesByName(context.Background(), []string{"Bromus erectus"}, "en")
+	if !errors.Is(err, input.ErrUpstreamUnavailable) {
+		t.Errorf("error = %v, want input.ErrUpstreamUnavailable", err)
+	}
+	// The classification must not swallow the cause — an operator needs to see
+	// what actually failed.
+	if !errors.Is(err, cause) {
+		t.Errorf("error = %v, want the resolver's cause still reachable", err)
+	}
+}
+
+func TestNameQueryService_IndexFailureIsNotMistakenForAnUpstreamFailure(t *testing.T) {
+	repo := seedQueryRepo()
+	boom := errors.New("boom")
+	repo.speciesRolesErr = boom
+	svc := NewNameQueryService(NewQueryService(repo), fakeResolver{"Bromus erectus": "wcvp-1"})
+
+	_, err := svc.SpeciesHabitatTypesByName(context.Background(), []string{"Bromus erectus"}, "en")
+	if !errors.Is(err, boom) {
+		t.Errorf("error = %v, want the index failure", err)
+	}
+	if errors.Is(err, input.ErrUpstreamUnavailable) {
+		t.Error("an index failure must not be reported as hostus being unavailable")
+	}
+}
+
+// failingResolver fails with a caller-supplied cause, so a test can assert the
+// cause stays reachable through the classification.
+type failingResolver struct{ err error }
+
+func (f failingResolver) Resolve(context.Context, []string) (map[string]string, error) {
+	return nil, f.err
+}
+
+// The read side of fakeRepo. It is deliberately a naive scan over the seeded
+// slices: a query test must not depend on a second implementation of the
+// filtering it is checking.
+
+func (r *fakeRepo) Typology(_ context.Context, id domain.TypologyID) (domain.Typology, error) {
+	if r.typologyErr != nil {
+		return domain.Typology{}, r.typologyErr
+	}
+	for _, t := range r.typologies {
+		if t.ID == id {
+			return t, nil
+		}
+	}
+	return domain.Typology{}, fmt.Errorf("fakeRepo: typology %s: %w", id, output.ErrNotFound)
+}
+
+func (r *fakeRepo) Crosswalks(_ context.Context, key domain.HabitatTypeKey) ([]domain.Crosswalk, error) {
+	if r.crosswalksErr != nil {
+		return nil, r.crosswalksErr
+	}
+	out := []domain.Crosswalk{}
+	for _, c := range r.crosswalks {
+		if c.From == key || c.To == key {
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
+func (r *fakeRepo) SpeciesRoles(_ context.Context, key domain.HabitatTypeKey, role string) ([]domain.SpeciesRole, error) {
+	if r.speciesRolesErr != nil {
+		return nil, r.speciesRolesErr
+	}
+	out := []domain.SpeciesRole{}
+	for _, s := range r.speciesRoles {
+		if s.Key == key && (role == "" || s.Role == role) {
+			out = append(out, s)
+		}
+	}
+	return out, nil
+}
+
+func (r *fakeRepo) SpeciesRolesByConcept(_ context.Context, conceptID string) ([]domain.SpeciesRole, error) {
+	if r.speciesRolesErr != nil {
+		return nil, r.speciesRolesErr
+	}
+	out := []domain.SpeciesRole{}
+	for _, s := range r.speciesRoles {
+		if s.ConceptID != nil && *s.ConceptID == conceptID {
+			out = append(out, s)
+		}
+	}
+	return out, nil
+}
+
+func (r *fakeRepo) Syntaxon(_ context.Context, id string) (domain.Syntaxon, error) {
+	if r.syntaxonErr != nil {
+		return domain.Syntaxon{}, r.syntaxonErr
+	}
+	for _, s := range r.syntaxa {
+		if s.ID == id {
+			return s, nil
+		}
+	}
+	return domain.Syntaxon{}, fmt.Errorf("fakeRepo: syntaxon %q: %w", id, output.ErrNotFound)
+}
+
+func (r *fakeRepo) Syntaxa(_ context.Context, key domain.HabitatTypeKey) ([]domain.Syntaxon, error) {
+	if r.syntaxaErr != nil {
+		return nil, r.syntaxaErr
+	}
+	out := []domain.Syntaxon{}
+	for _, link := range r.syntaxaLinks {
+		if link.key != key {
+			continue
+		}
+		for _, s := range r.syntaxa {
+			if s.ID == link.syntaxonID {
+				out = append(out, s)
+			}
+		}
+	}
+	return out, nil
+}
+
+func (r *fakeRepo) HabitatTypeKeysForSyntaxon(_ context.Context, syntaxonID string) ([]domain.HabitatTypeKey, error) {
+	if r.syntaxonKeysErr != nil {
+		return nil, r.syntaxonKeysErr
+	}
+	out := []domain.HabitatTypeKey{}
+	for _, link := range r.syntaxaLinks {
+		if link.syntaxonID == syntaxonID {
+			out = append(out, link.key)
+		}
+	}
+	return out, nil
+}

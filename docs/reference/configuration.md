@@ -12,7 +12,10 @@ Defaults.
 | `server.shutdown_timeout` | `SITUS_SERVER_SHUTDOWN_TIMEOUT` | `15s` | Frist für den geordneten Stop |
 | `logging.level` | `SITUS_LOGGING_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `logging.format` | `SITUS_LOGGING_FORMAT` | `json` | `json` oder `text` |
-| `hostus.base_url` | `SITUS_HOSTUS_BASE_URL` | `http://localhost:8081` | Basis-URL des hostus-Namensauflösers (`POST /v1/match`); wird nur beim `ingest` der `species_roles.csv` aufgerufen, nie zur Laufzeit |
+| `index.path` | `SITUS_INDEX_PATH` | `situs.sqlite` | Pfad des lokalen SQLite-Index, aus dem die Lese-API antwortet (erzeugt von `situs ingest --db`) |
+| `hostus.base_url` | `SITUS_HOSTUS_BASE_URL` | `http://localhost:8081` | Basis-URL des hostus-Namensauflösers (`POST /v1/match`); beim `ingest` der `species_roles.csv` und zur Laufzeit ausschließlich für `POST /v1/species/habitat-types` (verbatim Namen) |
 | `hostus.timeout` | `SITUS_HOSTUS_TIMEOUT` | `30s` | Timeout des hostus-HTTP-Clients |
 
-Weitere Schlüssel (Index-Pfad) kommen mit den Tasks, die sie brauchen.
+Abfragen über Konzept-IDs sind autark: sie brauchen hostus nicht. Nur der
+Batch-Endpunkt für verbatim Namen ruft hostus zur Laufzeit auf und antwortet mit
+`UPSTREAM_UNAVAILABLE`, wenn er nicht erreichbar ist.

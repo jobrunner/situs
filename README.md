@@ -33,8 +33,8 @@ zu normalisieren; zur Laufzeit ist situs für Abfragen per Konzept-ID autark.
 
 ## Stand
 
-Im Aufbau. Das Gerüst steht (Go 1.26, hexagonal, Qualitäts-Gates, CI); die
-Fachlogik — Ingest und Lese-API — folgt Task für Task.
+Im Aufbau. Das Gerüst steht (Go 1.26, hexagonal, Qualitäts-Gates, CI); Ingest
+und Lese-API des Fundaments sind implementiert.
 
 ```bash
 make verify      # fmt-check, vet, lint, test, arch, debt, build
@@ -42,9 +42,20 @@ make build       # ./situs
 ./situs serve    # HTTP auf 127.0.0.1:8080
 ```
 
-Erreichbar sind heute `GET /health/live`, `GET /health/ready`, `GET /metrics`,
-`GET /openapi` und `GET /v1/info`. Die Lese-Endpunkte unter `/v1` kommen mit
-Task 8 des Plans.
+Erreichbar sind `GET /health/live`, `GET /health/ready`, `GET /metrics`,
+`GET /openapi`, `GET /v1/info` und die Lese-Endpunkte:
+
+```bash
+./situs ingest --csv-dir pipelines/eunis/out --db /tmp/situs.sqlite
+SITUS_INDEX_PATH=/tmp/situs.sqlite ./situs serve
+
+curl -s 'localhost:8080/v1/habitat-type/eunis@2021/R22?lang=de'
+curl -s 'localhost:8080/v1/habitat-type/annex1/6510'
+curl -s 'localhost:8080/v1/species/<conceptId>/habitat-types'
+curl -s 'localhost:8080/v1/syntaxon/<syntaxonId>/habitat-types'
+```
+
+Details in `docs/reference/http-api.md`.
 
 Fundament-Spec und Implementierungsplan liegen unter `docs/`:
 

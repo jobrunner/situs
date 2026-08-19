@@ -22,7 +22,7 @@ func serve(t *testing.T, srv *httpapi.Server, method, target string) *httptest.R
 
 func TestInfoReportsServiceNameAndVersion(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
-	srv := httpapi.NewServer(":0", stubHealth{ready: true}, logger, httpapi.Options{Version: "1.2.3"})
+	srv := httpapi.NewServer(":0", testDeps(stubHealth{ready: true}), logger, httpapi.Options{Version: "1.2.3"})
 
 	rec := serve(t, srv, http.MethodGet, "/v1/info")
 
@@ -46,7 +46,7 @@ func TestInfoReportsServiceNameAndVersion(t *testing.T) {
 
 func TestLivenessIsIndependentOfReadiness(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
-	srv := httpapi.NewServer(":0", stubHealth{ready: false}, logger, httpapi.Options{})
+	srv := httpapi.NewServer(":0", testDeps(stubHealth{ready: false}), logger, httpapi.Options{})
 
 	if rec := serve(t, srv, http.MethodGet, "/health/live"); rec.Code != http.StatusOK {
 		t.Errorf("GET /health/live status = %d, want 200 even while not ready", rec.Code)
@@ -64,7 +64,7 @@ func TestReadinessFollowsTheHealthPort(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
-			srv := httpapi.NewServer(":0", stubHealth{ready: tc.ready}, logger, httpapi.Options{})
+			srv := httpapi.NewServer(":0", testDeps(stubHealth{ready: tc.ready}), logger, httpapi.Options{})
 
 			if rec := serve(t, srv, http.MethodGet, "/health/ready"); rec.Code != tc.want {
 				t.Errorf("GET /health/ready status = %d, want %d", rec.Code, tc.want)
@@ -74,7 +74,7 @@ func TestReadinessFollowsTheHealthPort(t *testing.T) {
 }
 
 func TestOpenAPIEndpointServesTheEmbeddedSpec(t *testing.T) {
-	rec := serve(t, newTestServer(t), http.MethodGet, "/openapi")
+	rec := serve(t, newTestServer(t, seededQueryService()), http.MethodGet, "/openapi")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -88,7 +88,7 @@ func TestOpenAPIEndpointServesTheEmbeddedSpec(t *testing.T) {
 }
 
 func TestMetricsEndpointServesPrometheusText(t *testing.T) {
-	rec := serve(t, newTestServer(t), http.MethodGet, "/metrics")
+	rec := serve(t, newTestServer(t, seededQueryService()), http.MethodGet, "/metrics")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -99,19 +99,19 @@ func TestMetricsEndpointServesPrometheusText(t *testing.T) {
 }
 
 func TestUnknownPathIsNotFound(t *testing.T) {
-	if rec := serve(t, newTestServer(t), http.MethodGet, "/v1/nope"); rec.Code != http.StatusNotFound {
+	if rec := serve(t, newTestServer(t, seededQueryService()), http.MethodGet, "/v1/nope"); rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", rec.Code)
 	}
 }
 
 func TestWrongMethodIsMethodNotAllowed(t *testing.T) {
-	if rec := serve(t, newTestServer(t), http.MethodPost, "/v1/info"); rec.Code != http.StatusMethodNotAllowed {
+	if rec := serve(t, newTestServer(t, seededQueryService()), http.MethodPost, "/v1/info"); rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("status = %d, want 405", rec.Code)
 	}
 }
 
 func TestShutdownStopsAServerThatWasNeverStarted(t *testing.T) {
-	if err := newTestServer(t).Shutdown(context.Background()); err != nil {
+	if err := newTestServer(t, seededQueryService()).Shutdown(context.Background()); err != nil {
 		t.Errorf("Shutdown() = %v, want no error", err)
 	}
 }

@@ -11,9 +11,9 @@ import (
 	"testing"
 )
 
-// stub_driver_test.go provides a minimal database/sql/driver double so
-// CrosswalksTo's and Localization's rows.Err()/Scan error returns can be
-// exercised deterministically, without racing a context cancellation against
+// stub_driver_test.go provides a minimal database/sql/driver double so the
+// read side's rows.Err()/Scan error returns can be exercised
+// deterministically, without racing a context cancellation against
 // row iteration timing (which is not reproducible run to run — see the git
 // history of write_test.go for the test this replaced).
 
@@ -30,7 +30,7 @@ const (
 
 // newStubDB builds a *sql.DB backed by the stub driver — no schema, no file,
 // just enough of the driver.Conn/driver.Rows contract for one QueryContext
-// call to CrosswalksTo or Localization.
+// call from any of the list reads.
 func newStubDB(t *testing.T, mode stubMode) *sql.DB {
 	t.Helper()
 	db := sql.OpenDB(&stubConnector{mode: mode})
@@ -64,14 +64,24 @@ func (c *stubConn) Begin() (driver.Tx, error) {
 }
 
 // QueryContext picks the column set by matching the table name in the query
-// text — CrosswalksTo and Localization each query exactly one table, so this
-// is enough to serve both without needing a real SQL engine.
+// text — every list read queries one table (or one join), so this is enough to
+// serve them all without needing a real SQL engine.
 func (c *stubConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
 	switch {
 	case strings.Contains(query, "habitat_type_crosswalk"):
 		return &stubRows{cols: []string{"from_typology", "from_code", "to_typology", "to_code", "qualifier"}, mode: c.mode}, nil
 	case strings.Contains(query, "FROM localization"):
 		return &stubRows{cols: []string{"value", "source", "provenance", "derived_from"}, mode: c.mode}, nil
+	case strings.Contains(query, "FROM species_role WHERE concept_id"):
+		return &stubRows{cols: []string{
+			"typology_id", "code", "concept_id", "verbatim_name", "role", "fidelity", "constancy",
+		}, mode: c.mode}, nil
+	case strings.Contains(query, "FROM species_role"):
+		return &stubRows{cols: []string{"concept_id", "verbatim_name", "role", "fidelity", "constancy"}, mode: c.mode}, nil
+	case strings.Contains(query, "JOIN syntaxon"):
+		return &stubRows{cols: []string{"id", "rank", "name", "parent_id"}, mode: c.mode}, nil
+	case strings.Contains(query, "FROM habitat_type_syntaxon"):
+		return &stubRows{cols: []string{"typology_id", "code"}, mode: c.mode}, nil
 	default:
 		return nil, fmt.Errorf("stub: unexpected query %q", query)
 	}

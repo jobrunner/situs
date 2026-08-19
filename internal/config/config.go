@@ -21,6 +21,13 @@ type Config struct {
 	Server  ServerConfig  `mapstructure:"server"`
 	Logging LoggingConfig `mapstructure:"logging"`
 	Hostus  HostusConfig  `mapstructure:"hostus"`
+	Index   IndexConfig   `mapstructure:"index"`
+}
+
+// IndexConfig points at the local SQLite index the read API serves from. It is
+// produced by `situs ingest` and opened read-mostly at serve time.
+type IndexConfig struct {
+	Path string `mapstructure:"path"`
 }
 
 // ServerConfig configures the HTTP listener.
@@ -58,6 +65,8 @@ func Defaults(v *viper.Viper) {
 
 	v.SetDefault("logging.level", "info")
 	v.SetDefault("logging.format", "json")
+
+	v.SetDefault("index.path", "situs.sqlite")
 
 	v.SetDefault("hostus.base_url", "http://localhost:8081")
 	v.SetDefault("hostus.timeout", 30*time.Second)

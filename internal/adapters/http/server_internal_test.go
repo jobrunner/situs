@@ -21,7 +21,7 @@ func quietLogger() *slog.Logger {
 // The config key server.read_timeout must reach the listener; a configured
 // timeout that never leaves the config struct is a knob that lies.
 func TestReadTimeoutFromOptionsReachesTheHTTPServer(t *testing.T) {
-	s := NewServer(":0", stubReady{}, quietLogger(), Options{ReadTimeout: 7 * time.Second})
+	s := NewServer(":0", Deps{Health: stubReady{}}, quietLogger(), Options{ReadTimeout: 7 * time.Second})
 
 	if s.server.ReadTimeout != 7*time.Second {
 		t.Errorf("http.Server.ReadTimeout = %v, want the configured 7s", s.server.ReadTimeout)
@@ -34,7 +34,7 @@ func TestReadTimeoutFromOptionsReachesTheHTTPServer(t *testing.T) {
 // The error envelope is a cross-cutting invariant: every handler in every later
 // task returns this shape, and the recovery middleware is its first producer.
 func TestRecoveryMiddlewareAnswersWithTheErrorEnvelope(t *testing.T) {
-	s := NewServer(":0", stubReady{}, quietLogger(), Options{})
+	s := NewServer(":0", Deps{Health: stubReady{}}, quietLogger(), Options{})
 
 	router := s.Router()
 	router.HandleFunc("/v1/panic", func(http.ResponseWriter, *http.Request) {

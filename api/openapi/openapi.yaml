@@ -1,10 +1,7 @@
 # situs OpenAPI specification — the HTTP contract.
 #
 # Every path/method here must have a matching registered route and vice versa:
-# TestRoutesMatchOpenAPISpec fails otherwise, in both directions. The read API
-# (species -> habitat types, habitat type -> species/syntaxa/crosswalks) is added
-# in Task 8; what is documented here is the operations surface plus the build
-# info endpoint.
+# TestRoutesMatchOpenAPISpec fails otherwise, in both directions.
 #
 # This file is embedded into the binary and served at GET /openapi. It must stay
 # byte-identical to api/openapi/openapi.yaml (TestOpenAPICopiesAreIdentical).
@@ -77,8 +74,313 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Info"
+  /v1/habitat-type/{typology}/{code}:
+    get:
+      summary: Ein Habitattyp mit Arten, Syntaxa und Crosswalks
+      description: >-
+        Dieselbe Route trägt EUNIS und Anhang I — ein Habitattyp wird immer über
+        (typology, code) adressiert. Die Crosswalk-Liste trägt beides: andere
+        EUNIS-Fassungen und Anhang-I-Entsprechungen. Sie ist leer, wenn es keine
+        gibt; bei Anhang I ist das der Normalfall.
+      operationId: habitatType
+      parameters:
+        - $ref: "#/components/parameters/Typology"
+        - $ref: "#/components/parameters/Code"
+        - $ref: "#/components/parameters/Lang"
+      responses:
+        "200":
+          description: Der Habitattyp.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HabitatTypeDetail"
+        "400":
+          $ref: "#/components/responses/InvalidQuery"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/habitat-type/{typology}/{code}/species:
+    get:
+      summary: Artenliste eines Habitattyps, optional nach Rolle gefiltert
+      operationId: habitatTypeSpecies
+      parameters:
+        - $ref: "#/components/parameters/Typology"
+        - $ref: "#/components/parameters/Code"
+        - name: role
+          in: query
+          required: false
+          description: Filtert auf eine Rolle; ohne Angabe werden alle geliefert.
+          schema:
+            $ref: "#/components/schemas/Role"
+      responses:
+        "200":
+          description: Die Arten des Habitattyps.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SpeciesEntry"
+        "400":
+          $ref: "#/components/responses/InvalidQuery"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/species/{conceptId}/habitat-types:
+    get:
+      summary: Habitattypen einer Art (mit Rolle)
+      description: >-
+        Die Kernfrage der Exkursions-App. Autark: eine Konzept-ID braucht keinen
+        Upstream-Dienst.
+      operationId: speciesHabitatTypes
+      parameters:
+        - name: conceptId
+          in: path
+          required: true
+          description: Konzept-ID aus hostus.
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Lang"
+      responses:
+        "200":
+          description: Die Habitattypen samt Rolle der Art.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HabitatTypeRole"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/species/habitat-types:
+    post:
+      summary: Habitattypen zu verbatim Artnamen (Batch)
+      description: >-
+        Der einzige Lesepfad, der nicht autark ist: die Namen werden über hostus
+        auf Konzepte aufgelöst, dann wird der lokale Index befragt. Ein nicht
+        auflösbarer Name wird mit resolved=false zurückgemeldet, nie verworfen.
+      operationId: speciesHabitatTypesByName
+      parameters:
+        - $ref: "#/components/parameters/Lang"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [names]
+              properties:
+                names:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: Je Eingabename die Auflösung und die Habitattypen.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NameResolution"
+        "400":
+          $ref: "#/components/responses/InvalidQuery"
+        "502":
+          description: hostus ist nicht erreichbar (UPSTREAM_UNAVAILABLE).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/syntaxon/{id}/habitat-types:
+    get:
+      summary: Habitattypen einer Pflanzengesellschaft
+      description: >-
+        Zeigt das m:n — dieselbe Gesellschaft kann in mehreren Habitattypen
+        vorkommen.
+      operationId: syntaxonHabitatTypes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Lang"
+      responses:
+        "200":
+          description: Die verknüpften Habitattypen.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HabitatTypeSummary"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
+  parameters:
+    Typology:
+      name: typology
+      in: path
+      required: true
+      description: >-
+        Typologie in ihrer Fassung. Wird sie weggelassen, gilt eunis@2021. Eine
+        unbekannte Typologie ist INVALID_QUERY, kein NOT_FOUND.
+      schema:
+        type: string
+        example: eunis@2021
+    Code:
+      name: code
+      in: path
+      required: true
+      description: Code des Habitattyps innerhalb der Typologie.
+      schema:
+        type: string
+        example: R22
+    Lang:
+      name: lang
+      in: query
+      required: false
+      description: >-
+        Antwortsprache, alternativ per Accept-Language. Lokalisierte Felder
+        kommen additiv hinzu — name_en bleibt immer gesetzt. Default ist en.
+      schema:
+        type: string
+        enum: [en, de]
+  responses:
+    InvalidQuery:
+      description: Die Anfrage ist fehlerhaft (INVALID_QUERY).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Es gibt keinen solchen Eintrag (NOT_FOUND).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
+    Role:
+      type: string
+      enum: [diagnostic, constant, dominant]
+    # Fehlende Angaben sind abwesende Felder, nie ein Platzhalter oder eine
+    # substituierte Null: level fehlt bei Typologien ohne Hierarchie, priority
+    # gibt es nur bei annex1, name_de nur wenn ein Label existiert.
+    HabitatTypeSummary:
+      type: object
+      required: [typology, code, name_en]
+      properties:
+        typology:
+          type: string
+          example: eunis@2021
+        code:
+          type: string
+          example: R22
+        level:
+          type: integer
+        name_en:
+          type: string
+        name_de:
+          type: string
+        name_de_provenance:
+          type: string
+          enum: [official, curated, derived]
+        priority:
+          type: boolean
+    SyntaxonRef:
+      type: object
+      required: [id, rank, name]
+      properties:
+        id:
+          type: string
+        rank:
+          type: string
+          enum: [class, order, alliance]
+        name:
+          type: string
+    CrosswalkRef:
+      description: >-
+        Die Gegenseite einer Entsprechung, gesehen vom abgefragten Typ. Der
+        Qualifier liest sich immer als "abgefragter Typ <qualifier> dieser Typ".
+      type: object
+      required: [typology, code, qualifier]
+      properties:
+        typology:
+          type: string
+        code:
+          type: string
+        qualifier:
+          type: string
+          example: "="
+    SpeciesEntry:
+      description: >-
+        verbatim_name ist immer gesetzt; concept_id fehlt, wenn der Name nicht
+        auf ein hostus-Konzept auflösbar war — solche Zeilen werden behalten.
+      type: object
+      required: [verbatim_name, role]
+      properties:
+        concept_id:
+          type: string
+        verbatim_name:
+          type: string
+        role:
+          $ref: "#/components/schemas/Role"
+        fidelity:
+          type: number
+        constancy:
+          type: number
+    HabitatTypeDetail:
+      allOf:
+        - $ref: "#/components/schemas/HabitatTypeSummary"
+        - type: object
+          required: [species, syntaxa, crosswalks]
+          properties:
+            species:
+              description: >-
+                Nach Rolle gruppiert; die drei bekannten Rollen sind immer
+                vorhanden, ggf. als leere Liste.
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SpeciesEntry"
+            syntaxa:
+              type: array
+              items:
+                $ref: "#/components/schemas/SyntaxonRef"
+            crosswalks:
+              type: array
+              items:
+                $ref: "#/components/schemas/CrosswalkRef"
+    HabitatTypeRole:
+      allOf:
+        - $ref: "#/components/schemas/HabitatTypeSummary"
+        - type: object
+          required: [role, syntaxa]
+          properties:
+            role:
+              $ref: "#/components/schemas/Role"
+            fidelity:
+              type: number
+            constancy:
+              type: number
+            syntaxa:
+              type: array
+              items:
+                $ref: "#/components/schemas/SyntaxonRef"
+    NameResolution:
+      type: object
+      required: [verbatim, resolved, habitat_types]
+      properties:
+        verbatim:
+          type: string
+        concept_id:
+          type: string
+        resolved:
+          type: boolean
+        habitat_types:
+          type: array
+          items:
+            $ref: "#/components/schemas/HabitatTypeRole"
     Info:
       type: object
       required: [service, version]

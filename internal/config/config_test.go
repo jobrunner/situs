@@ -29,6 +29,21 @@ func TestLoadUsesTheDefaultsWithoutFileOrEnvironment(t *testing.T) {
 	if cfg.Hostus.Timeout != 30*time.Second {
 		t.Errorf("hostus.timeout = %v, want 30s", cfg.Hostus.Timeout)
 	}
+	if cfg.Index.Path != "situs.sqlite" {
+		t.Errorf("index.path = %q, want the default", cfg.Index.Path)
+	}
+}
+
+func TestLoadReadsTheIndexPathFromTheEnvironment(t *testing.T) {
+	t.Setenv("SITUS_INDEX_PATH", "/srv/situs/index.sqlite")
+
+	cfg, err := config.Load("")
+	if err != nil {
+		t.Fatalf("Load(\"\") = %v, want no error", err)
+	}
+	if cfg.Index.Path != "/srv/situs/index.sqlite" {
+		t.Errorf("index.path = %q, want the value of SITUS_INDEX_PATH", cfg.Index.Path)
+	}
 }
 
 func TestLoadReadsTheHostusBaseURLFromTheEnvironment(t *testing.T) {
