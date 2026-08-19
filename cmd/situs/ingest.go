@@ -40,6 +40,8 @@ type ingestOutput struct {
 	application.IngestReport
 	Species        application.SpeciesReport
 	ResolutionRate float64
+	Localizations  int
+	DerivedLabels  int
 }
 
 func runIngest(cmd *cobra.Command, csvDir, dbPath string) error {
@@ -70,10 +72,24 @@ func runIngest(cmd *cobra.Command, csvDir, dbPath string) error {
 		return fmt.Errorf("ingesting species roles from %q: %w", csvDir, err)
 	}
 
+	localizations, err := application.IngestLocalizations(ctx, db, filepath.Join(csvDir, "localizations.csv"))
+	if err != nil {
+		return fmt.Errorf("ingesting localizations from %q: %w", csvDir, err)
+	}
+
+	// Derivation runs last: it depends on both the crosswalks (ingested
+	// above) and the official Annex I labels (just ingested) being present.
+	derivedLabels, err := application.DeriveGermanLabels(ctx, db)
+	if err != nil {
+		return fmt.Errorf("deriving German labels: %w", err)
+	}
+
 	out := ingestOutput{
 		IngestReport:   report,
 		Species:        speciesReport,
 		ResolutionRate: speciesReport.ResolutionRate(),
+		Localizations:  localizations,
+		DerivedLabels:  derivedLabels,
 	}
 	enc := json.NewEncoder(cmd.OutOrStdout())
 	enc.SetIndent("", "  ")

@@ -83,3 +83,60 @@ func (d *DB) HabitatType(ctx context.Context, key domain.HabitatTypeKey) (domain
 	}
 	return h, nil
 }
+
+// CrosswalksTo returns every crosswalk whose To.Typology is typology — used
+// by DeriveGermanLabels to find every type crosswalked to Annex I.
+func (d *DB) CrosswalksTo(ctx context.Context, typology domain.TypologyID) ([]domain.Crosswalk, error) {
+	rows, err := d.QueryContext(ctx,
+		`SELECT from_typology, from_code, to_typology, to_code, qualifier
+		 FROM habitat_type_crosswalk WHERE to_typology = ?`,
+		string(typology))
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: querying crosswalks to %s: %w", typology, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []domain.Crosswalk
+	for rows.Next() {
+		var fromTypology, toTypology, qualifier string
+		var c domain.Crosswalk
+		if err := rows.Scan(&fromTypology, &c.From.Code, &toTypology, &c.To.Code, &qualifier); err != nil {
+			return nil, fmt.Errorf("sqlite: scanning crosswalk to %s: %w", typology, err)
+		}
+		c.From.Typology = domain.TypologyID(fromTypology)
+		c.To.Typology = domain.TypologyID(toTypology)
+		c.Qualifier = domain.Qualifier(qualifier)
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite: reading crosswalks to %s: %w", typology, err)
+	}
+	return out, nil
+}
+
+// Localization returns every localization row matching entityType, entityKey,
+// lang and field — there can be more than one, one per source (an official
+// row and a derived row for the same entity/field are both kept).
+func (d *DB) Localization(ctx context.Context, entityType, entityKey, lang, field string) ([]domain.Localization, error) {
+	rows, err := d.QueryContext(ctx,
+		`SELECT value, source, provenance, derived_from FROM localization
+		 WHERE entity_type = ? AND entity_key = ? AND lang = ? AND field = ?`,
+		entityType, entityKey, lang, field)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: querying localization %s/%s: %w", entityType, entityKey, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []domain.Localization
+	for rows.Next() {
+		l := domain.Localization{EntityType: entityType, EntityKey: entityKey, Lang: lang, Field: field}
+		if err := rows.Scan(&l.Value, &l.Source, &l.Provenance, &l.DerivedFrom); err != nil {
+			return nil, fmt.Errorf("sqlite: scanning localization %s/%s: %w", entityType, entityKey, err)
+		}
+		out = append(out, l)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite: reading localization %s/%s: %w", entityType, entityKey, err)
+	}
+	return out, nil
+}

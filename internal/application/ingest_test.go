@@ -408,9 +408,17 @@ type fakeRepo struct {
 	committed     bool
 	rolledBack    bool
 
-	beginErr    error
-	commitErr   error
-	rollbackErr error
+	beginErr        error
+	commitErr       error
+	rollbackErr     error
+	crosswalksToErr error
+	// localizationErr fails every Localization call; localizationErrOnCall,
+	// if non-zero, instead fails only the n-th call (1-indexed) — needed to
+	// exercise DeriveGermanLabels' second Localization lookup (the Annex I
+	// target) without also failing the first (the source check).
+	localizationErr       error
+	localizationErrOnCall int
+	localizationCalls     int
 	// failOn names an Upsert*/LinkSyntaxon method that should fail once
 	// called, to exercise the rollback path.
 	failOn string
@@ -498,6 +506,53 @@ func (r *fakeRepo) UpsertLocalization(l domain.Localization) error {
 	}
 	r.localizations = append(r.localizations, l)
 	return nil
+}
+
+func (r *fakeRepo) CrosswalksTo(_ context.Context, typology domain.TypologyID) ([]domain.Crosswalk, error) {
+	if r.crosswalksToErr != nil {
+		return nil, r.crosswalksToErr
+	}
+	var out []domain.Crosswalk
+	for _, c := range r.crosswalks {
+		if c.To.Typology == typology {
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
+func (r *fakeRepo) Localization(_ context.Context, entityType, entityKey, lang, field string) ([]domain.Localization, error) {
+	r.localizationCalls++
+	if r.localizationErr != nil {
+		return nil, r.localizationErr
+	}
+	if r.localizationErrOnCall != 0 && r.localizationCalls == r.localizationErrOnCall {
+		return nil, fmt.Errorf("fakeRepo: injected Localization failure on call %d", r.localizationCalls)
+	}
+	var out []domain.Localization
+	for _, l := range r.localizations {
+		if l.EntityType == entityType && l.EntityKey == entityKey && l.Lang == lang && l.Field == field {
+			out = append(out, l)
+		}
+	}
+	return out, nil
+}
+
+// derivedFor returns the derived localization for entityKey, for tests that
+// assert on the one row DeriveGermanLabels produced.
+func (r *fakeRepo) derivedFor(entityType, entityKey string) domain.Localization {
+	return r.localizationFor(entityType, entityKey, "derived-annex1")
+}
+
+// localizationFor returns the localization matching entityKey and source, for
+// tests that assert an existing row was (or was not) touched.
+func (r *fakeRepo) localizationFor(entityType, entityKey, source string) domain.Localization {
+	for _, l := range r.localizations {
+		if l.EntityType == entityType && l.EntityKey == entityKey && l.Source == source {
+			return l
+		}
+	}
+	return domain.Localization{}
 }
 
 func (r *fakeRepo) Commit() error {

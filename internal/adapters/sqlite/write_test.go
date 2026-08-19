@@ -187,6 +187,137 @@ func TestIngestTx_UpsertsCrosswalkSyntaxonSpeciesRoleAndLocalization(t *testing.
 	assertNoDuplicateRows(ctx, t, db)
 }
 
+func TestCrosswalksTo_ReturnsOnlyCrosswalksToTheGivenTypology(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	annex1 := domain.Crosswalk{
+		From:      domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"},
+		To:        domain.HabitatTypeKey{Typology: "annex1", Code: "6510"},
+		Qualifier: domain.QualifierSame,
+	}
+	version := domain.Crosswalk{
+		From:      domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"},
+		To:        domain.HabitatTypeKey{Typology: "eunis@2012", Code: "E22"},
+		Qualifier: domain.QualifierNarrower,
+	}
+	if err := tx.UpsertCrosswalk(annex1); err != nil {
+		t.Fatalf("UpsertCrosswalk(annex1): %v", err)
+	}
+	if err := tx.UpsertCrosswalk(version); err != nil {
+		t.Fatalf("UpsertCrosswalk(version): %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.CrosswalksTo(ctx, "annex1")
+	if err != nil {
+		t.Fatalf("CrosswalksTo: %v", err)
+	}
+	if len(got) != 1 || got[0] != annex1 {
+		t.Errorf("CrosswalksTo(annex1) = %+v, want exactly [%+v]", got, annex1)
+	}
+}
+
+func TestCrosswalksTo_QueryErrorIsReturned(t *testing.T) {
+	db := openTestDB(t)
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := db.CrosswalksTo(t.Context(), "annex1"); err == nil {
+		t.Fatal("CrosswalksTo on a closed database = nil error, want an error")
+	}
+}
+
+func TestLocalization_QueryErrorIsReturned(t *testing.T) {
+	db := openTestDB(t)
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := db.Localization(t.Context(), "habitat_type", "annex1:6510", "de", "name"); err == nil {
+		t.Fatal("Localization on a closed database = nil error, want an error")
+	}
+}
+
+// A context canceled mid-iteration must surface through Scan or rows.Err(),
+// not be swallowed — exercised with enough rows that cancellation reliably
+// lands during the scan loop rather than before or after it.
+func TestCrosswalksTo_ContextCanceledDuringIterationIsReturned(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	for i := 0; i < 3000; i++ {
+		c := domain.Crosswalk{
+			From:      domain.HabitatTypeKey{Typology: "eunis@2021", Code: fmt.Sprintf("R%d", i)},
+			To:        domain.HabitatTypeKey{Typology: "annex1", Code: "6510"},
+			Qualifier: domain.QualifierSame,
+		}
+		if err := tx.UpsertCrosswalk(c); err != nil {
+			t.Fatalf("UpsertCrosswalk: %v", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	var sawErr bool
+	for i := 0; i < 10; i++ {
+		cctx, cancel := context.WithCancel(ctx)
+		go cancel()
+		if _, err := db.CrosswalksTo(cctx, "annex1"); err != nil {
+			sawErr = true
+		}
+	}
+	if !sawErr {
+		t.Error("CrosswalksTo with a context canceled mid-iteration = nil error every time, want at least one error")
+	}
+}
+
+func TestLocalization_ReturnsEveryRowForTheKeyAndOmitsOthers(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	key := domain.HabitatTypeKey{Typology: "annex1", Code: "6510"}
+	official := domain.Localization{
+		EntityType: "habitat_type", EntityKey: key.String(), Lang: "de", Field: "name",
+		Value: "Magere Flachland-Mähwiesen", Source: "ffh-richtlinie-de", Provenance: "official",
+	}
+	if err := tx.UpsertLocalization(official); err != nil {
+		t.Fatalf("UpsertLocalization(official): %v", err)
+	}
+	// A different field on the same entity must not be returned.
+	if err := tx.UpsertLocalization(domain.Localization{
+		EntityType: "habitat_type", EntityKey: key.String(), Lang: "de", Field: "description",
+		Value: "irrelevant", Source: "other", Provenance: "curated",
+	}); err != nil {
+		t.Fatalf("UpsertLocalization(other field): %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.Localization(ctx, "habitat_type", key.String(), "de", "name")
+	if err != nil {
+		t.Fatalf("Localization: %v", err)
+	}
+	if len(got) != 1 || got[0] != official {
+		t.Errorf("Localization(name) = %+v, want exactly [%+v]", got, official)
+	}
+}
+
 func assertCrosswalkAndSpeciesRoleAfterRepin(
 	ctx context.Context, t *testing.T, db *DB, from, to domain.HabitatTypeKey,
 ) {

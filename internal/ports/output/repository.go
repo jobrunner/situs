@@ -28,6 +28,11 @@ type IngestTx interface {
 type Repository interface {
 	Begin(ctx context.Context) (IngestTx, error)
 	HabitatType(ctx context.Context, key domain.HabitatTypeKey) (domain.HabitatType, error)
+	// CrosswalksTo returns every crosswalk whose To.Typology is typology.
+	CrosswalksTo(ctx context.Context, typology domain.TypologyID) ([]domain.Crosswalk, error)
+	// Localization returns every localization matching entityType, entityKey,
+	// lang and field — there can be more than one, one per source.
+	Localization(ctx context.Context, entityType, entityKey, lang, field string) ([]domain.Localization, error)
 }
 
 // NameResolver crosswalks verbatim species names to concept IDs via hostus.
