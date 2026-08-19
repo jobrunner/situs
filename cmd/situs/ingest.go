@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -63,7 +62,7 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath string) er
 
 	// A dropped row's only record is this log stream — route it through the
 	// configured logger (SITUS_LOG_*), not slog's unconfigured default.
-	slog.SetDefault(setupLogger(cfg.Logging, os.Stdout))
+	installLogger(cfg.Logging, os.Stdout)
 
 	db, err := sqlite.Open(ctx, dbPath)
 	if err != nil {

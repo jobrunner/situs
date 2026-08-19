@@ -58,6 +58,17 @@ func setupLogger(cfg config.LoggingConfig, w io.Writer) *slog.Logger {
 	return slog.New(telemetry.NewSpanContextHandler(buildHandler(cfg, w)))
 }
 
+// installLogger builds the service logger and also makes it slog's default.
+// Both are needed: components take the returned logger by injection, while
+// adapters that log incidentally (the hostus client's batch downshift, the
+// ingest's skipped-row warnings) reach for the package-level slog. Without the
+// default those records would bypass SITUS_LOG_* entirely.
+func installLogger(cfg config.LoggingConfig, w io.Writer) *slog.Logger {
+	logger := setupLogger(cfg, w)
+	slog.SetDefault(logger)
+	return logger
+}
+
 func buildHandler(cfg config.LoggingConfig, w io.Writer) slog.Handler {
 	opts := &slog.HandlerOptions{Level: parseLevel(cfg.Level)}
 	if cfg.Format == "text" {

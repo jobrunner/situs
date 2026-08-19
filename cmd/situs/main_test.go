@@ -72,6 +72,26 @@ func TestLoggerFormatAndLevelFollowTheConfig(t *testing.T) {
 	}
 }
 
+// Adapters that log incidentally — the hostus client's batch downshift, the
+// ingest's skipped rows — reach for the package-level slog. installLogger must
+// therefore make the configured logger the default, or those records bypass
+// SITUS_LOG_* and land on slog's unconfigured handler.
+func TestInstallLoggerMakesTheConfiguredLoggerTheDefault(t *testing.T) {
+	before := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(before) })
+
+	var buf bytes.Buffer
+	returned := installLogger(config.LoggingConfig{Level: "warn", Format: "text"}, &buf)
+
+	if slog.Default() != returned {
+		t.Error("slog.Default() is not the logger installLogger returned")
+	}
+	slog.Warn("downshift")
+	if !strings.Contains(buf.String(), "msg=downshift") {
+		t.Errorf("package-level slog wrote %q, want it routed to the configured text handler", buf.String())
+	}
+}
+
 func TestLoggerSuppressesBelowTheConfiguredLevel(t *testing.T) {
 	var buf bytes.Buffer
 	setupLogger(config.LoggingConfig{Level: "error", Format: "text"}, &buf).Info("hello")

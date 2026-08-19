@@ -525,6 +525,35 @@ func TestSpeciesBatch_TooManyNamesIsInvalidQuery(t *testing.T) {
 	}
 }
 
+// A body carrying more than one JSON value must be rejected whole. Decoding the
+// first and discarding the rest would leave the caller believing it sent both.
+func TestSpeciesBatch_TrailingDataIsInvalidQuery(t *testing.T) {
+	for name, body := range map[string]string{
+		"two objects":         `{"names":["Bromus erectus"]}{"names":["Inula hirta"]}`,
+		"object then garbage": `{"names":["Bromus erectus"]} nonsense`,
+		"object then array":   `{"names":["Bromus erectus"]}[]`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			names := seededNameQueryService()
+			srv := newServerWithNames(t, seededQueryService(), names)
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/species/habitat-types", strings.NewReader(body))
+			rec := httptest.NewRecorder()
+			srv.Router().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400", rec.Code)
+			}
+			if !bytes.Contains(rec.Body.Bytes(), []byte(`"INVALID_QUERY"`)) {
+				t.Errorf("body = %s, want the INVALID_QUERY error envelope", rec.Body)
+			}
+			if names.gotNames != nil {
+				t.Errorf("resolver was called with %v, want no upstream call for a rejected body", names.gotNames)
+			}
+		})
+	}
+}
+
 func TestSpeciesBatch_MalformedBodyIsInvalidQuery(t *testing.T) {
 	for name, body := range map[string]string{
 		"not json":   `{`,

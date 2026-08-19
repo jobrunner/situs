@@ -1,8 +1,8 @@
 # Tutorials
 
-Noch keine Tutorials: der Dienst hat erst sein Gerüst (Task 1 des
-Foundation-Plans). Sobald Ingest und Read-API stehen, kommt hier der geführte
-Einstieg „vom XLSX zum ersten Query" hin.
+Noch keine Tutorials. Der geführte Einstieg „vom XLSX zum ersten Query" kommt
+hier hin; bis dahin führen die How-to-Anleitungen die einzelnen Schritte
+(Pipeline, Ingest, Konfiguration) jeweils für sich.
 
 Bis dahin:
 

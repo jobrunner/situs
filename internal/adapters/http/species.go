@@ -2,7 +2,9 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -52,6 +54,12 @@ func (s *Server) handleSpeciesBatch(w http.ResponseWriter, r *http.Request) {
 	var req batchRequest
 	if err := dec.Decode(&req); err != nil {
 		s.writeError(w, http.StatusBadRequest, CodeInvalidQuery, "request body must be {\"names\":[...]}")
+		return
+	}
+	// Without this, a body of two concatenated objects decodes the first and
+	// silently discards the rest — the caller would believe it sent both.
+	if err := dec.Decode(new(any)); !errors.Is(err, io.EOF) {
+		s.writeError(w, http.StatusBadRequest, CodeInvalidQuery, "request body must hold exactly one JSON object")
 		return
 	}
 

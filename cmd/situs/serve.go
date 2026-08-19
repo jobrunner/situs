@@ -29,7 +29,7 @@ func runServe(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	logger := setupLogger(cfg.Logging, os.Stdout)
+	logger := installLogger(cfg.Logging, os.Stdout)
 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
