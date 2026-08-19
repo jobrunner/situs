@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jobrunner/situs/internal/domain"
@@ -244,41 +245,42 @@ func TestLocalization_QueryErrorIsReturned(t *testing.T) {
 	}
 }
 
-// A context canceled mid-iteration must surface through Scan or rows.Err(),
-// not be swallowed — exercised with enough rows that cancellation reliably
-// lands during the scan loop rather than before or after it.
-func TestCrosswalksTo_ContextCanceledDuringIterationIsReturned(t *testing.T) {
-	db := openTestDB(t)
-	ctx := t.Context()
+// The rows.Err() and Scan error returns of CrosswalksTo and Localization are
+// exercised deterministically via a stub driver (see stub_driver_test.go)
+// instead of racing a context cancellation against row iteration.
+func TestCrosswalksTo_RowsIterationErrorIsReturned(t *testing.T) {
+	db := &DB{DB: newStubDB(t, stubModeRowsErr)}
+	if _, err := db.CrosswalksTo(context.Background(), "annex1"); err == nil {
+		t.Fatal("CrosswalksTo with a rows-iteration error = nil error, want an error")
+	} else if !strings.Contains(err.Error(), "reading crosswalks") {
+		t.Errorf("error = %q, want it to name the rows.Err() failure", err)
+	}
+}
 
-	tx, err := db.Begin(ctx)
-	if err != nil {
-		t.Fatalf("Begin: %v", err)
+func TestCrosswalksTo_ScanErrorIsReturned(t *testing.T) {
+	db := &DB{DB: newStubDB(t, stubModeScanErr)}
+	if _, err := db.CrosswalksTo(context.Background(), "annex1"); err == nil {
+		t.Fatal("CrosswalksTo with a scan error = nil error, want an error")
+	} else if !strings.Contains(err.Error(), "scanning crosswalk") {
+		t.Errorf("error = %q, want it to name the Scan failure", err)
 	}
-	for i := 0; i < 3000; i++ {
-		c := domain.Crosswalk{
-			From:      domain.HabitatTypeKey{Typology: "eunis@2021", Code: fmt.Sprintf("R%d", i)},
-			To:        domain.HabitatTypeKey{Typology: "annex1", Code: "6510"},
-			Qualifier: domain.QualifierSame,
-		}
-		if err := tx.UpsertCrosswalk(c); err != nil {
-			t.Fatalf("UpsertCrosswalk: %v", err)
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		t.Fatalf("Commit: %v", err)
-	}
+}
 
-	var sawErr bool
-	for i := 0; i < 10; i++ {
-		cctx, cancel := context.WithCancel(ctx)
-		go cancel()
-		if _, err := db.CrosswalksTo(cctx, "annex1"); err != nil {
-			sawErr = true
-		}
+func TestLocalization_RowsIterationErrorIsReturned(t *testing.T) {
+	db := &DB{DB: newStubDB(t, stubModeRowsErr)}
+	if _, err := db.Localization(context.Background(), "habitat_type", "annex1:6510", "de", "name"); err == nil {
+		t.Fatal("Localization with a rows-iteration error = nil error, want an error")
+	} else if !strings.Contains(err.Error(), "reading localization") {
+		t.Errorf("error = %q, want it to name the rows.Err() failure", err)
 	}
-	if !sawErr {
-		t.Error("CrosswalksTo with a context canceled mid-iteration = nil error every time, want at least one error")
+}
+
+func TestLocalization_ScanErrorIsReturned(t *testing.T) {
+	db := &DB{DB: newStubDB(t, stubModeScanErr)}
+	if _, err := db.Localization(context.Background(), "habitat_type", "annex1:6510", "de", "name"); err == nil {
+		t.Fatal("Localization with a scan error = nil error, want an error")
+	} else if !strings.Contains(err.Error(), "scanning localization") {
+		t.Errorf("error = %q, want it to name the Scan failure", err)
 	}
 }
 

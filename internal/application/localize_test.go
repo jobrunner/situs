@@ -85,11 +85,21 @@ func TestDeriveGermanLabels_DoesNotOverrideAnExistingOfficialName(t *testing.T) 
 			Value: "Kuratierter Name", Source: "curated", Provenance: "curated"},
 	}
 
-	if _, err := DeriveGermanLabels(context.Background(), repo); err != nil {
+	n, err := DeriveGermanLabels(context.Background(), repo)
+	if err != nil {
 		t.Fatalf("DeriveGermanLabels: %v", err)
 	}
 	if got := repo.localizationFor("habitat_type", "eunis@2021:R22", "curated"); got.Value != "Kuratierter Name" {
 		t.Errorf("curated value = %q, want it untouched", got.Value)
+	}
+	// The two assertions above pass even if derivation ran anyway (fakeRepo
+	// only appends, so a stray derived row would not touch the curated row)
+	// — these two additionally prove no derivation happened at all.
+	if n != 0 {
+		t.Errorf("n = %d, want 0 — an existing curated name must block derivation entirely", n)
+	}
+	if got := repo.localizationFor("habitat_type", "eunis@2021:R22", "derived-annex1"); got != (domain.Localization{}) {
+		t.Errorf("derivedFor = %+v, want the zero value — no derived-annex1 row must exist", got)
 	}
 }
 
@@ -389,5 +399,71 @@ func TestDeriveGermanLabels_SkipsWhenTargetHasNoOfficialOrCuratedName(t *testing
 	}
 	if n != 0 {
 		t.Errorf("n = %d, want 0 (no source label to copy)", n)
+	}
+}
+
+// When an Annex I target carries both an official and a curated de/name, the
+// official wording must win deterministically — not whichever happens to
+// come first from the repository.
+func TestDeriveGermanLabels_PrefersOfficialOverCuratedOnTheTarget(t *testing.T) {
+	repo := newFakeRepo()
+	repo.crosswalks = []domain.Crosswalk{{
+		From:      domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"},
+		To:        domain.HabitatTypeKey{Typology: "annex1", Code: "6510"},
+		Qualifier: domain.QualifierSame,
+	}}
+	// Curated listed first: a naive "first match" would copy this one.
+	repo.localizations = []domain.Localization{
+		{EntityType: "habitat_type", EntityKey: "annex1:6510", Lang: "de", Field: "name",
+			Value: "Kuratierter Name", Source: "curated", Provenance: "curated"},
+		{EntityType: "habitat_type", EntityKey: "annex1:6510", Lang: "de", Field: "name",
+			Value: "Magere Flachland-Mähwiesen", Source: "ffh-richtlinie-de", Provenance: "official"},
+	}
+
+	if _, err := DeriveGermanLabels(context.Background(), repo); err != nil {
+		t.Fatalf("DeriveGermanLabels: %v", err)
+	}
+	got := repo.localizationFor("habitat_type", "eunis@2021:R22", "derived-annex1")
+	if got.Value != "Magere Flachland-Mähwiesen" {
+		t.Errorf("Value = %q, want the official name preferred over the curated one", got.Value)
+	}
+}
+
+// Two '=' crosswalks from the same source type to different Annex I targets
+// must not both land a derived-annex1 row: the second write would silently
+// replace the first at the same (entity, field, source) slot, and a count
+// that includes both would overstate what actually survived.
+func TestDeriveGermanLabels_FirstCrosswalkWinsWhenSourceHasTwoSameQualifierTargets(t *testing.T) {
+	repo := newFakeRepo()
+	from := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	repo.crosswalks = []domain.Crosswalk{
+		{From: from, To: domain.HabitatTypeKey{Typology: "annex1", Code: "6510"}, Qualifier: domain.QualifierSame},
+		{From: from, To: domain.HabitatTypeKey{Typology: "annex1", Code: "6520"}, Qualifier: domain.QualifierSame},
+	}
+	repo.localizations = []domain.Localization{
+		{EntityType: "habitat_type", EntityKey: "annex1:6510", Lang: "de", Field: "name",
+			Value: "Erster Name", Source: "ffh-richtlinie-de", Provenance: "official"},
+		{EntityType: "habitat_type", EntityKey: "annex1:6520", Lang: "de", Field: "name",
+			Value: "Zweiter Name", Source: "ffh-richtlinie-de", Provenance: "official"},
+	}
+
+	n, err := DeriveGermanLabels(context.Background(), repo)
+	if err != nil {
+		t.Fatalf("DeriveGermanLabels: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("n = %d, want 1 (only the first crosswalk's target wins)", n)
+	}
+	derived := 0
+	for _, l := range repo.localizations {
+		if l.Source == "derived-annex1" {
+			derived++
+		}
+	}
+	if derived != 1 {
+		t.Errorf("stored %d derived-annex1 rows, want 1 (count must match what actually survives)", derived)
+	}
+	if got := repo.localizationFor("habitat_type", "eunis@2021:R22", "derived-annex1"); got.Value != "Erster Name" {
+		t.Errorf("derived value = %q, want the first crosswalk's target name", got.Value)
 	}
 }

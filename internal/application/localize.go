@@ -93,8 +93,18 @@ func DeriveGermanLabels(ctx context.Context, repo output.Repository) (int, error
 		return 0, fmt.Errorf("beginning derivation transaction: %w", err)
 	}
 
+	// derivedInThisRun guards against two '=' crosswalks from the same source
+	// type to different Annex I targets: repo.Localization cannot see this
+	// run's own uncommitted upserts, so without this a second such crosswalk
+	// would upsert a second derived-annex1 row onto the same (entity,
+	// field, source) slot, silently replacing the first while count still
+	// counted both. First crosswalk (in CrosswalksTo's order) wins.
 	count := 0
+	derivedInThisRun := make(map[string]bool)
 	for _, c := range crosswalks {
+		if derivedInThisRun[c.From.String()] {
+			continue
+		}
 		derived, err := deriveOne(ctx, repo, tx, c)
 		if err != nil {
 			if rbErr := tx.Rollback(); rbErr != nil {
@@ -104,6 +114,7 @@ func DeriveGermanLabels(ctx context.Context, repo output.Repository) (int, error
 		}
 		if derived {
 			count++
+			derivedInThisRun[c.From.String()] = true
 		}
 	}
 
@@ -160,14 +171,22 @@ func hasOfficialOrCurated(ls []domain.Localization) bool {
 	return ok
 }
 
-// officialOrCuratedName returns the value of the first official or curated
-// entry in ls — a derived entry must never be treated as a source to derive
-// from, nor as a reason to skip deriving.
+// officialOrCuratedName returns the value of an official or curated entry in
+// ls, preferring official — repeated ingests of the same data must produce
+// byte-identical derived labels, not a value that depends on ls's row order
+// (Repository.Localization makes no ordering guarantee). A derived entry
+// must never be treated as a source to derive from, nor as a reason to skip
+// deriving.
 func officialOrCuratedName(ls []domain.Localization) (string, bool) {
+	var curated string
+	var sawCurated bool
 	for _, l := range ls {
-		if l.Provenance == "official" || l.Provenance == "curated" {
+		if l.Provenance == "official" {
 			return l.Value, true
 		}
+		if l.Provenance == "curated" && !sawCurated {
+			curated, sawCurated = l.Value, true
+		}
 	}
-	return "", false
+	return curated, sawCurated
 }
