@@ -69,7 +69,7 @@ mutation: ## Mutation testing (ubuntu only — gremlins panics on macOS)
 	gremlins unleash --threshold-efficacy 0 --threshold-mcover 0 ./internal/...
 
 ## Canonical, non-mutating "is it green?" — mirrored in CI.
-verify: fmt-check vet lint test arch debt-guard ## Authoritative green check
+verify: fmt-check vet lint test arch debt ## Authoritative green check
 	@echo "Compile-check (go build ./...)…"
 	@$(GO) build ./...
 	@echo "verify passed."

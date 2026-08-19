@@ -8,7 +8,7 @@ Defaults.
 |---|---|---|---|
 | `server.host` | `SITUS_SERVER_HOST` | `127.0.0.1` | Listen-Adresse |
 | `server.port` | `SITUS_SERVER_PORT` | `8080` | Listen-Port |
-| `server.read_timeout` | `SITUS_SERVER_READ_TIMEOUT` | `30s` | Lese-Timeout |
+| `server.read_timeout` | `SITUS_SERVER_READ_TIMEOUT` | `30s` | `http.Server.ReadTimeout`: Frist für das Lesen eines ganzen Requests (`0` = keine, über den Header-Timeout von 10s hinaus) |
 | `server.shutdown_timeout` | `SITUS_SERVER_SHUTDOWN_TIMEOUT` | `15s` | Frist für den geordneten Stop |
 | `logging.level` | `SITUS_LOGGING_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `logging.format` | `SITUS_LOGGING_FORMAT` | `json` | `json` oder `text` |

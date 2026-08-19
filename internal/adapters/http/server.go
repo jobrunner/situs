@@ -46,6 +46,9 @@ type Options struct {
 	TracerProvider trace.TracerProvider
 	ServiceName    string
 	Version        string
+	// ReadTimeout bounds reading a whole request (config key server.read_timeout).
+	// Zero means no limit beyond ReadHeaderTimeout.
+	ReadTimeout time.Duration
 }
 
 // NewServer builds the server, wires the routes and prepares the http.Server.
@@ -69,6 +72,7 @@ func NewServer(addr string, health input.HealthChecker, logger *slog.Logger, opt
 	s.server = &http.Server{
 		Addr:              addr,
 		Handler:           s.router,
+		ReadTimeout:       opts.ReadTimeout,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	return s

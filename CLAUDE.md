@@ -141,8 +141,9 @@ and region data), and full plot classification.
 
 ## Quality Gates
 
-- `make verify` (fmt-check, vet, lint, test, arch, debt-guard, build) must be
-  green before every commit.
+- `make verify` (fmt-check, vet, lint, test, arch, debt, build) must be green
+  before every commit. `debt` is both ratchets: the suppression budget and the
+  coverage floors.
 - Zero `//nolint` / `#nosec` — the debt-guard baseline in `.debt-budget` is 0,
   and zero `TODO`/`FIXME`/`HACK`/`XXX` markers in Go files.
 - `.coverage-floors` is a raise-only ratchet (`make debt-coverage`): lower a

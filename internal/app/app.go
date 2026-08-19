@@ -39,6 +39,7 @@ func New(_ context.Context, cfg *config.Config, logger *slog.Logger, version str
 	a.HTTPServer = httpapi.NewServer(cfg.Server.Addr(), a.Health, logger, httpapi.Options{
 		ServiceName: "situs",
 		Version:     version,
+		ReadTimeout: cfg.Server.ReadTimeout,
 	})
 	return a, nil
 }
