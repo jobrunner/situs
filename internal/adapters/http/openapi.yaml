@@ -13,7 +13,7 @@ info:
     Habitattypen (mit Rolle) und Habitattyp → Arten / Syntaxa / Crosswalks,
     aus gepinnten EEA- und ESy-Artefakten, mit deutschen Labels und einem
     Anhang-I-Crosswalk (annex1).
-  version: 0.0.0 # x-release-please-version
+  version: 0.1.0 # x-release-please-version
   license:
     name: MIT
 servers:
