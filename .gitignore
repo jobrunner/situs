@@ -18,6 +18,10 @@
 # pinned source artifacts are fetched, never committed
 /pipelines/*/artifacts/
 
+# Python pipeline byte-compiled caches
+__pycache__/
+*.pyc
+
 # IDE / local environment
 .idea/
 .vscode/

@@ -1,0 +1,58 @@
+# Pinned source artifacts for the EUNIS/ESy ingest pipeline.
+#
+# This file is read (and written) as plain text — the pipeline has no YAML
+# parser and does not need one. It exists so a human (or a later automated
+# fetch step) knows exactly which byte-identical files were used, from where,
+# and under which license.
+#
+# None of the .xlsx files themselves are committed to this repository —
+# pipelines/eunis/artifacts/ is gitignored. Run `make fetch` (or the curl
+# commands in README.md) to re-download them before running the pipeline.
+
+sources:
+  - id: eunis-2021-including-crosswalks
+    file: eunis-2021-including-crosswalks.xlsx
+    description: >
+      EUNIS terrestrial habitat classification 2021_1 including crosswalks
+      (EUNIS 2012, Resolution 4, Annex I, Red List, MAES, IUCN, CLC, and the
+      Euroveg Checklist 2016 syntaxa — all bundled per habitat type).
+    dataset_doi: https://doi.org/10.2909/bfe4c237-e378-4a83-ab21-b3807f96c2e2
+    dataset_record: https://sdi.eea.europa.eu/catalogue/srv/api/records/bfe4c237-e378-4a83-ab21-b3807f96c2e2
+    dataset_title: "EUNIS terrestrial habitat classification review (tabular) - version 1, Nov. 2021"
+    # Direct download resolved 2026-08-19 via the dataset's WebDAV folder
+    # (linked from the record's "EEA:FOLDERPATH" transfer option).
+    url: "https://sdi.eea.europa.eu/webdav/datastore/public/eea_t_eunis-hab-t_p_2004-on-going_v01_r00/EUNIS%20terrestrial%20habitat%20classification%202021_1%20including%20crosswalks.xlsx"
+    sha256: 1427d22db8d77d1053ab1683aa60713bdec3d810605dd6b7bc16683b4ca14665
+    size_bytes: 1439940
+    license: "EEA data policy (ODC-BY / free reuse with attribution) — https://www.eea.europa.eu/en/datahub/eea-data-policy"
+    retrieved: "2026-08-19"
+
+  - id: eunis-2021-annex1-separate-rows
+    file: eunis-2021-annex1-separate-rows.xlsx
+    description: >
+      Same 2021_1 classification, with the EUNIS<->Annex I crosswalk
+      normalized to one relationship per row (the preferred input for the
+      Annex I part per the design spec).
+    dataset_doi: https://doi.org/10.2909/bfe4c237-e378-4a83-ab21-b3807f96c2e2
+    dataset_record: https://sdi.eea.europa.eu/catalogue/srv/api/records/bfe4c237-e378-4a83-ab21-b3807f96c2e2
+    dataset_title: "EUNIS terrestrial habitat classification review (tabular) - version 1, Nov. 2021"
+    url: "https://sdi.eea.europa.eu/webdav/datastore/public/eea_t_eunis-hab-t_p_2004-on-going_v01_r00/EUNIS%20terrestrial%20habitat%20classification%202021_1%20with%20crosswalks%20to%20Annex%20I%20in%20separate%20rows.xlsx"
+    sha256: 36b1e57845e7e589cfcd016027af5b9db98edbeefb24b54422d1fc64a3ae49a2
+    size_bytes: 60346
+    license: "EEA data policy (ODC-BY / free reuse with attribution) — https://www.eea.europa.eu/en/datahub/eea-data-policy"
+    retrieved: "2026-08-19"
+
+  - id: esy-characteristic-species-combinations
+    file: esy-characteristic-species-combinations.xlsx
+    description: >
+      Chytrý et al., "EUNIS Habitat Classification: expert system,
+      characteristic species combinations and distribution maps of European
+      habitats" (Applied Vegetation Science), Appendix S4 — diagnostic,
+      constant and dominant species per habitat.
+    dataset_doi: https://doi.org/10.5281/zenodo.3841729
+    dataset_record: https://zenodo.org/records/3841729
+    url: "https://zenodo.org/records/3841729/files/Characteristic-species-combinations.xlsx"
+    sha256: 6a0b1d9d7b096d598fb4ab75272b70db379cc4d80f9c398e0d8b12ed26f95f38
+    size_bytes: 409888
+    license: "CC BY 4.0"
+    retrieved: "2026-08-19"
