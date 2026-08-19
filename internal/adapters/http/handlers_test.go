@@ -94,6 +94,26 @@ func TestHabitatType_UnparseableTypologyIsInvalidQuery(t *testing.T) {
 	}
 }
 
+// A caller that names no typology gets the current EUNIS fassung.
+func TestHabitatType_OmittedTypologyDefaultsToEunis2021(t *testing.T) {
+	q := seededQueryService()
+	srv := newTestServer(t, q)
+
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/habitat-type/%20/R22", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 — an omitted typology is not an error", rec.Code)
+	}
+	var got input.HabitatTypeSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding body %s: %v", rec.Body, err)
+	}
+	if got.Typology != domain.DefaultTypologyID {
+		t.Errorf("typology = %q, want the default %q", got.Typology, domain.DefaultTypologyID)
+	}
+}
+
 // A code that does not exist inside a known typology is a missing answer, not a
 // malformed question.
 func TestHabitatType_UnknownCodeIsNotFound(t *testing.T) {
