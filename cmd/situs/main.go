@@ -39,7 +39,7 @@ func newRootCmd() *cobra.Command {
 		SilenceErrors: false,
 	}
 	root.PersistentFlags().StringVar(&configFile, "config", "", "path to a config file (env wins over file)")
-	root.AddCommand(newServeCmd(), newVersionCmd())
+	root.AddCommand(newServeCmd(), newVersionCmd(), newIngestCmd())
 	return root
 }
 
