@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.1](https://github.com/jobrunner/situs/compare/v0.1.0...v0.1.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* **release:** push the ghcr image and publish the docs on every release ([637e4b3](https://github.com/jobrunner/situs/commit/637e4b3baf3e06f432a6d9e66bdc31ba4ad96d08))
+* **release:** push the ghcr image and publish the docs on every release ([8b8b67a](https://github.com/jobrunner/situs/commit/8b8b67abd2dbb15e8f7559a4a87de6b3f43bdeb3))
+
 ## 0.1.0 (2026-08-19)
 
 
