@@ -73,8 +73,7 @@ func (t *ingestTx) LinkSyntaxon(key domain.HabitatTypeKey, syntaxonID string) er
 	_, err := t.tx.ExecContext(t.ctx,
 		`INSERT INTO habitat_type_syntaxon (typology_id, code, syntaxon_id)
 		 VALUES (?, ?, ?)
-		 ON CONFLICT(typology_id, code, syntaxon_id) DO UPDATE SET
-		   syntaxon_id=excluded.syntaxon_id`,
+		 ON CONFLICT(typology_id, code, syntaxon_id) DO NOTHING`,
 		string(key.Typology), key.Code, syntaxonID)
 	if err != nil {
 		return fmt.Errorf("sqlite: linking syntaxon %s to %s: %w", syntaxonID, key, err)
