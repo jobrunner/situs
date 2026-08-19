@@ -55,7 +55,8 @@ make build       # ./situs
 ```
 
 Erreichbar sind `GET /health/live`, `GET /health/ready`, `GET /metrics`,
-`GET /openapi`, `GET /v1/info` und die Lese-Endpunkte:
+`GET /openapi`, `GET /docs` (Swagger-UI, Assets eingebettet — funktioniert also
+ohne Netz), `GET /v1/info` und die Lese-Endpunkte:
 
 ```bash
 # --db entfällt, wenn index.path (Default: situs.sqlite) passt.

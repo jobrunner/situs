@@ -34,3 +34,6 @@ __pycache__/
 .claude/*
 !.claude/skills
 !.claude/skills/**
+
+# Browser-Automation-Artefakte (Playwright-MCP), nie Teil des Repos
+/.playwright-mcp/

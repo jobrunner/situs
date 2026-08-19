@@ -112,6 +112,7 @@ func (s *Server) setupRoutes() *mux.Router {
 	r.HandleFunc("/health/ready", s.handleReadiness).Methods(http.MethodGet)
 	r.Handle("/metrics", promhttp.Handler()).Methods(http.MethodGet)
 	r.HandleFunc("/openapi", s.handleOpenAPI).Methods(http.MethodGet)
+	r.HandleFunc("/docs", s.handleDocs).Methods(http.MethodGet)
 
 	// Versioned read surface.
 	r.HandleFunc("/v1/info", s.handleInfo).Methods(http.MethodGet)
