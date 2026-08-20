@@ -434,6 +434,8 @@ type fakeRepo struct {
 	failOn string
 	// areasErr fails AreasForConcepts and KnownAreaCodes.
 	areasErr error
+	// conceptIDsErr fails ConceptIDs, exercising IngestDistribution's error path.
+	conceptIDsErr error
 }
 
 // fakeDistribution is one recorded UpsertDistribution call.
@@ -443,6 +445,21 @@ type fakeDistribution struct {
 }
 
 func newFakeRepo() *fakeRepo { return &fakeRepo{} }
+
+func (r *fakeRepo) ConceptIDs(_ context.Context) ([]string, error) {
+	if r.conceptIDsErr != nil {
+		return nil, r.conceptIDsErr
+	}
+	seen := map[string]bool{}
+	out := []string{}
+	for _, s := range r.speciesRoles {
+		if s.ConceptID != nil && !seen[*s.ConceptID] {
+			seen[*s.ConceptID] = true
+			out = append(out, *s.ConceptID)
+		}
+	}
+	return out, nil
+}
 
 func (r *fakeRepo) Begin(context.Context) (output.IngestTx, error) {
 	if r.beginErr != nil {

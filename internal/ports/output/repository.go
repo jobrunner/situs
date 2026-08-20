@@ -63,6 +63,9 @@ type Repository interface {
 	// filter must be validated against this: an unknown code has to be an
 	// error, not a list of "does not occur".
 	KnownAreaCodes(ctx context.Context, scheme string) ([]string, error)
+	// ConceptIDs lists the distinct concept ids the index holds, so the
+	// distribution step knows what to ask for.
+	ConceptIDs(ctx context.Context) ([]string, error)
 }
 
 // A NameResolver can fail in two ways that must not be confused, because they

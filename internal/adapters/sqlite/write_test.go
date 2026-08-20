@@ -660,3 +660,35 @@ func TestKnownAreaCodes_ListsWhatTheIndexHas(t *testing.T) {
 		t.Errorf("codes = %v, want two distinct codes", got)
 	}
 }
+
+func TestConceptIDs_DistinctAndWithoutNulls(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	id := "wcvp:concept:1"
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	for _, r := range []domain.SpeciesRole{
+		{Key: key, ConceptID: &id, VerbatimName: "A", Role: "diagnostic"},
+		{Key: key, ConceptID: &id, VerbatimName: "A2", Role: "constant"},
+		{Key: key, ConceptID: nil, VerbatimName: "Moss", Role: "diagnostic"},
+	} {
+		if err := tx.UpsertSpeciesRole(r); err != nil {
+			t.Fatalf("UpsertSpeciesRole: %v", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.ConceptIDs(ctx)
+	if err != nil {
+		t.Fatalf("ConceptIDs: %v", err)
+	}
+	if len(got) != 1 || got[0] != id {
+		t.Errorf("ConceptIDs() = %v, want exactly [%s]", got, id)
+	}
+}

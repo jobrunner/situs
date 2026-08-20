@@ -8,6 +8,10 @@ import (
 	"testing"
 )
 
+// strPtr is the shared helper for tests across this package that need a
+// domain.SpeciesRole.ConceptID (a *string).
+func strPtr(s string) *string { return &s }
+
 type fakeResolver map[string]string
 
 func (r fakeResolver) Resolve(_ context.Context, names []string) (map[string]string, error) {

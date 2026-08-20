@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jobrunner/situs/internal/domain"
 )
 
 // stubHostus points SITUS_HOSTUS_BASE_URL at a server that resolves nothing —
@@ -70,6 +75,65 @@ func seedIngestDir(t *testing.T) string {
 	writeIngestCSV(t, dir, "species_roles.csv",
 		"typology_id,code,verbatim_name,role,fidelity,constancy\neunis@2021,R22,Inula hirta,diagnostic,0.8,\n")
 	return dir
+}
+
+// fakeSequentialSource records the concept ids each Areas call carries, so a
+// test can pin that pacedDistributionSource asks one id at a time.
+type fakeSequentialSource struct {
+	asked [][]string
+	err   error
+}
+
+func (f *fakeSequentialSource) Areas(_ context.Context, ids []string) (map[string][]domain.Area, error) {
+	f.asked = append(f.asked, ids)
+	if f.err != nil {
+		return nil, f.err
+	}
+	out := map[string][]domain.Area{}
+	for _, id := range ids {
+		out[id] = []domain.Area{{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}}
+	}
+	return out, nil
+}
+
+func TestPacedDistributionSource_AsksOneConceptAtATime(t *testing.T) {
+	src := &fakeSequentialSource{}
+	paced := pacedDistributionSource{src: src, pause: time.Millisecond}
+
+	got, err := paced.Areas(context.Background(), []string{"a", "b", "c"})
+	if err != nil {
+		t.Fatalf("Areas: %v", err)
+	}
+	if len(got) != 3 {
+		t.Errorf("got %v, want areas for all three concepts", got)
+	}
+	if len(src.asked) != 3 {
+		t.Errorf("source was asked %d times, want once per concept", len(src.asked))
+	}
+	for _, ids := range src.asked {
+		if len(ids) != 1 {
+			t.Errorf("asked for %v, want exactly one id per call", ids)
+		}
+	}
+}
+
+func TestPacedDistributionSource_PropagatesTheUnderlyingError(t *testing.T) {
+	paced := pacedDistributionSource{src: &fakeSequentialSource{err: errors.New("upstream down")}, pause: time.Millisecond}
+
+	if _, err := paced.Areas(context.Background(), []string{"a"}); err == nil {
+		t.Fatal("Areas: want an error, got nil")
+	}
+}
+
+func TestPacedDistributionSource_StopsWhenTheContextIsCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	paced := pacedDistributionSource{src: &fakeSequentialSource{}, pause: time.Hour}
+
+	_, err := paced.Areas(ctx, []string{"a", "b"})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Areas returned %v, want context.Canceled", err)
+	}
 }
 
 func TestIngestCommandLoadsCSVsAndPrintsTheReport(t *testing.T) {

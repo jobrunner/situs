@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -13,7 +15,47 @@ import (
 	"github.com/jobrunner/situs/internal/adapters/sqlite"
 	"github.com/jobrunner/situs/internal/application"
 	"github.com/jobrunner/situs/internal/config"
+	"github.com/jobrunner/situs/internal/domain"
+	"github.com/jobrunner/situs/internal/ports/output"
 )
+
+// hostusDistributionPause is the gap between two hostus concept requests
+// during ingest. hostus rate-limits at 20 req/s and answers 429 above that;
+// the adapter deliberately has no pacing of its own (it is also used from the
+// serve path, where pacing does not belong), so the ingest path enforces it.
+// Measured against the real service: 0.07s works, and ~3600 concepts take
+// about 3 minutes — an ingest run is offline maintenance, not latency-critical.
+const hostusDistributionPause = 70 * time.Millisecond
+
+// pacedDistributionSource wraps a DistributionSource that has no pacing of
+// its own (Areas issues one hostus request per concept) and spaces those
+// requests out, one concept at a time, so a full ingest run does not fail in
+// a wall of 429s.
+type pacedDistributionSource struct {
+	src   output.DistributionSource
+	pause time.Duration
+}
+
+func (p pacedDistributionSource) Areas(ctx context.Context, conceptIDs []string) (map[string][]domain.Area, error) {
+	out := map[string][]domain.Area{}
+	for i, id := range conceptIDs {
+		if i > 0 {
+			select {
+			case <-ctx.Done():
+				return out, ctx.Err()
+			case <-time.After(p.pause):
+			}
+		}
+		areas, err := p.src.Areas(ctx, []string{id})
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range areas {
+			out[k] = v
+		}
+	}
+	return out, nil
+}
 
 func newIngestCmd() *cobra.Command {
 	var csvDir, dbPath string
@@ -53,6 +95,7 @@ type ingestOutput struct {
 	application.IngestReport
 	Species        application.SpeciesReport
 	ResolutionRate float64
+	Distribution   application.DistributionReport
 	Localizations  int
 	DerivedLabels  int
 }
@@ -81,6 +124,14 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath string) er
 		return fmt.Errorf("ingesting species roles from %q: %w", csvDir, err)
 	}
 
+	// Runs after IngestSpeciesRoles (it needs the indexed concept ids) and
+	// before the localization/derivation steps, which do not depend on it.
+	distSrc := pacedDistributionSource{src: resolver, pause: hostusDistributionPause}
+	distributionReport, err := application.IngestDistribution(ctx, db, distSrc)
+	if err != nil {
+		return fmt.Errorf("ingesting species distribution: %w", err)
+	}
+
 	localizations, err := application.IngestLocalizations(ctx, db, filepath.Join(csvDir, "localizations.csv"))
 	if err != nil {
 		return fmt.Errorf("ingesting localizations from %q: %w", csvDir, err)
@@ -97,6 +148,7 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath string) er
 		IngestReport:   report,
 		Species:        speciesReport,
 		ResolutionRate: speciesReport.ResolutionRate(),
+		Distribution:   distributionReport,
 		Localizations:  localizations,
 		DerivedLabels:  derivedLabels,
 	}

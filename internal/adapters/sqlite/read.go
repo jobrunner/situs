@@ -254,6 +254,31 @@ func (d *DB) KnownAreaCodes(ctx context.Context, scheme string) ([]string, error
 	return out, nil
 }
 
+// ConceptIDs lists the distinct concept ids the index holds, so the
+// distribution step knows what to ask hostus for.
+func (d *DB) ConceptIDs(ctx context.Context) ([]string, error) {
+	rows, err := d.QueryContext(ctx,
+		`SELECT DISTINCT concept_id FROM species_role
+		 WHERE concept_id IS NOT NULL ORDER BY concept_id`)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: reading concept ids: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("sqlite: scanning concept id: %w", err)
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite: iterating concept ids: %w", err)
+	}
+	return out, nil
+}
+
 // scanSpeciesRole reads the columns shared by the species queries. The
 // nullables stay nullable all the way into the domain: an unresolved name must
 // arrive as a nil ConceptID, never as an empty string, and a missing fidelity
