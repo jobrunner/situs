@@ -891,3 +891,73 @@ func TestSpeciesSetHabitatTypes_DistinguishesTheTwoReasons(t *testing.T) {
 		t.Errorf("entry 1 = %+v, want unknown_concept", got[1])
 	}
 }
+
+// seedBatchAreaRepo seeds three concepts that differ in exactly what the area
+// filter has to say about them: one inside the asked area, one only outside it,
+// and one the index has no distribution rows for at all.
+func seedBatchAreaRepo() (*fakeRepo, string, string, string) {
+	repo := newFakeRepo()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	repo.types = []domain.HabitatType{{Key: key, NameEN: "Hay meadow"}}
+
+	inside, outside, undistributed := "wcvp:concept:in", "wcvp:concept:out", "wcvp:concept:nodist"
+	for _, id := range []string{inside, outside, undistributed} {
+		concept := id
+		repo.speciesRoles = append(repo.speciesRoles,
+			domain.SpeciesRole{Key: key, ConceptID: &concept, VerbatimName: id, Role: "diagnostic"})
+	}
+	repo.distribution = []fakeDistribution{
+		{ConceptID: inside, Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}},
+		{ConceptID: outside, Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "FRA"}},
+	}
+	return repo, inside, outside, undistributed
+}
+
+// The batch answer marks each entry with in_area, three-valued. Without this the
+// marking could silently become a constant: replacing the lookup with nil, or
+// leaking a false where the truth is "not knowable", would leave every other
+// test in this package green.
+func TestSpeciesSetHabitatTypes_MarksInAreaThreeValued(t *testing.T) {
+	repo, inside, outside, undistributed := seedBatchAreaRepo()
+
+	got, err := NewQueryService(repo).SpeciesSetHabitatTypes(context.Background(),
+		[]string{inside, outside, undistributed}, "", input.AreaFilter{Code: "GER"})
+	if err != nil {
+		t.Fatalf("SpeciesSetHabitatTypes: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d entries, want 3", len(got))
+	}
+	if got[0].InArea == nil || !*got[0].InArea {
+		t.Errorf("entry for %s: in_area = %v, want true — the concept occurs in GER", inside, got[0].InArea)
+	}
+	if got[1].InArea == nil || *got[1].InArea {
+		t.Errorf("entry for %s: in_area = %v, want false — it has distribution, just not GER",
+			outside, got[1].InArea)
+	}
+	// Not false: "no distribution rows" is unknown, and answering false would
+	// state an absence the index cannot vouch for.
+	if got[2].InArea != nil {
+		t.Errorf("entry for %s: in_area = %v, want absent — the index has no distribution for it",
+			undistributed, *got[2].InArea)
+	}
+}
+
+// Without ?area= the field must be absent on every entry. A leaked false would
+// read as "does not occur here" to a caller that never asked about a place.
+func TestSpeciesSetHabitatTypes_WithoutAnAreaFilterInAreaIsAbsentEverywhere(t *testing.T) {
+	repo, inside, outside, undistributed := seedBatchAreaRepo()
+
+	got, err := NewQueryService(repo).SpeciesSetHabitatTypes(context.Background(),
+		[]string{inside, outside, undistributed, "cdm:concept:x"}, "", input.AreaFilter{})
+	if err != nil {
+		t.Fatalf("SpeciesSetHabitatTypes: %v", err)
+	}
+	for i, entry := range got {
+		if entry.InArea != nil {
+			t.Errorf("entry %d (%s): in_area = %v, want absent without an area filter",
+				i, entry.ConceptID, *entry.InArea)
+		}
+	}
+}

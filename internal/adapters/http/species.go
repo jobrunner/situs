@@ -83,18 +83,27 @@ func (s *Server) handleSpeciesBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Every non-blank id in input order, duplicates included: the answer carries
-	// one entry per input so response[i] pairs with concept_ids[i]. Deduplicating
-	// the index work is the use case's job, not the adapter's.
+	// Every id in input order, duplicates included: the answer carries one entry
+	// per input so response[i] pairs with concept_ids[i]. Deduplicating the index
+	// work is the use case's job, not the adapter's.
+	//
+	// A blank entry is rejected rather than skipped. Skipping it would return
+	// fewer entries than were asked about and shift a trusting client's whole
+	// recording list by one; answering it with unknown_backbone would be a lie,
+	// because an empty string is not another backbone. So it is a malformed
+	// request — the same verdict a typo'd area code gets.
 	asked := make([]string, 0, len(req.ConceptIDs))
-	for _, id := range req.ConceptIDs {
-		if id = strings.TrimSpace(id); id != "" {
-			asked = append(asked, id)
+	for i, id := range req.ConceptIDs {
+		if id = strings.TrimSpace(id); id == "" {
+			s.writeError(w, http.StatusBadRequest, CodeInvalidQuery,
+				fmt.Sprintf("concept_ids[%d] is empty; every entry must be a concept id", i))
+			return
 		}
+		asked = append(asked, id)
 	}
 	if len(asked) == 0 {
 		s.writeError(w, http.StatusBadRequest, CodeInvalidQuery,
-			"concept_ids must hold at least one non-empty concept id")
+			"concept_ids must hold at least one concept id")
 		return
 	}
 

@@ -613,6 +613,32 @@ func TestSpeciesBatch_TrailingDataIsInvalidQuery(t *testing.T) {
 	}
 }
 
+// A blank entry must be rejected, not skipped. Skipping it would return fewer
+// entries than were asked about, and the whole contract of this route is that
+// response[i] belongs to concept_ids[i] — a client that trusts that and sends
+// one stray empty string would shift its entire plot list by one. Reporting it
+// as unknown_backbone would be a lie (an empty string is not another backbone),
+// so it gets the same verdict a typo'd area code gets: INVALID_QUERY.
+func TestSpeciesBatch_BlankConceptIDBetweenValidOnesIsInvalidQuery(t *testing.T) {
+	q := seededQueryService()
+	srv := newTestServer(t, q)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/species/habitat-types",
+		strings.NewReader(`{"concept_ids":["wcvp:concept:1","  ","wcvp:concept:2"]}`))
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 — a dropped entry would break response[i] <-> concept_ids[i]", rec.Code)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"INVALID_QUERY"`)) {
+		t.Errorf("body = %s, want the INVALID_QUERY error envelope", rec.Body)
+	}
+	if q.conceptSetCalls != 0 {
+		t.Errorf("the use case was called %d times, want no call for a rejected body", q.conceptSetCalls)
+	}
+}
+
 func TestSpeciesBatch_MalformedBodyIsInvalidQuery(t *testing.T) {
 	for name, body := range map[string]string{
 		"not json":         `{`,

@@ -214,11 +214,14 @@ paths:
                     erlaubt: intern wird die Index-Arbeit dedupliziert, die
                     Antwort trägt aber einen Eintrag je Eingabe in
                     Eingabereihenfolge, sodass response[i] zu concept_ids[i]
-                    gehört.
+                    gehört — ausnahmslos. Ein leerer Eintrag ist deshalb
+                    INVALID_QUERY und wird nicht übersprungen: übersprungen
+                    verschöbe er die ganze Liste des Aufrufers um eins.
                   minItems: 1
                   maxItems: 300
                   items:
                     type: string
+                    minLength: 1
                     example: "wcvp:concept:123456"
       responses:
         "200":
@@ -447,6 +450,13 @@ components:
         hat, und abwesend, wenn die Frage nicht beantwortbar ist (keine
         Konzept-ID oder keine Verbreitungszeilen). Ohne ?area= fehlt das Feld
         immer — Abwesenheit ist hier "unbekannt", nie "kommt nicht vor".
+
+        Auf POST /v1/species/habitat-types trägt nur ConceptResolution selbst
+        dieses Feld: in den verschachtelten habitat_types-Einträgen fehlt es
+        auch mit ?area=, denn die Aussage gilt der Art und wäre dort für jeden
+        Habitattyp derselben Art dieselbe Konstante. Auf
+        GET /v1/species/{conceptId}/habitat-types, wo es keine Eintragsebene
+        darüber gibt, ist habitat_types[].in_area dagegen gesetzt.
       type: boolean
     ConceptResolution:
       description: >-
