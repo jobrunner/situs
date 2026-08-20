@@ -3,7 +3,6 @@ package application
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -531,8 +530,8 @@ func (r *fakeRepo) UpsertLocalization(l domain.Localization) error {
 }
 
 func (r *fakeRepo) UpsertDistribution(conceptID string, a domain.Area) error {
-	if r.failOn == "UpsertDistribution" {
-		return errors.New("boom")
+	if err := r.failIfNamed("UpsertDistribution"); err != nil {
+		return err
 	}
 	r.distribution = append(r.distribution, fakeDistribution{ConceptID: conceptID, Area: a})
 	return nil
