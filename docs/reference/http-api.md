@@ -66,29 +66,48 @@ statt eine 0 oder ein `false` zu behaupten.
 ## Selbstauskunft: `GET /v1/info`
 
 Neben `service` und `version` trägt die Antwort ein `index`-Objekt, dessen
-Zahlen alle **am Index gemessen** sind — keine davon ist konfiguriert:
+Zahlen alle **am Index gemessen** sind — keine davon ist konfiguriert. Die
+folgende Antwort ist echt: sie stammt vom vollständigen Ingest des gepinnten
+Datenstands (dieselben Zahlen wie in `measured-index.md`; `version` hängt
+naturgemäß am jeweiligen Build):
 
 ```json
 {
   "service": "situs",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "index": {
     "concept_backbones": ["wcvp"],
-    "species_with_concept": 3612,
+    "species_with_concept": 3135,
     "area_scheme": "wgsrpd_l3",
-    "areas_with_data": 340
+    "areas_with_data": 366
   }
 }
 ```
 
-`concept_backbones` sind die im Index vorkommenden Konzept-ID-Präfixe. Ein
-Client kann damit **vorab** prüfen, ob seine IDs zu diesem Index passen, statt
-den Fehlschlag an leeren Antworten zu erraten. `areas_with_data` ist die Zahl der
-verschiedenen Gebietscodes in `species_distribution` — solange kein
-Verbreitungs-Ingest gelaufen ist, steht dort `0`, und dann ist ein `?area=` mit
-jedem Code `INVALID_QUERY`. Nicht enthalten ist die *Fassung* der Backbone (etwa
-`wcvp 2026-06-15`): der Ingest schreibt sie heute nicht mit, und eine erfundene
-Fassung wäre schlimmer als keine.
+`concept_backbones` sind die im Index vorkommenden Konzept-ID-Präfixe, gemessen
+über alle `concept_id`-Werte. `areas_with_data` ist die Zahl der verschiedenen
+Gebietscodes in `species_distribution` — solange kein Verbreitungs-Ingest
+gelaufen ist, steht dort `0`, und dann ist ein `?area=` mit **jedem** Code
+`INVALID_QUERY`.
+
+Wozu die Selbstauskunft taugt und wozu nicht: sie sagt, worauf dieser Index
+gebaut ist, und macht damit einen Bruch sichtbar — beantwortbar sind aber nur
+`wcvp:`-IDs, denn die Batch-Route prüft gegen ein **fest einkompiliertes**
+Präfix (siehe unten). Meldet `concept_backbones` etwas anderes als `["wcvp"]`,
+ist das kein Hinweis darauf, dass diese IDs nun beantwortet würden, sondern ein
+Hinweis darauf, dass Index und Binary nicht zueinander passen.
+
+Nicht enthalten ist die *Fassung* der Backbone (etwa `wcvp 2026-06-15`): der
+Ingest schreibt sie heute nicht mit, und eine erfundene Fassung wäre schlimmer
+als keine.
+
+Die Zahlen werden **je Anfrage** ermittelt (zwei `SELECT DISTINCT`, siehe
+„Bekannte Grenze: Leseverhalten"), nicht zwischengespeichert — eine gemessene
+Zahl, die aus einem Cache stammt, wäre keine gemessene Zahl mehr.
+
+Fällt eine der beiden Abfragen aus, antwortet die Route **500**
+(`INTERNAL_ERROR`) und nicht ein mit Nullen gefülltes `index`-Objekt: das läse
+sich für einen Client wie „leerer Index" oder „falsches Backbone".
 
 ## Die zwei Arten-Pfade
 
@@ -116,11 +135,20 @@ mit genau zwei möglichen Werten:
 
 | `reason` | Bedeutung | Wessen Fehler |
 |---|---|---|
-| `unknown_backbone` | Das ID-Präfix ist nicht das, worauf der Index gebaut ist (siehe `/v1/info`) | der des Aufrufers |
-| `unknown_concept` | Richtige Backbone, aber der Index kennt zu dieser ID keine Fakten | die Grenze der Daten |
+| `unknown_backbone` | Das ID-Präfix ist nicht `wcvp:` | der des Aufrufers |
+| `unknown_concept` | Präfix `wcvp:`, aber der Index kennt zu dieser ID keine Fakten | die Grenze der Daten |
 
 Zwei getrennte Werte, weil es zwei verschiedene Fehler sind: eine gemeinsame
 Bezeichnung würde die Suche im falschen System beginnen lassen.
+
+Geprüft wird gegen **`wcvp`, eine Konstante in der Binary** — nicht gegen das,
+was `/v1/info` meldet. Das ist Absicht: eine Ableitung pro Anfrage würde jede
+Batch-Anfrage eine zusätzliche Abfrage kosten, und ein Index mit gemischten
+Backbones ist ohnehin kein Zustand, den dieser Entwurf trägt. Die Folge, die man
+kennen muss: gegen einen Index, der **nicht** auf wcvp gebaut ist, meldet
+`/v1/info` treu dessen Backbone, während jede seiner IDs hier
+`unknown_backbone` bekommt. Die Selbstauskunft macht diesen Bruch sichtbar; sie
+verschiebt die Prüfung nicht.
 
 ## Grenzen des Batch-Endpunkts
 
@@ -150,8 +178,15 @@ ist. Ein leeres `concept_ids` ist ebenfalls `INVALID_QUERY`.
 ihn aus der GPS-Position ab, situs braucht deshalb keine ISO-Abbildung. Ein Code,
 für den der Index keine Daten hat, ist `INVALID_QUERY` (400) und **nicht** eine
 Liste voller „kommt nicht vor": ein Tippfehler und eine echte Abwesenheit dürfen
-nicht gleich aussehen. Welche Codes es gibt, verrät `areas_with_data` in
-`/v1/info` der Größenordnung nach.
+nicht gleich aussehen.
+
+**Welche Codes gültig sind, sagt keine Route.** `areas_with_data` in `/v1/info`
+nennt nur ihre *Anzahl* — daraus lässt sich ablesen, ob überhaupt ein
+Verbreitungs-Ingest gelaufen ist (`0` heißt nein), nicht aber, ob `GER` dabei
+ist. Ein Client, der die Codes braucht, muss sie kennen (WGSRPD Level 3 ist ein
+veröffentlichtes Vokabular) oder am 400 erkennen. Ein Endpunkt, der sie
+auflistet, ist bewusst nicht gebaut, aber die naheliegende Ergänzung, sobald
+jemand sie braucht.
 
 Mit `?area=` trägt jeder Arteneintrag ein `in_area` mit **drei** Zuständen:
 
@@ -196,3 +231,10 @@ dessen Typ-Zeile, Label und Syntaxa (N+1). Gegen eine lokale SQLite-Datei ist
 das unkritisch — die reale Ajuga-reptans-Antwort sind rund 33 Zugriffe —, aber
 bevor dieser Dienst nebenläufige Last bedient, sind die Nachlesen zu
 Sammelabfragen zusammenzufassen.
+
+`GET /v1/info` gehört in dieselbe Kategorie: es scannt je Anfrage
+`species_role.concept_id` und `species_distribution.area_code` distinct, statt
+die Zahlen zu cachen. Für eine Route, die ein Client einmal beim Start ruft, ist
+das richtig — ein Cache würde aus einer gemessenen Zahl eine behauptete machen,
+und ein Index kann sich unter dem laufenden Prozess ändern. Wer die Route in
+eine Schleife legt, sollte wissen, was sie kostet.

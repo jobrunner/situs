@@ -37,12 +37,16 @@ The second plan made the read side **autark and area-aware**:
   `internal/app/arch_test.go`, which forbids `internal/app` from even importing
   the hostus adapter. `SITUS_HOSTUS_*` is ingest-only configuration.
 - Each batch entry reports `known` plus, when false, a `reason` of exactly
-  `unknown_backbone` (wrong id prefix — the caller's fault) or `unknown_concept`
-  (right backbone, no facts — the data's limit).
+  `unknown_backbone` (the id prefix is not `wcvp:` — the caller's fault) or
+  `unknown_concept` (prefix `wcvp:`, no facts — the data's limit). The prefix is
+  checked against a **compile-time constant**, deliberately not against what
+  `/v1/info` measures: deriving it would cost a query per batch, and a
+  mixed-backbone index is not a state this design carries.
 - `species_distribution` in the index, filled by `IngestDistribution` (one
-  hostus request per concept, paced at 70 ms, ~3 min for ~3600 concepts). A
-  source outage does **not** abort the ingest: the distribution is extra
-  information, so it is warned about and the run continues.
+  hostus request per concept, paced at 70 ms — measured **3135** concepts, and
+  the whole `situs ingest` measured 6:00). A source outage does **not** abort
+  the ingest: the distribution is extra information, so it is warned about and
+  the run continues.
 - `?area=` (WGSRPD level 3) and `?only_in_area=` on the species lists. `in_area`
   is three-valued (`true` / `false` / field absent when unknowable), and
   `only_in_area` drops only the definite `false`s. An unknown area code is

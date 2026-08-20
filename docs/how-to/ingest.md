@@ -90,8 +90,11 @@ ingestierten Konzept-IDs) und füllt `species_distribution` — die Grundlage f�
 `?area=` und `?only_in_area=` auf der Leseseite. Gefragt wird hostus, **einmal
 pro Konzept**: für die Verbreitung gibt es keine Batch-Route. Der Ingest-Pfad
 drosselt deshalb selbst auf ein Konzept je 70 ms, weil hostus oberhalb von
-20 req/s mit 429 antwortet; an den echten Daten (~3600 Konzepte) dauert der
-Schritt damit etwa **drei Minuten**.
+20 req/s mit 429 antwortet. An den echten Daten sind das **3135** Konzepte
+(gemessen), allein die Drosselung also 3135 × 70 ms ≈ **3:40** — eine
+Untergrenze, die Antwortzeiten kommen obendrauf. Gemessen ist der **ganze**
+`situs ingest` mit **6:00**; die Aufteilung auf die Schritte wurde nicht
+einzeln gemessen und steht deshalb hier nicht.
 
 Das Report-Objekt `Distribution`:
 

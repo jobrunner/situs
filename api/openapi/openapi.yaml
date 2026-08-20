@@ -91,7 +91,12 @@ paths:
         Nennt neben Name und Version, worauf der Index gebaut ist: die
         vorkommenden Konzept-Backbones, die Zahl der Konzepte, das Gebietsschema
         und die Zahl der Gebiete mit Verbreitungsdaten. So kann ein Client vorab
-        prüfen, ob seine Konzept-IDs zu diesem Index passen.
+        prüfen, ob seine Konzept-IDs zu diesem Index passen. Beantwortbar sind
+        allerdings nur `wcvp:`-IDs: die Batch-Route prüft gegen ein fest
+        einkompiliertes Präfix, nicht gegen diese Auskunft — sie macht einen
+        Bruch sichtbar, sie verschiebt die Prüfung nicht. Schlägt eine der
+        beiden Index-Abfragen fehl, ist die Antwort 500 und nicht ein mit
+        Nullen gefülltes `index`-Objekt.
       operationId: info
       responses:
         "200":
@@ -100,6 +105,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Info"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /v1/habitat-type/{typology}/{code}:
     get:
       summary: Ein Habitattyp mit Arten, Syntaxa und Crosswalks
@@ -336,6 +343,16 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    # Dieselbe Fehlerhülle wie überall. Sie ist nur an /v1/info ausgewiesen,
+    # weil dort ein Auslöser benannt und getestet ist (eine fehlschlagende
+    # Index-Abfrage); die anderen Routen können INTERNAL_ERROR ebenfalls
+    # liefern, aber nur als unspezifizierten Ausfall.
+    InternalError:
+      description: Ein Fehler auf der Dienstseite (INTERNAL_ERROR).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
     Role:
       type: string
@@ -466,11 +483,11 @@ components:
     ConceptResolution:
       description: >-
         Ein Eintrag der Batch-Antwort. Bei known=false ist habitat_types leer und
-        reason sagt, warum: unknown_backbone heißt, die ID stammt aus einer
-        anderen taxonomischen Referenz als der, gegen die der Index gebaut wurde
-        (ihre IDs können hier gar nicht treffen); unknown_concept heißt, die
-        Referenz stimmt, aber der Index kennt keine Habitat-Fakten zu diesem
-        Konzept. Die Eingabe wird in beiden Fällen zurückgemeldet, nie verworfen.
+        reason sagt, warum: unknown_backbone heißt, das ID-Präfix ist nicht
+        `wcvp:` — geprüft wird gegen dieses fest einkompilierte Präfix, nicht
+        gegen die Selbstauskunft aus /v1/info; unknown_concept heißt, das Präfix
+        stimmt, aber der Index kennt keine Habitat-Fakten zu diesem Konzept. Die
+        Eingabe wird in beiden Fällen zurückgemeldet, nie verworfen.
       type: object
       required: [concept_id, known, habitat_types]
       properties:
@@ -510,15 +527,18 @@ components:
         concept_backbones:
           type: array
           description: >-
-            Die im Index vorkommenden Konzept-ID-Präfixe, sortiert. Im Normalfall
-            genau eines (`wcvp`); mehrere bedeuten einen aus gemischten Quellen
-            gebauten Index.
+            Die im Index vorkommenden Konzept-ID-Präfixe, sortiert. Erwartet ist
+            genau `["wcvp"]` — nur solche IDs beantwortet die Batch-Route, denn
+            sie prüft gegen ein fest einkompiliertes Präfix. Etwas anderes hier
+            heißt darum nicht "auch diese IDs sind beantwortbar", sondern
+            "Index und Binary passen nicht zueinander".
           items:
             type: string
           example: ["wcvp"]
         species_with_concept:
           type: integer
           description: Zahl der verschiedenen Konzept-IDs im Index.
+          example: 3135
         area_scheme:
           type: string
           description: Das Vokabular, aus dem `?area=`-Codes stammen.
@@ -528,7 +548,9 @@ components:
           description: >-
             Zahl der verschiedenen Gebietscodes mit Verbreitungszeilen. 0, solange
             kein Verbreitungs-Ingest gelaufen ist — das ist eine wahre Aussage
-            über den Index, kein Platzhalter.
+            über den Index, kein Platzhalter. Es ist eine Anzahl und keine Liste:
+            *welche* Codes gültig sind, sagt keine Route.
+          example: 366
     # Die einheitliche Fehlerhülle jeder Antwort (writeError) — identisch zu
     # hostus. Codes: INVALID_QUERY, NOT_FOUND, INTERNAL_ERROR. Es gibt kein
     # UPSTREAM_UNAVAILABLE: der Lesepfad ist autark, zur Laufzeit hängt kein

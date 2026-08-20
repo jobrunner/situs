@@ -113,8 +113,10 @@ immer gesetzt, `concept_id` bleibt NULL.
 ## Verbreitung (`species_distribution`)
 
 Gemessen am selben Lauf, gegen denselben hostus-Index. Der Schritt fragt hostus
-einmal pro Konzept, gedrosselt auf 70 ms; die **6 Minuten** unten sind der ganze
-`situs ingest`, davon etwa drei Minuten dieser Schritt.
+einmal pro Konzept, gedrosselt auf 70 ms. Gemessen ist die Dauer des **ganzen**
+`situs ingest`: **5:59,98**. Wie viel davon auf diesen Schritt entfällt, wurde
+nicht einzeln gemessen; rechnerisch sind allein die Drosselpausen
+3135 × 70 ms ≈ 3:40.
 
 | Kennzahl | Gemessen |
 |---|---|
@@ -124,6 +126,13 @@ einmal pro Konzept, gedrosselt auf 70 ms; die **6 Minuten** unten sind der ganze
 | unvollständige Gebiete (`Incomplete`) | 0 |
 | übersprungene Konzepte (`Failed`) | 0 |
 | verschiedene Gebietscodes (`areas_with_data` in `/v1/info`) | 366 |
+
+Woher die **3135** kommen, weil die Zahl auf den ersten Blick niedrig aussieht:
+`species_roles.csv` trägt **3587** verschiedene Artnamen, davon löste hostus
+**3142** auf (siehe oben) — die restlichen **445** haben keine Konzept-ID und
+zählen hier deshalb nicht mit. Von den 3142 aufgelösten Namen fallen nur **7**
+paarweise auf dasselbe Konzept zusammen (3142 − 3135). Der Abstand zur Zahl der
+Namen ist also fast ausschließlich die Auflösungslücke, nicht Synonymie.
 
 Warum das den Aufwand wert war, an `eunis@2021/R15` mit `?area=GER` gemessen:
 

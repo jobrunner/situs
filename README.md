@@ -47,7 +47,11 @@ den hostus-Adapter nicht einmal importieren.
 ## Stand
 
 Im Aufbau. Das Gerüst steht (Go 1.26, hexagonal, Qualitäts-Gates, CI); Ingest
-und Lese-API des Fundaments sind implementiert.
+und Lese-API des Fundaments sind implementiert. Darüber hinaus fertig: die
+**autarke Leseseite** (Batch über Konzept-IDs, kein hostus zur Laufzeit), der
+**Gebietsfilter** (`?area=`, `?only_in_area=`) samt Verbreitungs-Ingest, und die
+**Selbstauskunft** `GET /v1/info`. Noch nicht gebaut: Scoring/Ranking, die
+ESy-Regel-Engine, der EUNIS-2012-Schlüssel und deutsche Labels (siehe oben).
 
 `make verify` braucht neben der Go-Toolchain ein **`python3`** im Pfad: die
 Tests der XLSX→CSV-Pipeline gehören zum kanonischen Grün-Check. Zusätzliche
@@ -81,6 +85,7 @@ curl -s -X POST localhost:8070/v1/species/habitat-types \
   -d '{"concept_ids":["wcvp:concept:2457314","wcvp:concept:2606633"]}'
 
 # Nur was im Gebiet vorkommt (WGSRPD-Level-3-Code, aus GPS abgeleitet).
+# Setzt einen abgeschlossenen Verbreitungs-Ingest voraus — siehe unten.
 curl -s 'localhost:8070/v1/habitat-type/eunis@2021/R15/species?area=GER&only_in_area=true'
 ```
 
@@ -88,6 +93,12 @@ Mit `?area=` trägt jeder Arteneintrag ein dreiwertiges `in_area`: `true`,
 `false`, oder das Feld fehlt, wenn es nicht entscheidbar ist (keine Konzept-ID
 oder keine Verbreitungsdaten). `only_in_area=true` entfernt nur die
 `false`-Einträge — die unentscheidbaren bleiben.
+
+**`?area=` braucht Verbreitungsdaten im Index.** Die holt der Ingest von hostus
+(ein Request je Konzept, gedrosselt); war hostus dabei nicht erreichbar, läuft
+der Ingest trotzdem durch — der Index ist dann nur nicht filterbar, und **jeder**
+Gebietscode ergibt `INVALID_QUERY` (400). Ob Daten da sind, sagt
+`areas_with_data` in `GET /v1/info`: `0` heißt nein.
 
 ### Fertige Artefakte
 
