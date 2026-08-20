@@ -15,8 +15,8 @@ func TestLoadUsesTheDefaultsWithoutFileOrEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(\"\") = %v, want no error", err)
 	}
-	if cfg.Server.Port != 8080 {
-		t.Errorf("server.port = %d, want 8080", cfg.Server.Port)
+	if cfg.Server.Port != 8070 {
+		t.Errorf("server.port = %d, want 8070", cfg.Server.Port)
 	}
 	if cfg.Server.ShutdownTimeout != 15*time.Second {
 		t.Errorf("server.shutdown_timeout = %v, want 15s", cfg.Server.ShutdownTimeout)
@@ -24,7 +24,7 @@ func TestLoadUsesTheDefaultsWithoutFileOrEnvironment(t *testing.T) {
 	if cfg.Logging.Format != "json" {
 		t.Errorf("logging.format = %q, want %q", cfg.Logging.Format, "json")
 	}
-	if cfg.Hostus.BaseURL != "http://localhost:8081" {
+	if cfg.Hostus.BaseURL != "http://localhost:8080" {
 		t.Errorf("hostus.base_url = %q, want the default", cfg.Hostus.BaseURL)
 	}
 	if cfg.Hostus.Timeout != 30*time.Second {
@@ -121,9 +121,9 @@ func TestLoadFailsOnAMissingConfigFile(t *testing.T) {
 }
 
 func TestAddrJoinsHostAndPort(t *testing.T) {
-	got := config.ServerConfig{Host: "127.0.0.1", Port: 8080}.Addr()
-	if got != "127.0.0.1:8080" {
-		t.Errorf("Addr() = %q, want %q", got, "127.0.0.1:8080")
+	got := config.ServerConfig{Host: "127.0.0.1", Port: 8070}.Addr()
+	if got != "127.0.0.1:8070" {
+		t.Errorf("Addr() = %q, want %q", got, "127.0.0.1:8070")
 	}
 }
 

@@ -9,5 +9,5 @@ Bis dahin:
 ```bash
 make build
 ./situs serve
-curl -s localhost:8080/v1/info
+curl -s localhost:8070/v1/info
 ```

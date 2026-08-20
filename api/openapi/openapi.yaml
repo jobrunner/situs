@@ -17,8 +17,13 @@ info:
   license:
     name: MIT
 servers:
-  - url: http://localhost:8080
-    description: Lokale Entwicklung
+  # Relativ, absichtlich: Swagger-UI baut die "Try it out"-Anfragen aus diesem
+  # Eintrag. Eine absolute URL mit festem Port zeigt am tatsächlich benutzten
+  # Port vorbei, sobald der Dienst nicht auf dem dort genannten läuft. Relativ
+  # löst gegen die Herkunft der Seite auf und trifft damit immer den Server, der
+  # sie ausgeliefert hat.
+  - url: /
+    description: Derselbe Server, der diese Spezifikation ausliefert
 
 paths:
   /health/live:

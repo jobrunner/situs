@@ -77,7 +77,10 @@ type HostusConfig struct {
 // Defaults registers every default value.
 func Defaults(v *viper.Viper) {
 	v.SetDefault("server.host", "127.0.0.1")
-	v.SetDefault("server.port", 8080)
+	// 8070, nicht 8080: hostus läuft üblicherweise lokal auf 8080, und situs ruft
+	// hostus auf — beide Dienste auf demselben Rechner dürfen sich nicht um einen
+	// Port streiten.
+	v.SetDefault("server.port", 8070)
 	v.SetDefault("server.read_timeout", 30*time.Second)
 	v.SetDefault("server.shutdown_timeout", 15*time.Second)
 
@@ -86,7 +89,9 @@ func Defaults(v *viper.Viper) {
 
 	v.SetDefault("index.path", "situs.sqlite")
 
-	v.SetDefault("hostus.base_url", "http://localhost:8081")
+	// 8080 ist hostus' eigener Default-Port; situs weicht deshalb auf 8070 aus
+	// (siehe server.port) statt hostus zu verdrängen.
+	v.SetDefault("hostus.base_url", "http://localhost:8080")
 	v.SetDefault("hostus.timeout", 30*time.Second)
 	v.SetDefault("hostus.batch_size", defaultHostusBatchSize)
 	v.SetDefault("hostus.entry_backbone", defaultHostusEntryBackbone)
