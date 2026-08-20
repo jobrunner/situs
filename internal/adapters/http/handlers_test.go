@@ -729,6 +729,17 @@ type fakeQueryService struct {
 	// methods received, so a test can assert the parsed query string actually
 	// reached the use case, not just that the route parses.
 	areaFilter input.AreaFilter
+	// indexInfo is what /v1/info reports; indexInfoErr fails it, so the
+	// handler's failure path is exercised without a broken index.
+	indexInfo    input.IndexInfo
+	indexInfoErr error
+}
+
+func (f *fakeQueryService) IndexInfo(context.Context) (input.IndexInfo, error) {
+	if f.indexInfoErr != nil {
+		return input.IndexInfo{}, f.indexInfoErr
+	}
+	return f.indexInfo, nil
 }
 
 func seededQueryService() *fakeQueryService {
@@ -775,6 +786,12 @@ func seededQueryService() *fakeQueryService {
 			"wcvp:concept:1": {{HabitatTypeSummary: r22, Role: input.RoleDiagnostic, Syntaxa: syntaxa}},
 		},
 		bySyntaxon: map[string][]input.HabitatTypeSummary{"BRO-01A": {r22}},
+		indexInfo: input.IndexInfo{
+			ConceptBackbones:   []string{"wcvp"},
+			SpeciesWithConcept: 2,
+			AreaScheme:         domain.SchemeWGSRPDL3,
+			AreasWithData:      3,
+		},
 	}
 }
 

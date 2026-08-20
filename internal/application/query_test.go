@@ -961,3 +961,54 @@ func TestSpeciesSetHabitatTypes_WithoutAnAreaFilterInAreaIsAbsentEverywhere(t *t
 		}
 	}
 }
+
+// A client has to be able to check up front whether its concept ids can match
+// this index at all, instead of discovering a backbone mismatch through empty
+// answers. Every figure is derived from the index, never configured.
+func TestIndexInfo_ReportsTheBackboneTheIndexWasBuiltFrom(t *testing.T) {
+	repo := newFakeRepo()
+	id := "wcvp:concept:1"
+	repo.speciesRoles = []domain.SpeciesRole{
+		{Key: domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}, ConceptID: &id, VerbatimName: "A", Role: "diagnostic"},
+	}
+	repo.distribution = []fakeDistribution{
+		{ConceptID: id, Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}},
+	}
+
+	got, err := NewQueryService(repo).IndexInfo(context.Background())
+	if err != nil {
+		t.Fatalf("IndexInfo: %v", err)
+	}
+	if len(got.ConceptBackbones) != 1 || got.ConceptBackbones[0] != "wcvp" {
+		t.Errorf("ConceptBackbones = %v, want [wcvp]", got.ConceptBackbones)
+	}
+	if got.SpeciesWithConcept != 1 || got.AreasWithData != 1 {
+		t.Errorf("info = %+v, want one concept and one area", got)
+	}
+	if got.AreaScheme != domain.SchemeWGSRPDL3 {
+		t.Errorf("AreaScheme = %q, want %q", got.AreaScheme, domain.SchemeWGSRPDL3)
+	}
+}
+
+// Both index reads must surface. A self-description that quietly reports zeros
+// after a failed read would be worse than no answer: a client would conclude
+// "wrong backbone" from a broken database.
+func TestIndexInfo_SurfacesEitherFailingRead(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		fail func(*fakeRepo, error)
+	}{
+		{"concept ids", func(r *fakeRepo, err error) { r.conceptIDsErr = err }},
+		{"known area codes", func(r *fakeRepo, err error) { r.areasErr = err }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wantErr := errors.New("index unreadable")
+			repo := newFakeRepo()
+			tc.fail(repo, wantErr)
+
+			if _, err := NewQueryService(repo).IndexInfo(context.Background()); !errors.Is(err, wantErr) {
+				t.Errorf("IndexInfo error = %v, want it to wrap %v", err, wantErr)
+			}
+		})
+	}
+}

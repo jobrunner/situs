@@ -22,13 +22,36 @@ IDs; at runtime it is autark for concept-ID queries.
 
 ## Current State — START HERE
 
-**All 8 tasks of the foundation plan are done.** The service is scaffolded with
-the full quality harness (module `github.com/jobrunner/situs`, Go 1.26,
-hexagonal package layout, ratchets, CI, release-please, MkDocs), and the
-foundation's ingest and read API are implemented: domain value objects, the
-sqlite index, the hostus name-resolution adapter, the CSV ingest, the
+**The foundation plan (8 tasks) and the "autarke Laufzeit und Verbreitung" plan
+(7 tasks) are both done.** The service is scaffolded with the full quality
+harness (module `github.com/jobrunner/situs`, Go 1.26, hexagonal package layout,
+ratchets, CI, release-please, MkDocs), and ingest plus read API are implemented:
+domain value objects, the sqlite index, the hostus adapter, the CSV ingest, the
 localization overlay with `=`-only German derivation, and the habitat-type /
 species / syntaxon read endpoints.
+
+The second plan made the read side **autark and area-aware**:
+
+- **No hostus in the serve path.** The batch route takes `concept_ids`, not
+  verbatim `names`; every read answers from the local index alone. Held by
+  `internal/app/arch_test.go`, which forbids `internal/app` from even importing
+  the hostus adapter. `SITUS_HOSTUS_*` is ingest-only configuration.
+- Each batch entry reports `known` plus, when false, a `reason` of exactly
+  `unknown_backbone` (wrong id prefix — the caller's fault) or `unknown_concept`
+  (right backbone, no facts — the data's limit).
+- `species_distribution` in the index, filled by `IngestDistribution` (one
+  hostus request per concept, paced at 70 ms, ~3 min for ~3600 concepts). A
+  source outage does **not** abort the ingest: the distribution is extra
+  information, so it is warned about and the run continues.
+- `?area=` (WGSRPD level 3) and `?only_in_area=` on the species lists. `in_area`
+  is three-valued (`true` / `false` / field absent when unknowable), and
+  `only_in_area` drops only the definite `false`s. An unknown area code is
+  `INVALID_QUERY`, never a list of "does not occur".
+- `GET /v1/info` carries an `index` object (`concept_backbones`,
+  `species_with_concept`, `area_scheme`, `areas_with_data`), every figure
+  measured from the index. Deliberately not in it: the backbone's *fassung*
+  (e.g. `wcvp 2026-06-15`) — the ingest does not record it, and it is a schema
+  extension of its own.
 
 Not in the index yet, deliberately: **no German labels.** The overlay mechanism
 is built and tested, but no German name source is pinned (EUR-Lex is deferred),
@@ -41,9 +64,11 @@ so `Localizations` and `DerivedLabels` are measured 0. See
   toolchain into vendor mode and breaks every bare `go build`/`go test`.
 - The design documents (see below).
 
-**Next action:** none in this plan — the foundation branch is ready to merge.
-Deliberately out of scope for it: scoring/ranking, the ESy rule engine, the
-EUNIS-2012 key, and full plot classification.
+**Next action:** none in either plan — `feature/autark-runtime` is ready to
+merge. Deliberately out of scope so far: scoring/ranking, the ESy rule engine,
+the EUNIS-2012 key, full plot classification, co-occurrence ranking, an
+Article-17 filter, syntaxa distribution, and any ISO↔WGSRPD mapping (the
+frontend derives the area code from GPS).
 
 ## Design documents (read these before implementing)
 
@@ -51,6 +76,8 @@ EUNIS-2012 key, and full plot classification.
 |---|---|
 | `docs/superpowers/specs/2026-08-18-situs-foundation-design.md` | The design: scope, data model, ingest, read API. **Authoritative.** |
 | `docs/superpowers/plans/2026-08-19-situs-foundation.md` | The 8-task TDD implementation plan. |
+| `docs/superpowers/specs/2026-08-20-autarke-laufzeit-und-verbreitung-design.md` | The autark read side and the area filter. **Authoritative** for both. |
+| `docs/superpowers/plans/2026-08-20-autarke-laufzeit-und-verbreitung.md` | Its 7-task TDD plan. |
 | `docs/research/situs-eea-eunis-2021-spike.md` | What the EEA data actually provides (measured, not assumed). |
 | `docs/research/sp9-esy-spike.md` | The ESy rule set: obtainable, parsable, and its hard scope limit. |
 
@@ -77,11 +104,13 @@ cmd/situs/          # thin entrypoint + cobra commands (serve, ingest, version)
 internal/
   domain/           # TypologyID, HabitatTypeKey, Qualifier, entities — no I/O deps
   ports/input/      # driving ports (what the app offers)
-  ports/output/     # driven ports (Repository, IngestTx, NameResolver)
+  ports/output/     # driven ports (Repository, IngestTx, NameResolver,
+                    #               DistributionSource)
   application/      # use cases: ingest, localize, query
   adapters/
     sqlite/         # local index (modernc.org/sqlite)
-    hostus/         # NameResolver via hostus POST /v1/match
+    hostus/         # NameResolver (POST /v1/match) + DistributionSource
+                    # (GET /v1/concept/{id}) — INGEST ONLY, never in serve
     http/           # gorilla/mux router + handlers + OpenAPI
   app/              # composition root
   config/           # SITUS_-prefixed config
@@ -100,12 +129,13 @@ dependency fails the build until it is added to `.golangci.yml` on purpose.
 - Every mounted route must declare `.Methods()` and must appear in
   `internal/adapters/http/openapi.yaml`; the contract test checks **both**
   directions and fails on a route without an explicit method.
-- Error envelope: `{"error":{"code":"...","message":"..."}}` with the codes
-  `INVALID_QUERY`, `NOT_FOUND`, `UPSTREAM_UNAVAILABLE`, `INTERNAL_ERROR`.
-  **Deviation, decided:** the originally mandated `UNRESOLVABLE` code is *not*
-  emitted. An unresolvable verbatim name is a normal 200 answer carrying
-  `resolved: false` — the input is reported back, never dropped, and a batch of
-  50 names must not fail because one of them is unknown. Recorded in
+- Error envelope: `{"error":{"code":"...","message":"..."}}` with exactly three
+  codes: `INVALID_QUERY`, `NOT_FOUND`, `INTERNAL_ERROR`.
+  **Two codes are decidedly not emitted.** `UPSTREAM_UNAVAILABLE` is gone with
+  the runtime hostus dependency — no read path has an upstream that could fail.
+  `UNRESOLVABLE` never existed: a concept id the index cannot answer is a normal
+  200 carrying `known: false` and a `reason`; the input is reported back, never
+  dropped, and one unknown id must not fail a batch of 300. Recorded in
   `openapi.yaml` and `docs/reference/http-api.md`.
 
 ## Technical Constraints
@@ -133,6 +163,13 @@ list narrow. The Go ingest reads **only CSV**. This mirrors hostus'
   without an Annex I correspondence is the normal case.
 - **Unresolvable species names are kept**, not dropped: `verbatim_name` always
   set, `concept_id` NULL, and the resolution rate is measured and reported.
+- **Serving stays autark.** No read path may reach for hostus or any other
+  upstream, and `internal/app` may not import the hostus adapter.
+- **`in_area` is three-valued.** `true`, `false`, or the field absent when it is
+  unknowable (no concept id, or a concept with no distribution rows). Never
+  collapse the third state into `false`, and `only_in_area` must keep the
+  unknowables — a list that silently drops what it cannot judge is dishonestly
+  clean.
 - **Measure, do not assume.** The pipeline emits a `report.json` (syntaxa depth,
   the qualifier symbols actually present, Annex I coverage). If the data
   contradicts the spec, stop and report — do not silently adapt.

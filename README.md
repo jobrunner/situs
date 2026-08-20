@@ -35,8 +35,14 @@ nennt situs die weiteren Kennarten, nach denen sich gezielt suchen lässt.
 
 [hostus](https://github.com/jobrunner/hostus) löst **Namen** auf
 (`verbatim → Konzept`). situs hält das **Habitat-/Vegetationswissen**. Beim
-Ingest ruft situs hostus, um die Artnamen der Quellen auf stabile Konzept-IDs
-zu normalisieren; zur Laufzeit ist situs für Abfragen per Konzept-ID autark.
+Ingest ruft situs hostus — für die Artnamen der Quellen (→ stabile Konzept-IDs)
+und für die Verbreitung dieser Konzepte.
+
+**Die Leseseite ist autark:** `situs serve` braucht hostus nicht. Jede Route
+antwortet allein aus dem lokalen SQLite-Index, und die Batch-Route nimmt darum
+Konzept-IDs statt verbatim Namen — wer Namen auflösen will, ruft hostus selbst.
+Ein Architekturtest hält das fest: die Kompositionswurzel des Serve-Pfads darf
+den hostus-Adapter nicht einmal importieren.
 
 ## Stand
 
@@ -63,11 +69,25 @@ ohne Netz), `GET /v1/info` und die Lese-Endpunkte:
 ./situs ingest --csv-dir pipelines/eunis/out
 ./situs serve
 
+curl -s 'localhost:8070/v1/info'                        # worauf der Index gebaut ist
 curl -s 'localhost:8070/v1/habitat-type/eunis@2021/R22?lang=de'
 curl -s 'localhost:8070/v1/habitat-type/annex1/6510'
 curl -s 'localhost:8070/v1/species/<conceptId>/habitat-types'
 curl -s 'localhost:8070/v1/syntaxon/<syntaxonId>/habitat-types'
+
+# Eine ganze Geländeaufnahme in einem Aufruf — Konzept-IDs, keine Namen.
+curl -s -X POST localhost:8070/v1/species/habitat-types \
+  -H 'Content-Type: application/json' \
+  -d '{"concept_ids":["wcvp:concept:2457314","wcvp:concept:2606633"]}'
+
+# Nur was im Gebiet vorkommt (WGSRPD-Level-3-Code, aus GPS abgeleitet).
+curl -s 'localhost:8070/v1/habitat-type/eunis@2021/R15/species?area=GER&only_in_area=true'
 ```
+
+Mit `?area=` trägt jeder Arteneintrag ein dreiwertiges `in_area`: `true`,
+`false`, oder das Feld fehlt, wenn es nicht entscheidbar ist (keine Konzept-ID
+oder keine Verbreitungsdaten). `only_in_area=true` entfernt nur die
+`false`-Einträge — die unentscheidbaren bleiben.
 
 ### Fertige Artefakte
 

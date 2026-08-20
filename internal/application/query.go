@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/jobrunner/situs/internal/domain"
@@ -298,6 +299,44 @@ func translateNotFound(err error, what string) error {
 // supports. GET /v1/info reports what the index actually holds, so a mismatch
 // stays observable.
 const indexBackbone = "wcvp"
+
+// IndexInfo measures what the index holds. Nothing here is configured: a
+// client's whole reason to ask is to find out whether *this* index can answer
+// its concept ids, and a configured claim could not tell it that.
+func (q *QueryService) IndexInfo(ctx context.Context) (input.IndexInfo, error) {
+	ids, err := q.repo.ConceptIDs(ctx)
+	if err != nil {
+		return input.IndexInfo{}, fmt.Errorf("listing concept ids: %w", err)
+	}
+	areas, err := q.repo.KnownAreaCodes(ctx, domain.SchemeWGSRPDL3)
+	if err != nil {
+		return input.IndexInfo{}, fmt.Errorf("listing known area codes: %w", err)
+	}
+	return input.IndexInfo{
+		ConceptBackbones:   backbonesOf(ids),
+		SpeciesWithConcept: len(ids),
+		AreaScheme:         domain.SchemeWGSRPDL3,
+		AreasWithData:      len(areas),
+	}, nil
+}
+
+// backbonesOf reduces concept ids to their distinct prefixes, sorted so the
+// answer does not depend on row order. An id without a prefix is reported as
+// the empty-string backbone rather than hidden — a malformed id in the index is
+// something the operator should see.
+func backbonesOf(conceptIDs []string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, id := range conceptIDs {
+		prefix, _, _ := strings.Cut(id, ":")
+		if !seen[prefix] {
+			seen[prefix] = true
+			out = append(out, prefix)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
 
 // SpeciesSetHabitatTypes answers a whole field record at once — one entry per
 // input concept id, in input order, duplicates included. It is autark: no

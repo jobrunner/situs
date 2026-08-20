@@ -109,3 +109,29 @@ Grundgesamtheit: **87,59 %** liegen deutlich über der dort abgeschätzten
 
 Nicht aufgelöste Namen werden **behalten**, nicht verworfen: `verbatim_name` ist
 immer gesetzt, `concept_id` bleibt NULL.
+
+## Verbreitung (`species_distribution`)
+
+Gemessen am selben Lauf, gegen denselben hostus-Index. Der Schritt fragt hostus
+einmal pro Konzept, gedrosselt auf 70 ms; die **6 Minuten** unten sind der ganze
+`situs ingest`, davon etwa drei Minuten dieser Schritt.
+
+| Kennzahl | Gemessen |
+|---|---|
+| Konzepte im Index (`Concepts`) | 3135 |
+| davon mit Verbreitungsdaten (`WithAreas`) | 3135 (100 %) |
+| geschriebene Zeilen (`Rows`) | 104581 |
+| unvollständige Gebiete (`Incomplete`) | 0 |
+| übersprungene Konzepte (`Failed`) | 0 |
+| verschiedene Gebietscodes (`areas_with_data` in `/v1/info`) | 366 |
+
+Warum das den Aufwand wert war, an `eunis@2021/R15` mit `?area=GER` gemessen:
+
+| Abfrage | Einträge |
+|---|---|
+| ohne Filter / `?area=GER` | 170 (`in_area: true` 78, `false` 83, Feld fehlt 9) |
+| `?area=GER&only_in_area=true` | 87 (die 83 `false` entfernt, alle 9 unentscheidbaren behalten) |
+
+**49 % der Arten dieses Habitattyps kommen in Deutschland nicht vor.** Eine
+Artenliste ohne Gebietsfilter schickt einen Nutzer im Gelände also in etwa jedem
+zweiten Fall hinter eine Pflanze, die dort nicht wachsen kann.

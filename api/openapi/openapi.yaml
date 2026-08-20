@@ -86,11 +86,16 @@ paths:
                 type: string
   /v1/info:
     get:
-      summary: Dienst- und Build-Information
+      summary: Dienst-, Build- und Index-Information
+      description: >-
+        Nennt neben Name und Version, worauf der Index gebaut ist: die
+        vorkommenden Konzept-Backbones, die Zahl der Konzepte, das Gebietsschema
+        und die Zahl der Gebiete mit Verbreitungsdaten. So kann ein Client vorab
+        prüfen, ob seine Konzept-IDs zu diesem Index passen.
       operationId: info
       responses:
         "200":
-          description: Name und Version des Dienstes.
+          description: Name, Version und Selbstauskunft des Index.
           content:
             application/json:
               schema:
@@ -484,12 +489,46 @@ components:
             $ref: "#/components/schemas/HabitatTypeRole"
     Info:
       type: object
-      required: [service, version]
+      required: [service, version, index]
       properties:
         service:
           type: string
         version:
           type: string
+        index:
+          $ref: "#/components/schemas/IndexInfo"
+    # Die Selbstauskunft des Index. Jede Zahl ist am Index *gemessen*, nichts
+    # davon ist konfiguriert: ein Client soll vorab prüfen können, ob seine
+    # Konzept-IDs zu diesem Index passen, statt es an leeren Antworten zu
+    # merken. Bewusst nicht enthalten: die *Fassung* der Backbone (etwa
+    # "wcvp 2026-06-15") — der Ingest schreibt sie heute nicht mit, und eine
+    # erfundene Fassung wäre schlimmer als keine.
+    IndexInfo:
+      type: object
+      required: [concept_backbones, species_with_concept, area_scheme, areas_with_data]
+      properties:
+        concept_backbones:
+          type: array
+          description: >-
+            Die im Index vorkommenden Konzept-ID-Präfixe, sortiert. Im Normalfall
+            genau eines (`wcvp`); mehrere bedeuten einen aus gemischten Quellen
+            gebauten Index.
+          items:
+            type: string
+          example: ["wcvp"]
+        species_with_concept:
+          type: integer
+          description: Zahl der verschiedenen Konzept-IDs im Index.
+        area_scheme:
+          type: string
+          description: Das Vokabular, aus dem `?area=`-Codes stammen.
+          example: wgsrpd_l3
+        areas_with_data:
+          type: integer
+          description: >-
+            Zahl der verschiedenen Gebietscodes mit Verbreitungszeilen. 0, solange
+            kein Verbreitungs-Ingest gelaufen ist — das ist eine wahre Aussage
+            über den Index, kein Platzhalter.
     # Die einheitliche Fehlerhülle jeder Antwort (writeError) — identisch zu
     # hostus. Codes: INVALID_QUERY, NOT_FOUND, INTERNAL_ERROR. Es gibt kein
     # UPSTREAM_UNAVAILABLE: der Lesepfad ist autark, zur Laufzeit hängt kein

@@ -137,10 +137,19 @@ func (s *Server) Shutdown(ctx context.Context) error { return s.server.Shutdown(
 
 // --- handlers ----------------------------------------------------------------
 
-func (s *Server) handleInfo(w http.ResponseWriter, _ *http.Request) {
-	s.writeJSON(w, http.StatusOK, map[string]string{
+// handleInfo answers what this process is and what its index holds, so a client
+// can check the backbone before it sends concept ids that could never match.
+func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
+	index, err := s.deps.Query.IndexInfo(r.Context())
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), "describing the index", "error", err)
+		s.writeError(w, http.StatusInternalServerError, CodeInternalError, "internal error")
+		return
+	}
+	s.writeJSON(w, http.StatusOK, map[string]any{
 		"service": s.serviceName,
 		"version": s.version,
+		"index":   index,
 	})
 }
 

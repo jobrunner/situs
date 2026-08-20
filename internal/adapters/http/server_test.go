@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -41,6 +42,52 @@ func TestInfoReportsServiceNameAndVersion(t *testing.T) {
 	}
 	if got.Version != "1.2.3" {
 		t.Errorf("version = %q, want the injected build version", got.Version)
+	}
+}
+
+// The point of the index block: a client checks the backbone before it sends
+// concept ids that could never match.
+func TestInfoDescribesTheIndex(t *testing.T) {
+	rec := serve(t, newTestServer(t, seededQueryService()), http.MethodGet, "/v1/info")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got struct {
+		Index struct {
+			ConceptBackbones   []string `json:"concept_backbones"`
+			SpeciesWithConcept int      `json:"species_with_concept"`
+			AreaScheme         string   `json:"area_scheme"`
+			AreasWithData      int      `json:"areas_with_data"`
+		} `json:"index"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding body %q: %v", rec.Body, err)
+	}
+	if len(got.Index.ConceptBackbones) != 1 || got.Index.ConceptBackbones[0] != "wcvp" {
+		t.Errorf("concept_backbones = %v, want [wcvp]", got.Index.ConceptBackbones)
+	}
+	if got.Index.SpeciesWithConcept != 2 || got.Index.AreasWithData != 3 {
+		t.Errorf("index = %+v, want the measured figures passed through", got.Index)
+	}
+	if got.Index.AreaScheme != "wgsrpd_l3" {
+		t.Errorf("area_scheme = %q, want wgsrpd_l3", got.Index.AreaScheme)
+	}
+}
+
+// A failing index must not be answered with a half-truth: no index block at all
+// beats one silently filled with zeros.
+func TestInfoFailsLoudlyWhenTheIndexCannotBeDescribed(t *testing.T) {
+	q := seededQueryService()
+	q.indexInfoErr = errors.New("index unreadable")
+
+	rec := serve(t, newTestServer(t, q), http.MethodGet, "/v1/info")
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "INTERNAL_ERROR") {
+		t.Errorf("body = %q, want the INTERNAL_ERROR envelope", rec.Body)
 	}
 }
 

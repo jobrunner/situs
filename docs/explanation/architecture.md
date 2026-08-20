@@ -19,10 +19,10 @@ Die Grenzen sind kein Übereinkommen, sondern ein Lint-Gate: `depguard` in
 |---|---|
 | `internal/domain` | Werte und Entitäten (`TypologyID`, `HabitatTypeKey`, `Qualifier`, …), kein I/O |
 | `internal/ports/input` | treibende Ports: was der Dienst anbietet |
-| `internal/ports/output` | getriebene Ports: was der Dienst braucht (`Repository`, `IngestTx`, `NameResolver`, `Tracer`) |
+| `internal/ports/output` | getriebene Ports: was der Dienst braucht (`Repository`, `IngestTx`, `NameResolver`, `DistributionSource`, `Tracer`) |
 | `internal/application` | Use Cases (Ingest, Query) |
 | `internal/adapters/sqlite` | lokaler Index, `modernc.org/sqlite` (CGO-frei) |
-| `internal/adapters/hostus` | `NameResolver` über hostus `POST /v1/match`, nur beim Ingest |
+| `internal/adapters/hostus` | `NameResolver` (`POST /v1/match`) und `DistributionSource` (`GET /v1/concept/{id}`) — **nur beim Ingest**; ein Test verbietet `internal/app` diesen Import |
 | `internal/adapters/http` | HTTP-Adapter (gorilla/mux) + eingebettete OpenAPI |
 | `internal/adapters/telemetry` | slog-Handler mit Trace-Korrelation |
 | `internal/app` | Composition Root |

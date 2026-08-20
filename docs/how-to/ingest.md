@@ -41,12 +41,14 @@ Zwei Report-Felder betreffen genau das:
 Am gepinnten Datenstand sind beide gemessen **0**. Siehe
 `../reference/measured-index.md`.
 
-## Zwei Transaktionen, nicht eine
+## Getrennte Transaktionen, nicht eine
 
-`ingest` läuft in **zwei** Schritten, jeder mit eigener Transaktion:
+`ingest` läuft in mehreren Schritten, jeder mit eigener Transaktion:
 
 1. `IngestCSV` — Typologien, Habitattypen, Crosswalks, Syntaxa.
 2. `IngestSpeciesRoles` — Artenrollen, inklusive hostus-Namensauflösung.
+3. `IngestDistribution` — die Verbreitung der aufgelösten Konzepte (siehe unten).
+4. `IngestLocalizations` und `DeriveGermanLabels` — der Label-Overlay.
 
 Ist hostus beim zweiten Schritt nicht erreichbar, bricht `ingest` mit einem
 Fehler ab — aber der **erste** Schritt ist zu diesem Zeitpunkt bereits
@@ -80,3 +82,40 @@ im Report meldet weiterhin die **zeilengewichtete** Zahl (`Resolved / Rows`).
 
 Nicht aufgelöste Namen werden **nicht verworfen**: `verbatim_name` ist immer
 gesetzt, `concept_id` bleibt NULL.
+
+## Der Verbreitungsschritt
+
+`IngestDistribution` läuft nach den Artenrollen (es braucht die schon
+ingestierten Konzept-IDs) und füllt `species_distribution` — die Grundlage für
+`?area=` und `?only_in_area=` auf der Leseseite. Gefragt wird hostus, **einmal
+pro Konzept**: für die Verbreitung gibt es keine Batch-Route. Der Ingest-Pfad
+drosselt deshalb selbst auf ein Konzept je 70 ms, weil hostus oberhalb von
+20 req/s mit 429 antwortet; an den echten Daten (~3600 Konzepte) dauert der
+Schritt damit etwa **drei Minuten**.
+
+Das Report-Objekt `Distribution`:
+
+| Feld | Bedeutung |
+|---|---|
+| `Concepts` | Konzept-IDs im Index, für die gefragt wurde |
+| `WithAreas` | Konzepte, zu denen die Quelle mindestens ein Gebiet nannte |
+| `Rows` | geschriebene Zeilen (Konzept × Gebiet) |
+| `Incomplete` | Gebiete, die verworfen wurden, weil Schema oder Code fehlte |
+| `Failed` | Konzepte, deren **einzelne** Anfrage fehlschlug und übersprungen wurde |
+
+**Ein Ausfall der Quelle bricht den Ingest nicht ab.** Die Verbreitung ist
+Zusatzwissen; ein Index ohne sie ist benutzbar, nur eben nicht filterbar. Fällt
+hostus für diesen Schritt ganz aus, wird das als Warnung geloggt, der Report
+zeigt Nullen, und der Lauf geht weiter — anders als bei der Namensauflösung, wo
+ein Ausfall abbricht, damit nicht jeder Name als unauflösbar verbucht wird. Ein
+späterer Lauf holt den Schritt nach: jeder `Upsert*` ist idempotent.
+
+`Failed` ist ein **Teilausfall**-Signal, keine Gesamtzahl: es zählt die
+Konzepte, die in einem ansonsten erfolgreichen Lauf übersprungen wurden. Es
+steht auf `0`, wenn nichts fehlschlug — und ebenso, wenn **alles** fehlschlug,
+denn dann ist der Lauf als ganzer Quellenausfall behandelt (Warnung, Report mit
+Nullen). „Gab es überhaupt einen Fehler?" beantwortet also nicht `Failed`
+allein, sondern `Failed` zusammen mit `WithAreas`/`Rows` und dem Log.
+
+Wie viele Gebiete am Ende tatsächlich im Index stehen, sagt `areas_with_data` in
+`GET /v1/info`.
