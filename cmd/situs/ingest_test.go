@@ -251,8 +251,7 @@ func TestPacedDistributionSource_PropagatesContextCancellationFromTheSource(t *t
 // full ingest command against a stub hostus that resolves two species to two
 // concepts and then fails one concept's GET /v1/concept/{id} — pinning that
 // runIngest reads pacedDistributionSource.FailedConcepts() into the printed
-// report (DistributionReport.Failed is never set by IngestDistribution
-// itself; see internal/application/distribution_ingest_test.go).
+// report as DistributionFailed.
 func TestIngestCommand_ReportsFailedConceptsFromThePacedDecorator(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -299,8 +298,8 @@ func TestIngestCommand_ReportsFailedConceptsFromThePacedDecorator(t *testing.T) 
 		}
 	})
 
-	if !strings.Contains(out.String(), `"Failed": 1`) {
-		t.Errorf("output = %q, want the Distribution report's Failed field to show the one tolerated concept failure", out.String())
+	if !strings.Contains(out.String(), `"DistributionFailed": 1`) {
+		t.Errorf("output = %q, want DistributionFailed to show the one tolerated concept failure", out.String())
 	}
 	if !strings.Contains(out.String(), `"WithAreas": 1`) {
 		t.Errorf("output = %q, want the other concept's area to have been stored despite the failure", out.String())
@@ -446,5 +445,76 @@ func TestIngestCommandRoutesSkipWarningsThroughTheConfiguredLogger(t *testing.T)
 	}
 	if !strings.Contains(logOutput, `"line":2`) {
 		t.Errorf("log output = %q, want configured JSON logging naming the line", logOutput)
+	}
+}
+
+// SITUS_HOSTUS_ENTRY_BACKBONE is a supported knob, but the prefix the batch
+// route accepts is compiled in. Re-pointing the first leaves an index whose
+// every id answers unknown_backbone on POST /v1/species/habitat-types while the
+// single-concept route keeps working. The run must not fail — an operator may
+// mean it — but it must say so.
+func TestIngestCommand_WarnsWhenTheIndexBackboneIsNotTheOneTheBatchRouteAccepts(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/match" {
+			_, _ = w.Write([]byte(`{"results":[{"id":"0","concept_id":"gbif:concept:1","match_type":"exact"}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"distribution":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("SITUS_HOSTUS_BASE_URL", srv.URL)
+	t.Setenv("SITUS_HOSTUS_ENTRY_BACKBONE", "gbif")
+
+	dir := seedIngestDir(t)
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", filepath.Join(t.TempDir(), "situs.sqlite")})
+
+	logOutput := captureStdout(t, func() {
+		if err := root.Execute(); err != nil {
+			t.Fatalf("executing ingest: %v, want the run to succeed despite the mismatch", err)
+		}
+	})
+
+	if !strings.Contains(logOutput, "batch route cannot answer") {
+		t.Errorf("log output = %q, want a warning about the backbone mismatch", logOutput)
+	}
+	for _, want := range []string{`"index_backbones":["gbif"]`, `"batch_route_backbone":"wcvp"`} {
+		if !strings.Contains(logOutput, want) {
+			t.Errorf("log output = %q, want it to name %s", logOutput, want)
+		}
+	}
+}
+
+// The counterpart: the ordinary run, where the ingest's backbone and the batch
+// route's agree, must stay quiet.
+func TestIngestCommand_DoesNotWarnWhenTheBackbonesAgree(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/match" {
+			_, _ = w.Write([]byte(`{"results":[{"id":"0","concept_id":"wcvp:concept:1","match_type":"exact"}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"distribution":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("SITUS_HOSTUS_BASE_URL", srv.URL)
+
+	dir := seedIngestDir(t)
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", filepath.Join(t.TempDir(), "situs.sqlite")})
+
+	logOutput := captureStdout(t, func() {
+		if err := root.Execute(); err != nil {
+			t.Fatalf("executing ingest: %v", err)
+		}
+	})
+
+	if strings.Contains(logOutput, "batch route cannot answer") {
+		t.Errorf("log output = %q, want no backbone warning for an index built on wcvp", logOutput)
 	}
 }

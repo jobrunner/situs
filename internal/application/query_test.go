@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/jobrunner/situs/internal/domain"
@@ -812,6 +815,25 @@ func TestSpeciesHabitatTypes_UnknownAreaIsAnError(t *testing.T) {
 	}
 }
 
+// A typo'd area code and an unknown concept in one request: the malformed
+// question wins. Otherwise the caller gets a 404 and fixes the concept id,
+// only to hit the 400 on the area code afterwards.
+func TestSpeciesHabitatTypes_UnknownAreaOutranksAnUnknownConcept(t *testing.T) {
+	repo := newFakeRepo()
+	repo.distribution = []fakeDistribution{
+		{ConceptID: "wcvp:concept:1", Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}},
+	}
+
+	_, err := NewQueryService(repo).SpeciesHabitatTypes(context.Background(), "wcvp:concept:nope", "en",
+		input.AreaFilter{Code: "NOPE"})
+	if !errors.Is(err, input.ErrUnknownArea) {
+		t.Errorf("err = %v, want ErrUnknownArea, not ErrNotFound", err)
+	}
+	if errors.Is(err, input.ErrNotFound) {
+		t.Errorf("err = %v, want the malformed area code to be reported, not the missing concept", err)
+	}
+}
+
 // inArea's four cases as a direct unit test, including the one no end-to-end
 // test reaches: a concept present in the request but absent from the areas
 // map entirely (distribution rows for other concepts, none for this one).
@@ -1008,6 +1030,50 @@ func TestIndexInfo_SurfacesEitherFailingRead(t *testing.T) {
 
 			if _, err := NewQueryService(repo).IndexInfo(context.Background()); !errors.Is(err, wantErr) {
 				t.Errorf("IndexInfo error = %v, want it to wrap %v", err, wantErr)
+			}
+		})
+	}
+}
+
+// The batch route's backbone prefix is compiled in while the ingest's is
+// configured (SITUS_HOSTUS_ENTRY_BACKBONE). A mismatch makes every batch answer
+// unknown_backbone, so it must be named — in the warning and in the return
+// value, and never as a failure.
+func TestWarnOnForeignBackbones(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		backbones   []string
+		wantForeign []string
+		wantWarning bool
+	}{
+		{"the index the batch route was built for", []string{indexBackbone}, []string{}, false},
+		{"an empty index", []string{}, []string{}, false},
+		{"a re-pointed backbone", []string{"gbif"}, []string{"gbif"}, true},
+		{"a mixed index", []string{"cdm", indexBackbone}, []string{"cdm"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var log bytes.Buffer
+			previous := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&log, &slog.HandlerOptions{Level: slog.LevelWarn})))
+			t.Cleanup(func() { slog.SetDefault(previous) })
+
+			got := WarnOnForeignBackbones(context.Background(), tc.backbones)
+
+			if !slices.Equal(got, tc.wantForeign) {
+				t.Errorf("foreign backbones = %v, want %v", got, tc.wantForeign)
+			}
+			if warned := strings.Contains(log.String(), "batch route cannot answer"); warned != tc.wantWarning {
+				t.Errorf("warned = %v, want %v (log: %q)", warned, tc.wantWarning, log.String())
+			}
+			if !tc.wantWarning {
+				return
+			}
+			// Both values, so the operator can see what to change without
+			// guessing which side is which.
+			for _, want := range append([]string{indexBackbone}, tc.wantForeign...) {
+				if !strings.Contains(log.String(), want) {
+					t.Errorf("log = %q, want it to name %q", log.String(), want)
+				}
 			}
 		})
 	}

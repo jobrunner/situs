@@ -124,7 +124,7 @@ nicht einzeln gemessen; rechnerisch sind allein die Drosselpausen
 | davon mit Verbreitungsdaten (`WithAreas`) | 3135 (100 %) |
 | geschriebene Zeilen (`Rows`) | 104581 |
 | unvollständige Gebiete (`Incomplete`) | 0 |
-| übersprungene Konzepte (`Failed`) | 0 |
+| übersprungene Konzepte (`DistributionFailed`) | 0 |
 | verschiedene Gebietscodes (`areas_with_data` in `/v1/info`) | 366 |
 
 Woher die **3135** kommen, weil die Zahl auf den ersten Blick niedrig aussieht:

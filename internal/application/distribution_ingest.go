@@ -15,24 +15,11 @@ import (
 // how many concepts the index holds, how many of them the source knew, how
 // many rows that produced, and how many areas were dropped for being
 // incomplete. WithAreas == 0 is a visible statement.
-//
-// Failed is not populated by IngestDistribution itself — a plain
-// output.DistributionSource has no notion of "some of these requests failed,
-// but here is the partial result anyway". A composition root wiring in a
-// source that does tolerate individual failures (see cmd/situs's
-// pacedDistributionSource) fills it in afterward, from that concrete type,
-// because "how many per-concept requests failed" is a property of that
-// decorator, not of this use case. Such a source is expected to report 0
-// there for a call that failed as a whole (folded into the ordinary
-// "source unavailable" outcome below instead) — so Failed alone answers
-// "how many concepts were skipped in an otherwise-successful run", not
-// "was there any failure at all".
 type DistributionReport struct {
 	Concepts   int
 	WithAreas  int
 	Rows       int
 	Incomplete int
-	Failed     int
 }
 
 // IngestDistribution copies the areas of every indexed concept into the index.

@@ -44,9 +44,7 @@ const maxLoggedConceptFailures = 3
 // discarding the whole batch: a timeout on concept 3400 of 3600 must not
 // throw away three minutes of work and leave the index unfiltered.
 // FailedConcepts reports how many of the last Areas call's requests were
-// tolerated this way — it is a property of this decorator, not of
-// IngestDistribution, so the composition root (runIngest) reads it directly
-// after the call instead of routing it through the DistributionSource port.
+// tolerated this way.
 // A canceled/expired context is the one failure that is not tolerated —
 // that is the run being told to stop, not a data problem, and it must fail
 // here, not resurface as an unrelated error two ingest steps later. If every
@@ -142,13 +140,19 @@ func newIngestCmd() *cobra.Command {
 
 // ingestOutput bundles both reports plus the measured hostus resolution rate
 // (spec open point 3) into the one JSON object the command prints.
+//
+// DistributionFailed lives here rather than in application.DistributionReport
+// because it is a property of pacedDistributionSource, which lives here too:
+// how many per-concept requests were tolerated is not something
+// IngestDistribution can know through the DistributionSource port.
 type ingestOutput struct {
 	application.IngestReport
-	Species        application.SpeciesReport
-	ResolutionRate float64
-	Distribution   application.DistributionReport
-	Localizations  int
-	DerivedLabels  int
+	Species            application.SpeciesReport
+	ResolutionRate     float64
+	Distribution       application.DistributionReport
+	DistributionFailed int
+	Localizations      int
+	DerivedLabels      int
 }
 
 func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath string) error {
@@ -182,11 +186,6 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath string) er
 	if err != nil {
 		return fmt.Errorf("ingesting species distribution: %w", err)
 	}
-	// FailedConcepts is a fact about the paced decorator, not something
-	// IngestDistribution can know without a type assertion to a concrete
-	// dependency — so the composition root, which built distSrc and knows
-	// its type, fills the report field in here.
-	distributionReport.Failed = distSrc.FailedConcepts()
 
 	localizations, err := application.IngestLocalizations(ctx, db, filepath.Join(csvDir, "localizations.csv"))
 	if err != nil {
@@ -200,13 +199,24 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath string) er
 		return fmt.Errorf("deriving German labels: %w", err)
 	}
 
+	// Last, against the finished index: hostus.entry_backbone is configurable,
+	// the prefix the batch route accepts is compiled in. Point the first at
+	// another backbone and the batch route stops answering anything — worth a
+	// warning at the one moment the mismatch is created.
+	info, err := application.NewQueryService(db).IndexInfo(ctx)
+	if err != nil {
+		return fmt.Errorf("measuring the finished index: %w", err)
+	}
+	application.WarnOnForeignBackbones(ctx, info.ConceptBackbones)
+
 	out := ingestOutput{
-		IngestReport:   report,
-		Species:        speciesReport,
-		ResolutionRate: speciesReport.ResolutionRate(),
-		Distribution:   distributionReport,
-		Localizations:  localizations,
-		DerivedLabels:  derivedLabels,
+		IngestReport:       report,
+		Species:            speciesReport,
+		ResolutionRate:     speciesReport.ResolutionRate(),
+		Distribution:       distributionReport,
+		DistributionFailed: distSrc.FailedConcepts(),
+		Localizations:      localizations,
+		DerivedLabels:      derivedLabels,
 	}
 	enc := json.NewEncoder(cmd.OutOrStdout())
 	enc.SetIndent("", "  ")

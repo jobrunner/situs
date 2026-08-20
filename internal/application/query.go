@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 
@@ -71,16 +72,19 @@ func (q *QueryService) HabitatType(ctx context.Context, key domain.HabitatTypeKe
 // SpeciesHabitatTypes answers the excursion app's main question: given a
 // recorded plant (already a concept), which habitat types does it characterize?
 func (q *QueryService) SpeciesHabitatTypes(ctx context.Context, conceptID, lang string, filter input.AreaFilter) ([]input.HabitatTypeRole, error) {
+	// The area is validated before the concept is looked up: a malformed
+	// question outranks a missing answer, so a typo'd area code stays
+	// INVALID_QUERY even for an unknown concept. Same order as requireTypology.
+	areas, err := q.areaLookup(ctx, filter, []string{conceptID})
+	if err != nil {
+		return nil, err
+	}
 	roles, err := q.repo.SpeciesRolesByConcept(ctx, conceptID)
 	if err != nil {
 		return nil, fmt.Errorf("fetching habitat types of concept %q: %w", conceptID, err)
 	}
 	if len(roles) == 0 {
 		return nil, fmt.Errorf("concept %q: %w", conceptID, input.ErrNotFound)
-	}
-	areas, err := q.areaLookup(ctx, filter, []string{conceptID})
-	if err != nil {
-		return nil, err
 	}
 	inA := inArea(areas, conceptID, filter.Code)
 	if filter.OnlyInArea && inA != nil && !*inA {
@@ -299,6 +303,28 @@ func translateNotFound(err error, what string) error {
 // supports. GET /v1/info reports what the index actually holds, so a mismatch
 // stays observable.
 const indexBackbone = "wcvp"
+
+// WarnOnForeignBackbones compares the backbones an index actually holds against
+// the one prefix the batch route accepts. It warns instead of failing: pointing
+// SITUS_HOSTUS_ENTRY_BACKBONE at another backbone is a supported, deliberate
+// act. What it must not be is silent — with a foreign backbone every id on
+// POST /v1/species/habitat-types answers unknown_backbone while
+// GET /v1/species/{conceptId}/habitat-types keeps working, and a half-broken
+// service is the kind of failure nobody goes looking for. Returns the foreign
+// backbones so the check is assertable without reading the log.
+func WarnOnForeignBackbones(ctx context.Context, backbones []string) []string {
+	foreign := []string{}
+	for _, b := range backbones {
+		if b != indexBackbone {
+			foreign = append(foreign, b)
+		}
+	}
+	if len(foreign) > 0 {
+		slog.WarnContext(ctx, "the index holds concept ids the batch route cannot answer",
+			"index_backbones", backbones, "batch_route_backbone", indexBackbone)
+	}
+	return foreign
+}
 
 // IndexInfo measures what the index holds. Nothing here is configured: a
 // client's whole reason to ask is to find out whether *this* index can answer

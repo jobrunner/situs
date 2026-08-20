@@ -231,26 +231,3 @@ func TestIngestDistribution_ContextCancellationAbortsInsteadOfWarning(t *testing
 		t.Fatalf("IngestDistribution error = %v, want it to wrap context.Canceled", err)
 	}
 }
-
-// Failed is not IngestDistribution's to populate — a plain
-// output.DistributionSource cannot report partial failure counts, and
-// IngestDistribution must not need a type assertion to a concrete decorator
-// to find out. The composition root (cmd/situs) fills Failed in afterward;
-// see TestIngestCommand_ReportsFailedConceptsFromThePacedDecorator there.
-func TestIngestDistribution_LeavesFailedAtZero(t *testing.T) {
-	repo := newFakeRepo()
-	repo.speciesRoles = []domain.SpeciesRole{
-		{Key: domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}, ConceptID: strPtr("wcvp:concept:1"), VerbatimName: "A", Role: "diagnostic"},
-	}
-	src := &fakeDistSource{areas: map[string][]domain.Area{
-		"wcvp:concept:1": {{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}},
-	}}
-
-	rep, err := IngestDistribution(context.Background(), repo, src)
-	if err != nil {
-		t.Fatalf("IngestDistribution: %v", err)
-	}
-	if rep.Failed != 0 {
-		t.Errorf("report = %+v, want Failed 0 — this use case never sets it", rep)
-	}
-}

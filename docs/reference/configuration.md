@@ -27,3 +27,11 @@ mehr erzeugen; `UPSTREAM_UNAVAILABLE` existiert nicht.
 
 Auf welcher Backbone der Index tatsächlich steht, sagt `GET /v1/info` — gemessen
 an den vorhandenen Konzept-IDs, nicht aus dieser Konfiguration abgelesen.
+
+**Vorsicht bei `hostus.entry_backbone`:** das Präfix, das
+`POST /v1/species/habitat-types` akzeptiert, ist fest einkompiliert (`wcvp:`).
+Zeigt der Ingest auf ein anderes Backbone, antwortet die Batch-Route für **jede**
+ID `unknown_backbone`, während `GET /v1/species/{conceptId}/habitat-types` weiter
+funktioniert. Der Ingest vergleicht darum am Ende die Backbones im fertigen Index
+mit diesem Präfix und **warnt** bei Abweichung (er bricht nicht ab — die
+Umstellung kann gewollt sein).

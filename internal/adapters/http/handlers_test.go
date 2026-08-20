@@ -646,7 +646,8 @@ func TestSpeciesBatch_MalformedBodyIsInvalidQuery(t *testing.T) {
 		"blank concept id": `{"concept_ids":["  "]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			srv := newTestServer(t, seededQueryService())
+			q := seededQueryService()
+			srv := newTestServer(t, q)
 
 			req := httptest.NewRequest(http.MethodPost, "/v1/species/habitat-types", strings.NewReader(body))
 			rec := httptest.NewRecorder()
@@ -657,6 +658,11 @@ func TestSpeciesBatch_MalformedBodyIsInvalidQuery(t *testing.T) {
 			}
 			if !bytes.Contains(rec.Body.Bytes(), []byte(`"INVALID_QUERY"`)) {
 				t.Errorf("body = %s, want the INVALID_QUERY error envelope", rec.Body)
+			}
+			// An empty array must be rejected, not answered with an empty list:
+			// asking about nothing is a mistake in the caller, not a question.
+			if q.conceptSetCalls != 0 {
+				t.Errorf("the use case was called %d times, want no call for a rejected body", q.conceptSetCalls)
 			}
 		})
 	}
@@ -914,6 +920,26 @@ func TestHabitatTypeSpecies_UnknownAreaIsInvalidQuery(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"INVALID_QUERY"`)) {
+		t.Errorf("body = %s, want the INVALID_QUERY envelope", rec.Body)
+	}
+}
+
+// An unknown area code on the species route is INVALID_QUERY even when the
+// concept is unknown too: the malformed question is reported, not the missing
+// answer. The ordering itself is pinned in the use case
+// (TestSpeciesHabitatTypes_UnknownAreaOutranksAnUnknownConcept); this pins that
+// the verdict reaches the wire as a 400 rather than a 404.
+func TestSpeciesHabitatTypes_UnknownAreaIsInvalidQueryNotNotFound(t *testing.T) {
+	srv := newTestServer(t, unknownAreaQueryService())
+
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec,
+		httptest.NewRequest(http.MethodGet, "/v1/species/nope/habitat-types?area=NOPE", nil))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 — a typo'd area code outranks a missing concept", rec.Code)
 	}
 	if !bytes.Contains(rec.Body.Bytes(), []byte(`"INVALID_QUERY"`)) {
 		t.Errorf("body = %s, want the INVALID_QUERY envelope", rec.Body)
