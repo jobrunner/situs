@@ -18,6 +18,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
 
 	httpapi "github.com/jobrunner/situs/internal/adapters/http"
@@ -25,6 +27,13 @@ import (
 	"github.com/jobrunner/situs/internal/application"
 	"github.com/jobrunner/situs/internal/domain"
 	"github.com/jobrunner/situs/internal/ports/input"
+)
+
+// The two seeded concepts. Both carry the `wcvp:` prefix the batch route checks
+// for, so the check is exercised against real ids rather than a test dialect.
+const (
+	seamConceptHere      = "wcvp:concept:1" // has a GER distribution row
+	seamConceptElsewhere = "wcvp:concept:2" // has rows, none of them GER
 )
 
 // seamServer opens an in-memory index, seeds it through the real IngestTx and
@@ -86,16 +95,27 @@ func seamServer(t *testing.T) *httpapi.Server {
 	}
 
 	// The role strings the pipeline actually emits, so role bucketing is tested
-	// against reality rather than against a test-only vocabulary.
+	// against reality rather than against a test-only vocabulary. The three
+	// species are the three in_area states: one concept with a GER row, one
+	// concept with rows but no GER row, and one unresolvable name.
 	fidelity := 49.6
-	concept := "wcvp-1"
+	here, elsewhere := seamConceptHere, seamConceptElsewhere
 	for _, r := range []domain.SpeciesRole{
-		{Key: eunis, ConceptID: &concept, VerbatimName: "Bromus erectus",
+		{Key: eunis, ConceptID: &here, VerbatimName: "Bromus erectus",
 			Role: "diagnostic", Fidelity: &fidelity},
+		{Key: eunis, ConceptID: &elsewhere, VerbatimName: "Cirsium pyrenaicum", Role: "diagnostic"},
 		{Key: eunis, VerbatimName: "Unresolvable dubia", Role: "constant"},
 	} {
 		if err := tx.UpsertSpeciesRole(r); err != nil {
 			t.Fatalf("UpsertSpeciesRole(%s): %v", r.VerbatimName, err)
+		}
+	}
+
+	// Real distribution rows, so ?area= is answered by AreasForConcepts over
+	// sqlite rather than by a double that agrees with the implementation.
+	for id, code := range map[string]string{here: "GER", elsewhere: "FRA"} {
+		if err := tx.UpsertDistribution(id, domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: code}); err != nil {
+			t.Fatalf("UpsertDistribution(%s, %s): %v", id, code, err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -140,8 +160,9 @@ func TestSeam_HabitatTypeInGermanCarriesTheDerivedLabelAndItsProvenance(t *testi
 	}
 
 	// Role bucketing over the pipeline's own role strings.
-	if len(got.Species["diagnostic"]) != 1 || got.Species["diagnostic"][0].VerbatimName != "Bromus erectus" {
-		t.Errorf("species[diagnostic] = %+v, want the one diagnostic species", got.Species["diagnostic"])
+	if len(got.Species["diagnostic"]) != 2 || got.Species["diagnostic"][0].VerbatimName != "Bromus erectus" {
+		t.Errorf("species[diagnostic] = %+v, want the two diagnostic species in name order",
+			got.Species["diagnostic"])
 	}
 	if len(got.Species["constant"]) != 1 || got.Species["constant"][0].ConceptID != "" {
 		t.Errorf("species[constant] = %+v, want the unresolved name kept without a concept id",
@@ -192,7 +213,7 @@ func TestSeam_SpeciesHabitatTypesAnswersFromTheRealIndex(t *testing.T) {
 	srv := seamServer(t)
 
 	var got []input.HabitatTypeRole
-	seamGet(t, srv, "/v1/species/wcvp-1/habitat-types", &got)
+	seamGet(t, srv, "/v1/species/"+seamConceptHere+"/habitat-types", &got)
 
 	if len(got) != 1 {
 		t.Fatalf("got %d habitat types, want the one R22 plays a role in", len(got))
@@ -202,5 +223,175 @@ func TestSeam_SpeciesHabitatTypesAnswersFromTheRealIndex(t *testing.T) {
 	}
 	if got[0].Fidelity == nil || *got[0].Fidelity != 49.6 {
 		t.Errorf("fidelity = %v, want the stored 49.6 to survive the round trip", got[0].Fidelity)
+	}
+}
+
+// seamPost issues the batch route against the real router and decodes the raw
+// JSON, so a missing field can be told from a false one.
+func seamPost(t *testing.T, srv *httpapi.Server, path, body string) []map[string]json.RawMessage {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	srv.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST %s = %d (%s), want 200", path, rec.Code, rec.Body)
+	}
+	var got []map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding %s body %s: %v", path, rec.Body, err)
+	}
+	return got
+}
+
+// seamRawList decodes a JSON array of objects without interpreting the fields:
+// in_area is three-valued and its third state is the field being absent, which
+// a *bool in a decoded struct cannot distinguish from false.
+func seamRawList(t *testing.T, srv *httpapi.Server, path string) []map[string]json.RawMessage {
+	t.Helper()
+	var got []map[string]json.RawMessage
+	seamGet(t, srv, path, &got)
+	return got
+}
+
+// wireInArea reports the in_area field of one entry exactly as it arrived:
+// "true", "false", or absent.
+func wireInArea(entry map[string]json.RawMessage) (string, bool) {
+	raw, ok := entry["in_area"]
+	return string(raw), ok
+}
+
+func seamString(t *testing.T, entry map[string]json.RawMessage, field string) string {
+	t.Helper()
+	raw, ok := entry[field]
+	if !ok {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		t.Fatalf("decoding %s = %s: %v", field, raw, err)
+	}
+	return s
+}
+
+// The three in_area states as they reach the wire, from real distribution rows
+// through AreasForConcepts and the real router. Absent is the third state: the
+// question is not answerable, and a field that is always present would make an
+// unresolvable name look like a definite absence.
+func TestSeam_AreaMarksTheThreeStatesOnTheWire(t *testing.T) {
+	srv := seamServer(t)
+
+	got := seamRawList(t, srv, "/v1/habitat-type/eunis@2021/R22/species?area=GER")
+	if len(got) != 3 {
+		t.Fatalf("got %d species, want all three — ?area= marks, it never drops", len(got))
+	}
+
+	want := map[string]string{
+		"Bromus erectus":     "true",  // GER row
+		"Cirsium pyrenaicum": "false", // rows, but no GER row
+		"Unresolvable dubia": "",      // no concept id at all: not knowable
+	}
+	for _, entry := range got {
+		name := seamString(t, entry, "verbatim_name")
+		expected, known := want[name]
+		if !known {
+			t.Fatalf("unexpected species %q on the wire", name)
+		}
+		value, present := wireInArea(entry)
+		if expected == "" {
+			if present {
+				t.Errorf("%s: in_area = %s, want the field to be absent for an unresolvable name", name, value)
+			}
+			continue
+		}
+		if !present {
+			t.Errorf("%s: in_area is absent, want %s", name, expected)
+			continue
+		}
+		if value != expected {
+			t.Errorf("%s: in_area = %s, want %s", name, value, expected)
+		}
+	}
+}
+
+// only_in_area drops the definite absences and keeps what is not knowable. A
+// list that silently lost the unjudgeable entries would be dishonestly clean.
+func TestSeam_OnlyInAreaDropsFalseAndKeepsTheUnknowable(t *testing.T) {
+	srv := seamServer(t)
+
+	got := seamRawList(t, srv, "/v1/habitat-type/eunis@2021/R22/species?area=GER&only_in_area=true")
+	if len(got) != 2 {
+		t.Fatalf("got %d species, want 2 — the definite absence gone, the unknowable kept", len(got))
+	}
+	for _, entry := range got {
+		name := seamString(t, entry, "verbatim_name")
+		if name == "Cirsium pyrenaicum" {
+			t.Errorf("%s is still in the list, want the definite absence dropped", name)
+		}
+		if value, present := wireInArea(entry); present && value == "false" {
+			t.Errorf("%s: in_area = false survived only_in_area=true", name)
+		}
+	}
+	names := []string{seamString(t, got[0], "verbatim_name"), seamString(t, got[1], "verbatim_name")}
+	for _, want := range []string{"Bromus erectus", "Unresolvable dubia"} {
+		if !slices.Contains(names, want) {
+			t.Errorf("got %v, want %q kept", names, want)
+		}
+	}
+}
+
+// The batch route through the real stack: the prefix check against the compiled
+// -in backbone, both reasons, and in_area from real distribution rows. Every
+// other test of this route runs against a double that re-states the algorithm.
+func TestSeam_BatchAnswersEveryIDWithItsReasonAndArea(t *testing.T) {
+	srv := seamServer(t)
+
+	got := seamPost(t, srv, "/v1/species/habitat-types?area=GER",
+		`{"concept_ids":["`+seamConceptHere+`","`+seamConceptElsewhere+
+			`","cdm:concept:3b97","wcvp:concept:999"]}`)
+	if len(got) != 4 {
+		t.Fatalf("got %d entries, want one per input id", len(got))
+	}
+
+	for i, tc := range []struct {
+		conceptID string
+		known     bool
+		reason    string
+		inArea    string // "" means the field must be absent
+	}{
+		{seamConceptHere, true, "", "true"},
+		{seamConceptElsewhere, true, "", "false"},
+		{"cdm:concept:3b97", false, "unknown_backbone", ""},
+		{"wcvp:concept:999", false, "unknown_concept", ""},
+	} {
+		entry := got[i]
+		if id := seamString(t, entry, "concept_id"); id != tc.conceptID {
+			t.Errorf("entry %d concept_id = %q, want %q — response[i] must pair with concept_ids[i]",
+				i, id, tc.conceptID)
+		}
+		var known bool
+		if err := json.Unmarshal(entry["known"], &known); err != nil {
+			t.Fatalf("entry %d known = %s: %v", i, entry["known"], err)
+		}
+		if known != tc.known {
+			t.Errorf("entry %d known = %v, want %v", i, known, tc.known)
+		}
+		if reason := seamString(t, entry, "reason"); reason != tc.reason {
+			t.Errorf("entry %d reason = %q, want %q", i, reason, tc.reason)
+		}
+		value, present := wireInArea(entry)
+		if tc.inArea == "" {
+			if present {
+				t.Errorf("entry %d in_area = %s, want the field absent for a concept without rows",
+					i, value)
+			}
+			continue
+		}
+		if !present {
+			t.Errorf("entry %d in_area is absent, want %s", i, tc.inArea)
+			continue
+		}
+		if value != tc.inArea {
+			t.Errorf("entry %d in_area = %s, want %s", i, value, tc.inArea)
+		}
 	}
 }
