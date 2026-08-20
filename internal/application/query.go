@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/jobrunner/situs/internal/domain"
 	"github.com/jobrunner/situs/internal/ports/input"
@@ -22,7 +23,8 @@ func NewQueryService(repo output.Repository) *QueryService {
 }
 
 // HabitatType returns one type with its species, syntaxa and crosswalks.
-func (q *QueryService) HabitatType(ctx context.Context, key domain.HabitatTypeKey, lang string) (input.HabitatTypeDetail, error) {
+// filter marks (and, if OnlyInArea, prunes) the species by area.
+func (q *QueryService) HabitatType(ctx context.Context, key domain.HabitatTypeKey, lang string, filter input.AreaFilter) (input.HabitatTypeDetail, error) {
 	if err := q.requireTypology(ctx, key.Typology); err != nil {
 		return input.HabitatTypeDetail{}, err
 	}
@@ -35,6 +37,10 @@ func (q *QueryService) HabitatType(ctx context.Context, key domain.HabitatTypeKe
 	if err != nil {
 		return input.HabitatTypeDetail{}, fmt.Errorf("fetching species of %s: %w", key, err)
 	}
+	areas, err := q.areaLookup(ctx, filter, conceptIDsOf(roles))
+	if err != nil {
+		return input.HabitatTypeDetail{}, err
+	}
 	syntaxa, err := q.syntaxaOf(ctx, key)
 	if err != nil {
 		return input.HabitatTypeDetail{}, err
@@ -44,9 +50,14 @@ func (q *QueryService) HabitatType(ctx context.Context, key domain.HabitatTypeKe
 		return input.HabitatTypeDetail{}, err
 	}
 
+	species := groupByRole(roles)
+	for role, entries := range species {
+		species[role] = markAndFilter(entries, areas, filter)
+	}
+
 	return input.HabitatTypeDetail{
 		HabitatTypeSummary: summary,
-		Species:            groupByRole(roles),
+		Species:            species,
 		Syntaxa:            syntaxa,
 		Crosswalks:         crosswalks,
 	}, nil
@@ -54,13 +65,21 @@ func (q *QueryService) HabitatType(ctx context.Context, key domain.HabitatTypeKe
 
 // SpeciesHabitatTypes answers the excursion app's main question: given a
 // recorded plant (already a concept), which habitat types does it characterize?
-func (q *QueryService) SpeciesHabitatTypes(ctx context.Context, conceptID, lang string) ([]input.HabitatTypeRole, error) {
+func (q *QueryService) SpeciesHabitatTypes(ctx context.Context, conceptID, lang string, filter input.AreaFilter) ([]input.HabitatTypeRole, error) {
 	roles, err := q.repo.SpeciesRolesByConcept(ctx, conceptID)
 	if err != nil {
 		return nil, fmt.Errorf("fetching habitat types of concept %q: %w", conceptID, err)
 	}
 	if len(roles) == 0 {
 		return nil, fmt.Errorf("concept %q: %w", conceptID, input.ErrNotFound)
+	}
+	areas, err := q.areaLookup(ctx, filter, []string{conceptID})
+	if err != nil {
+		return nil, err
+	}
+	inA := inArea(areas, conceptID, filter.Code)
+	if filter.OnlyInArea && inA != nil && !*inA {
+		return []input.HabitatTypeRole{}, nil
 	}
 
 	out := make([]input.HabitatTypeRole, 0, len(roles))
@@ -86,14 +105,15 @@ func (q *QueryService) SpeciesHabitatTypes(ctx context.Context, conceptID, lang 
 			Fidelity:           r.Fidelity,
 			Constancy:          r.Constancy,
 			Syntaxa:            syntaxa,
+			InArea:             inA,
 		})
 	}
 	return out, nil
 }
 
 // HabitatTypeSpecies returns a type's species list, filtered by role when role
-// is non-empty.
-func (q *QueryService) HabitatTypeSpecies(ctx context.Context, key domain.HabitatTypeKey, role string) ([]input.SpeciesEntry, error) {
+// is non-empty, and marked (or pruned) by area per filter.
+func (q *QueryService) HabitatTypeSpecies(ctx context.Context, key domain.HabitatTypeKey, role string, filter input.AreaFilter) ([]input.SpeciesEntry, error) {
 	if err := q.requireTypology(ctx, key.Typology); err != nil {
 		return nil, err
 	}
@@ -104,11 +124,15 @@ func (q *QueryService) HabitatTypeSpecies(ctx context.Context, key domain.Habita
 	if err != nil {
 		return nil, fmt.Errorf("fetching species of %s: %w", key, err)
 	}
+	areas, err := q.areaLookup(ctx, filter, conceptIDsOf(roles))
+	if err != nil {
+		return nil, err
+	}
 	out := make([]input.SpeciesEntry, 0, len(roles))
 	for _, r := range roles {
 		out = append(out, speciesEntry(r))
 	}
-	return out, nil
+	return markAndFilter(out, areas, filter), nil
 }
 
 // SyntaxonHabitatTypes shows the m:n side: the same vegetation unit can belong
@@ -218,6 +242,65 @@ func groupByRole(roles []domain.SpeciesRole) map[string][]input.SpeciesEntry {
 	return out
 }
 
+// areaLookup resolves the filter once per request: it validates the code
+// against the index and returns the areas of the concepts in play. It returns
+// nil, nil when no filter was asked for, so the read path makes no extra
+// database call in the common case.
+func (q *QueryService) areaLookup(ctx context.Context, filter input.AreaFilter, conceptIDs []string) (map[string][]string, error) {
+	if !filter.Active() {
+		return nil, nil
+	}
+	known, err := q.repo.KnownAreaCodes(ctx, domain.SchemeWGSRPDL3)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Contains(known, filter.Code) {
+		return nil, fmt.Errorf("area %q: %w", filter.Code, input.ErrUnknownArea)
+	}
+	return q.repo.AreasForConcepts(ctx, conceptIDs, domain.SchemeWGSRPDL3)
+}
+
+// inArea is the three-state answer: nil when not knowable.
+func inArea(areas map[string][]string, conceptID, code string) *bool {
+	if areas == nil || conceptID == "" {
+		return nil
+	}
+	list, ok := areas[conceptID]
+	if !ok {
+		return nil // the concept has no distribution data at all
+	}
+	yes := slices.Contains(list, code)
+	return &yes
+}
+
+// conceptIDsOf collects the resolved concept ids a set of species roles
+// carries, so areaLookup queries only the concepts actually in play.
+func conceptIDsOf(roles []domain.SpeciesRole) []string {
+	out := make([]string, 0, len(roles))
+	for _, r := range roles {
+		if r.ConceptID != nil {
+			out = append(out, *r.ConceptID)
+		}
+	}
+	return out
+}
+
+// markAndFilter sets InArea on every entry and, when filter.OnlyInArea, drops
+// the entries whose absence is definite. An entry whose InArea is unknowable
+// (nil) always stays: a list that silently loses what it cannot judge would be
+// dishonestly clean.
+func markAndFilter(entries []input.SpeciesEntry, areas map[string][]string, filter input.AreaFilter) []input.SpeciesEntry {
+	out := make([]input.SpeciesEntry, 0, len(entries))
+	for _, e := range entries {
+		e.InArea = inArea(areas, e.ConceptID, filter.Code)
+		if filter.OnlyInArea && e.InArea != nil && !*e.InArea {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
 func speciesEntry(r domain.SpeciesRole) input.SpeciesEntry {
 	e := input.SpeciesEntry{
 		VerbatimName: r.VerbatimName,
@@ -293,7 +376,7 @@ func (n *NameQueryService) SpeciesHabitatTypesByName(ctx context.Context, names 
 		conceptID, ok := resolved[name]
 		if ok {
 			res.ConceptID, res.Resolved = conceptID, true
-			types, err := n.query.SpeciesHabitatTypes(ctx, conceptID, lang)
+			types, err := n.query.SpeciesHabitatTypes(ctx, conceptID, lang, input.AreaFilter{})
 			switch {
 			// A concept hostus knows but the index has no facts about is a
 			// normal answer: resolved, no habitat types.

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gorilla/mux"
@@ -19,7 +20,7 @@ func (s *Server) handleHabitatType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	detail, err := s.deps.Query.HabitatType(r.Context(), key, language(r))
+	detail, err := s.deps.Query.HabitatType(r.Context(), key, language(r), areaFilter(r))
 	if err != nil {
 		s.writeQueryError(w, r, err)
 		return
@@ -43,7 +44,7 @@ func (s *Server) handleHabitatTypeSpecies(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	species, err := s.deps.Query.HabitatTypeSpecies(r.Context(), key, role)
+	species, err := s.deps.Query.HabitatTypeSpecies(r.Context(), key, role, areaFilter(r))
 	if err != nil {
 		s.writeQueryError(w, r, err)
 		return
@@ -84,6 +85,21 @@ func (s *Server) habitatTypeKey(w http.ResponseWriter, r *http.Request) (domain.
 		return domain.HabitatTypeKey{}, false
 	}
 	return domain.HabitatTypeKey{Typology: typology, Code: code}, true
+}
+
+// areaFilter parses ?area= and ?only_in_area= into the use case's filter
+// value object. area is a WGSRPD level 3 code — the frontend derives it from
+// GPS, so there is no ISO mapping to build here. An unparseable
+// only_in_area is treated as false rather than rejected: the filter is a
+// convenience, and area alone (without only_in_area) already marks every
+// entry.
+func areaFilter(r *http.Request) input.AreaFilter {
+	q := r.URL.Query()
+	only, _ := strconv.ParseBool(q.Get("only_in_area"))
+	return input.AreaFilter{
+		Code:       strings.TrimSpace(q.Get("area")),
+		OnlyInArea: only,
+	}
 }
 
 // language picks the response language: ?lang= wins over Accept-Language, and
@@ -133,14 +149,10 @@ func supportedLanguage(raw string) (string, bool) {
 // cause; the client only ever sees the envelope.
 func (s *Server) writeQueryError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
-	case errors.Is(err, input.ErrUnknownTypology):
+	case errors.Is(err, input.ErrUnknownTypology), errors.Is(err, input.ErrUnknownArea):
 		s.writeError(w, http.StatusBadRequest, CodeInvalidQuery, err.Error())
 	case errors.Is(err, input.ErrNotFound):
 		s.writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
-	case errors.Is(err, input.ErrUpstreamUnavailable):
-		s.writeError(w, http.StatusBadGateway, CodeUpstreamUnavailable,
-			"the name-resolution service is unavailable")
-		s.logger.ErrorContext(r.Context(), "upstream unavailable", "error", err, "path", r.URL.Path)
 	default:
 		s.writeError(w, http.StatusInternalServerError, CodeInternalError, "internal error")
 		s.logger.ErrorContext(r.Context(), "query failed", "error", err, "path", r.URL.Path)

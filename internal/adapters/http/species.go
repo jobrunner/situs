@@ -34,7 +34,7 @@ func (s *Server) handleSpeciesHabitatTypes(w http.ResponseWriter, r *http.Reques
 		s.writeError(w, http.StatusBadRequest, CodeInvalidQuery, "conceptId is empty")
 		return
 	}
-	types, err := s.deps.Query.SpeciesHabitatTypes(r.Context(), conceptID, language(r))
+	types, err := s.deps.Query.SpeciesHabitatTypes(r.Context(), conceptID, language(r), areaFilter(r))
 	if err != nil {
 		s.writeQueryError(w, r, err)
 		return
@@ -98,6 +98,14 @@ func (s *Server) handleSpeciesBatch(w http.ResponseWriter, r *http.Request) {
 
 	resolutions, err := s.deps.Names.SpeciesHabitatTypesByName(r.Context(), distinct, language(r))
 	if err != nil {
+		// Only this, the one non-autark read path, can raise this: hostus
+		// being unreachable, not a fault of the local index.
+		if errors.Is(err, input.ErrUpstreamUnavailable) {
+			s.writeError(w, http.StatusBadGateway, CodeUpstreamUnavailable,
+				"the name-resolution service is unavailable")
+			s.logger.ErrorContext(r.Context(), "upstream unavailable", "error", err, "path", r.URL.Path)
+			return
+		}
 		s.writeQueryError(w, r, err)
 		return
 	}

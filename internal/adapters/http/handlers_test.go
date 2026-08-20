@@ -614,6 +614,14 @@ func TestHabitatType_UnexpectedFailureIsInternalError(t *testing.T) {
 	}
 }
 
+// unknownAreaQueryService doubles a use case that rejected an ?area= the index
+// has no data for.
+func unknownAreaQueryService() *fakeQueryService {
+	q := seededQueryService()
+	q.err = fmt.Errorf("area %q: %w", "NOPE", input.ErrUnknownArea)
+	return q
+}
+
 // newServerWithNames wires a specific verbatim-name double, for the cases where
 // the upstream path itself is under test.
 func newServerWithNames(t *testing.T, query input.QueryService, names input.SpeciesNameQueryService) *httpapi.Server {
@@ -696,7 +704,7 @@ func germanOverlay(s input.HabitatTypeSummary, lang string) input.HabitatTypeSum
 	return s
 }
 
-func (f *fakeQueryService) HabitatType(_ context.Context, key domain.HabitatTypeKey, lang string) (input.HabitatTypeDetail, error) {
+func (f *fakeQueryService) HabitatType(_ context.Context, key domain.HabitatTypeKey, lang string, _ input.AreaFilter) (input.HabitatTypeDetail, error) {
 	f.habitatTypeCalls++
 	f.lang = lang
 	if f.err != nil {
@@ -713,7 +721,7 @@ func (f *fakeQueryService) HabitatType(_ context.Context, key domain.HabitatType
 	return detail, nil
 }
 
-func (f *fakeQueryService) SpeciesHabitatTypes(_ context.Context, conceptID, lang string) ([]input.HabitatTypeRole, error) {
+func (f *fakeQueryService) SpeciesHabitatTypes(_ context.Context, conceptID, lang string, _ input.AreaFilter) ([]input.HabitatTypeRole, error) {
 	f.lang = lang
 	if f.err != nil {
 		return nil, f.err
@@ -730,7 +738,7 @@ func (f *fakeQueryService) SpeciesHabitatTypes(_ context.Context, conceptID, lan
 	return out, nil
 }
 
-func (f *fakeQueryService) HabitatTypeSpecies(_ context.Context, key domain.HabitatTypeKey, role string) ([]input.SpeciesEntry, error) {
+func (f *fakeQueryService) HabitatTypeSpecies(_ context.Context, key domain.HabitatTypeKey, role string, _ input.AreaFilter) ([]input.SpeciesEntry, error) {
 	f.speciesRoleFilter = role
 	if f.err != nil {
 		return nil, f.err
@@ -783,7 +791,7 @@ func (f *fakeNameQueryService) SpeciesHabitatTypesByName(ctx context.Context, na
 	for _, n := range names {
 		res := input.NameResolution{Verbatim: n, HabitatTypes: []input.HabitatTypeRole{}}
 		if n == "Bromus erectus" {
-			roles, err := f.query.SpeciesHabitatTypes(ctx, "wcvp-1", lang)
+			roles, err := f.query.SpeciesHabitatTypes(ctx, "wcvp-1", lang, input.AreaFilter{})
 			if err != nil {
 				return nil, err
 			}
@@ -792,4 +800,19 @@ func (f *fakeNameQueryService) SpeciesHabitatTypesByName(ctx context.Context, na
 		out = append(out, res)
 	}
 	return out, nil
+}
+
+func TestHabitatTypeSpecies_UnknownAreaIsInvalidQuery(t *testing.T) {
+	srv := newTestServer(t, unknownAreaQueryService())
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/habitat-type/eunis@2021/R22/species?area=NOPE", nil)
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"INVALID_QUERY"`)) {
+		t.Errorf("body = %s, want the INVALID_QUERY envelope", rec.Body)
+	}
 }

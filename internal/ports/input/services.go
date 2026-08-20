@@ -43,6 +43,10 @@ var (
 	// path -> UPSTREAM_UNAVAILABLE. Only that path can raise it; concept-ID
 	// queries are autark.
 	ErrUpstreamUnavailable = errors.New("upstream unavailable")
+	// ErrUnknownArea is an area code the index has no data for. It must not be
+	// answered with a list of "does not occur": a typo and a genuine absence
+	// would look the same -> INVALID_QUERY.
+	ErrUnknownArea = errors.New("unknown area")
 )
 
 // The role vocabulary of species_role, closed for this foundation.
@@ -94,7 +98,22 @@ type SpeciesEntry struct {
 	Role         string   `json:"role"`
 	Fidelity     *float64 `json:"fidelity,omitempty"`
 	Constancy    *float64 `json:"constancy,omitempty"`
+	// InArea is nil when unknowable: no concept id, or a concept without
+	// distribution rows. It is absent from the wire without an area filter.
+	InArea *bool `json:"in_area,omitempty"`
 }
+
+// AreaFilter is the caller's view on a species list. Code is a WGSRPD level 3
+// code — the frontend derives it from GPS, so situs needs no ISO mapping (and
+// the "CZE = Czechia-Slovakia" ambiguity never arises). OnlyInArea drops the
+// definite absences; the unknowns always stay.
+type AreaFilter struct {
+	Code       string
+	OnlyInArea bool
+}
+
+// Active reports whether a filter was asked for at all.
+func (f AreaFilter) Active() bool { return f.Code != "" }
 
 // HabitatTypeDetail answers GET /v1/habitat-type/{typology}/{code}. Species is
 // keyed by role and always carries the three known roles, empty where there is
@@ -114,6 +133,9 @@ type HabitatTypeRole struct {
 	Fidelity  *float64      `json:"fidelity,omitempty"`
 	Constancy *float64      `json:"constancy,omitempty"`
 	Syntaxa   []SyntaxonRef `json:"syntaxa"`
+	// InArea is nil when unknowable: no concept id, or a concept without
+	// distribution rows. It is absent from the wire without an area filter.
+	InArea *bool `json:"in_area,omitempty"`
 }
 
 // NameResolution is one entry of the batch answer for verbatim names: the
@@ -131,12 +153,13 @@ type NameResolution struct {
 // is autark: it needs no upstream service.
 type QueryService interface {
 	// HabitatType returns one type with its species, syntaxa and crosswalks.
-	HabitatType(ctx context.Context, key domain.HabitatTypeKey, lang string) (HabitatTypeDetail, error)
+	// filter marks (and, if OnlyInArea, prunes) the species by area.
+	HabitatType(ctx context.Context, key domain.HabitatTypeKey, lang string, filter AreaFilter) (HabitatTypeDetail, error)
 	// SpeciesHabitatTypes returns the habitat types a concept has a role in.
-	SpeciesHabitatTypes(ctx context.Context, conceptID, lang string) ([]HabitatTypeRole, error)
+	SpeciesHabitatTypes(ctx context.Context, conceptID, lang string, filter AreaFilter) ([]HabitatTypeRole, error)
 	// HabitatTypeSpecies returns a type's species, filtered by role when role
-	// is non-empty.
-	HabitatTypeSpecies(ctx context.Context, key domain.HabitatTypeKey, role string) ([]SpeciesEntry, error)
+	// is non-empty, and marked (or pruned) by area per filter.
+	HabitatTypeSpecies(ctx context.Context, key domain.HabitatTypeKey, role string, filter AreaFilter) ([]SpeciesEntry, error)
 	// SyntaxonHabitatTypes returns the habitat types a syntaxon is linked to.
 	SyntaxonHabitatTypes(ctx context.Context, syntaxonID, lang string) ([]HabitatTypeSummary, error)
 }
