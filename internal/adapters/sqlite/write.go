@@ -107,6 +107,18 @@ func (t *ingestTx) UpsertLocalization(l domain.Localization) error {
 	return nil
 }
 
+func (t *ingestTx) UpsertDistribution(conceptID string, a domain.Area) error {
+	_, err := t.tx.ExecContext(t.ctx,
+		`INSERT INTO species_distribution (concept_id, area_scheme, area_code)
+		 VALUES (?, ?, ?)
+		 ON CONFLICT(concept_id, area_scheme, area_code) DO NOTHING`,
+		conceptID, a.Scheme, a.Code)
+	if err != nil {
+		return fmt.Errorf("sqlite: upserting distribution %s for %s: %w", a, conceptID, err)
+	}
+	return nil
+}
+
 func (t *ingestTx) Commit() error {
 	if err := t.tx.Commit(); err != nil {
 		return fmt.Errorf("sqlite: committing ingest transaction: %w", err)

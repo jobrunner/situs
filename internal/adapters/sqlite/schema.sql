@@ -82,3 +82,14 @@ CREATE TABLE IF NOT EXISTS localization (
 );
 CREATE INDEX IF NOT EXISTS idx_localization_lookup
   ON localization(entity_type, entity_key, lang);
+
+-- Which areas a species concept occurs in. Absence of rows for a concept means
+-- "unknown", not "does not occur" — the read side must keep those apart.
+CREATE TABLE IF NOT EXISTS species_distribution (
+  concept_id  TEXT NOT NULL,
+  area_scheme TEXT NOT NULL,
+  area_code   TEXT NOT NULL,
+  PRIMARY KEY (concept_id, area_scheme, area_code)
+);
+CREATE INDEX IF NOT EXISTS idx_species_distribution_area
+  ON species_distribution(area_scheme, area_code);

@@ -547,6 +547,9 @@ func TestIngestTx_MethodsWrapErrorsOnAClosedTransaction(t *testing.T) {
 		"UpsertLocalization": func() error {
 			return tx.UpsertLocalization(domain.Localization{EntityType: "habitat_type", EntityKey: "x", Lang: "de", Field: "name", Value: "x", Source: "x", Provenance: "official"})
 		},
+		"UpsertDistribution": func() error {
+			return tx.UpsertDistribution("wcvp:concept:1", domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"})
+		},
 		"Commit":   func() error { return tx.Commit() },
 		"Rollback": func() error { return tx.Rollback() },
 	}
@@ -564,5 +567,96 @@ func TestIngestTx_MethodsWrapErrorsOnAClosedTransaction(t *testing.T) {
 		if !strings.HasPrefix(err.Error(), "sqlite: ") {
 			t.Errorf("%s error = %q, want the adapter's own context prefixed", name, err)
 		}
+	}
+}
+
+func TestIngestTx_UpsertDistributionIsIdempotent(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	a := domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}
+
+	for i := range 2 {
+		tx, err := db.Begin(ctx)
+		if err != nil {
+			t.Fatalf("Begin %d: %v", i, err)
+		}
+		if err := tx.UpsertDistribution("wcvp:concept:1", a); err != nil {
+			t.Fatalf("UpsertDistribution %d: %v", i, err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("Commit %d: %v", i, err)
+		}
+	}
+
+	got, err := db.AreasForConcepts(ctx, []string{"wcvp:concept:1"}, domain.SchemeWGSRPDL3)
+	if err != nil {
+		t.Fatalf("AreasForConcepts: %v", err)
+	}
+	if len(got["wcvp:concept:1"]) != 1 {
+		t.Errorf("areas = %v, want exactly one (upsert, not insert)", got["wcvp:concept:1"])
+	}
+}
+
+// A concept with no rows must be ABSENT from the map, not present-and-empty:
+// the read side turns absence into "unknown" and an empty list would become
+// "does not occur here", which is a different and wrong statement.
+func TestAreasForConcepts_ConceptWithoutDataIsAbsent(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertDistribution("wcvp:concept:1", domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}); err != nil {
+		t.Fatalf("UpsertDistribution: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.AreasForConcepts(ctx, []string{"wcvp:concept:1", "wcvp:concept:2"}, domain.SchemeWGSRPDL3)
+	if err != nil {
+		t.Fatalf("AreasForConcepts: %v", err)
+	}
+	if _, ok := got["wcvp:concept:2"]; ok {
+		t.Error("a concept without distribution rows must be absent from the map, not empty-valued")
+	}
+}
+
+func TestAreasForConcepts_EmptyInputNeedsNoQuery(t *testing.T) {
+	db := openTestDB(t)
+	got, err := db.AreasForConcepts(context.Background(), nil, domain.SchemeWGSRPDL3)
+	if err != nil {
+		t.Fatalf("AreasForConcepts: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("got %v, want an empty map", got)
+	}
+}
+
+func TestKnownAreaCodes_ListsWhatTheIndexHas(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	for _, code := range []string{"GER", "FRA", "GER"} {
+		if err := tx.UpsertDistribution("wcvp:concept:1", domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: code}); err != nil {
+			t.Fatalf("UpsertDistribution %s: %v", code, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.KnownAreaCodes(ctx, domain.SchemeWGSRPDL3)
+	if err != nil {
+		t.Fatalf("KnownAreaCodes: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("codes = %v, want two distinct codes", got)
 	}
 }

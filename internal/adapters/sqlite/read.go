@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jobrunner/situs/internal/domain"
 	"github.com/jobrunner/situs/internal/ports/output"
@@ -184,6 +185,71 @@ func (d *DB) HabitatTypeKeysForSyntaxon(ctx context.Context, syntaxonID string) 
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("sqlite: reading habitat types of syntaxon %q: %w", syntaxonID, err)
+	}
+	return out, nil
+}
+
+// AreasForConcepts maps each concept id to the area codes it occurs in. A
+// concept without rows is absent from the map, never present with an empty
+// slice — the caller distinguishes "unknown" from "known to occur nowhere".
+func (d *DB) AreasForConcepts(ctx context.Context, conceptIDs []string, scheme string) (map[string][]string, error) {
+	out := map[string][]string{}
+	if len(conceptIDs) == 0 {
+		return out, nil
+	}
+	// Only placeholders are generated here, never values — the ids stay
+	// arguments, so this is not SQL construction from input (gosec G201/G202).
+	placeholders := strings.Repeat(",?", len(conceptIDs))[1:]
+	args := make([]any, 0, len(conceptIDs)+1)
+	for _, id := range conceptIDs {
+		args = append(args, id)
+	}
+	args = append(args, scheme)
+
+	rows, err := d.QueryContext(ctx,
+		`SELECT concept_id, area_code FROM species_distribution
+		 WHERE concept_id IN (`+placeholders+`) AND area_scheme = ?
+		 ORDER BY concept_id, area_code`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: reading distribution for %d concepts: %w", len(conceptIDs), err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var id, code string
+		if err := rows.Scan(&id, &code); err != nil {
+			return nil, fmt.Errorf("sqlite: scanning distribution: %w", err)
+		}
+		out[id] = append(out[id], code)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite: iterating distribution: %w", err)
+	}
+	return out, nil
+}
+
+// KnownAreaCodes lists the distinct area codes the index has data for, in a
+// given scheme. The read side validates an area filter against this: an
+// unknown code becomes an error, not a silent "does not occur" answer.
+func (d *DB) KnownAreaCodes(ctx context.Context, scheme string) ([]string, error) {
+	rows, err := d.QueryContext(ctx,
+		`SELECT DISTINCT area_code FROM species_distribution
+		 WHERE area_scheme = ? ORDER BY area_code`, scheme)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: reading area codes: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := []string{}
+	for rows.Next() {
+		var code string
+		if err := rows.Scan(&code); err != nil {
+			return nil, fmt.Errorf("sqlite: scanning area code: %w", err)
+		}
+		out = append(out, code)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite: iterating area codes: %w", err)
 	}
 	return out, nil
 }

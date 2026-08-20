@@ -273,6 +273,11 @@ func TestReads_QueryErrorsAreReturned(t *testing.T) {
 		"Syntaxon":                   func() error { _, err := db.Syntaxon(ctx, "BRO-01A"); return err },
 		"Syntaxa":                    func() error { _, err := db.Syntaxa(ctx, r22); return err },
 		"HabitatTypeKeysForSyntaxon": func() error { _, err := db.HabitatTypeKeysForSyntaxon(ctx, "BRO-01A"); return err },
+		"AreasForConcepts": func() error {
+			_, err := db.AreasForConcepts(ctx, []string{"wcvp:concept:1"}, domain.SchemeWGSRPDL3)
+			return err
+		},
+		"KnownAreaCodes": func() error { _, err := db.KnownAreaCodes(ctx, domain.SchemeWGSRPDL3); return err },
 	}
 	for name, call := range cases {
 		if err := call(); err == nil {
@@ -303,6 +308,17 @@ func TestReads_RowsIterationAndScanErrorsAreReturned(t *testing.T) {
 		"SpeciesRolesByConcept": {
 			call: func(db *DB) error { _, err := db.SpeciesRolesByConcept(ctx, "wcvp-1"); return err },
 			rows: "reading habitat types of concept", scan: "scanning habitat types of concept",
+		},
+		"AreasForConcepts": {
+			call: func(db *DB) error {
+				_, err := db.AreasForConcepts(ctx, []string{"wcvp:concept:1"}, domain.SchemeWGSRPDL3)
+				return err
+			},
+			rows: "iterating distribution", scan: "scanning distribution",
+		},
+		"KnownAreaCodes": {
+			call: func(db *DB) error { _, err := db.KnownAreaCodes(ctx, domain.SchemeWGSRPDL3); return err },
+			rows: "iterating area codes", scan: "scanning area code",
 		},
 		"Syntaxa": {
 			call: func(db *DB) error { _, err := db.Syntaxa(ctx, r22); return err },
