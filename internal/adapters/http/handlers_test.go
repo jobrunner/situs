@@ -5,15 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"testing"
 
-	httpapi "github.com/jobrunner/situs/internal/adapters/http"
 	"github.com/jobrunner/situs/internal/domain"
 	"github.com/jobrunner/situs/internal/ports/input"
 )
@@ -422,144 +418,151 @@ func TestSyntaxonHabitatTypes_UnknownSyntaxonIsNotFound(t *testing.T) {
 	}
 }
 
-func TestSpeciesBatch_ReportsResolvedAndUnresolvedNames(t *testing.T) {
+// The batch is the excursion app's whole field record in one request: one entry
+// per input concept id, in input order, duplicates included, so a client can
+// pair response[i] with concept_ids[i] without knowing anything about the
+// deduplication the use case does internally.
+func TestSpeciesBatch_AnswersOneEntryPerConceptIDInOrder(t *testing.T) {
 	srv := newTestServer(t, seededQueryService())
 
-	body := strings.NewReader(`{"names":["Bromus erectus","Nonexistens dubia"]}`)
-	req := httptest.NewRequest(http.MethodPost, "/v1/species/habitat-types", body)
+	body := `{"concept_ids":["wcvp:concept:1","cdm:concept:x","wcvp:concept:1"]}`
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/species/habitat-types", strings.NewReader(body))
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got []struct {
+		ConceptID string `json:"concept_id"`
+		Known     bool   `json:"known"`
+		Reason    string `json:"reason"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d entries, want 3 (one per input, duplicate included)", len(got))
+	}
+	if got[1].Reason != "unknown_backbone" {
+		t.Errorf("entry 1 reason = %q, want unknown_backbone", got[1].Reason)
+	}
+}
+
+// The old verbatim-name body must be rejected, not quietly tolerated: after the
+// autark rewrite there is no name resolution behind this route, so accepting
+// `names` would answer an empty list to a caller that believes it asked
+// something. DisallowUnknownFields is what makes this a 400.
+func TestSpeciesBatch_RejectsTheOldNamesField(t *testing.T) {
+	srv := newTestServer(t, seededQueryService())
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/species/habitat-types",
+		strings.NewReader(`{"names":["Bromus erectus"]}`))
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 — verbatim names are no longer accepted", rec.Code)
+	}
+}
+
+// An unknown concept id is a normal 200 answer carrying known=false, never a
+// 404 and never a dropped input — one unknown id must not fail a whole plot list.
+func TestSpeciesBatch_ReportsUnknownConceptsWithoutFailingTheBatch(t *testing.T) {
+	srv := newTestServer(t, seededQueryService())
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/species/habitat-types",
+		strings.NewReader(`{"concept_ids":["wcvp:concept:1","wcvp:concept:nofacts"]}`))
 	rec := httptest.NewRecorder()
 	srv.Router().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	var got []input.NameResolution
+	var got []input.ConceptResolution
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decoding body %s: %v", rec.Body, err)
 	}
 	if len(got) != 2 {
-		t.Fatalf("got %d entries, want one per input name", len(got))
+		t.Fatalf("got %d entries, want one per input", len(got))
 	}
-	if !got[0].Resolved || got[0].ConceptID == "" || len(got[0].HabitatTypes) == 0 {
-		t.Errorf("got[0] = %+v, want the resolved name with its habitat types", got[0])
+	if !got[0].Known || len(got[0].HabitatTypes) == 0 {
+		t.Errorf("got[0] = %+v, want the known concept with its habitat types", got[0])
 	}
-	if got[1].Resolved || got[1].Verbatim == "" {
-		t.Errorf("got[1] = %+v, want the unresolved name kept with resolved=false", got[1])
+	if got[1].Known || got[1].Reason != input.ReasonUnknownConcept {
+		t.Errorf("got[1] = %+v, want known=false with reason %q", got[1], input.ReasonUnknownConcept)
 	}
 	if !bytes.Contains(rec.Body.Bytes(), []byte(`"habitat_types":[]`)) {
-		t.Errorf("body = %s, want an empty habitat_types array for the unresolved name", rec.Body)
+		t.Errorf("body = %s, want an empty habitat_types array for the unknown concept", rec.Body)
 	}
 }
 
-// A field recording repeats names, and each 50 distinct names is one hostus
-// round trip — so a duplicate must not buy a second one upstream. The answer,
-// however, carries one entry per input name in input order, so a client can pair
-// response[i] with names[i] without knowing anything about deduplication.
-func TestSpeciesBatch_DeduplicatesUpstreamButAnswersPerInputName(t *testing.T) {
-	names := seededNameQueryService()
-	srv := newServerWithNames(t, seededQueryService(), names)
+// The area filter is a query parameter on a POST body route — easy to parse in
+// the handler and then forget to pass on. Nothing else in this suite would notice.
+func TestSpeciesBatch_AreaFilterReachesTheUseCase(t *testing.T) {
+	q := seededQueryService()
+	srv := newTestServer(t, q)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/species/habitat-types",
-		strings.NewReader(`{"names":["Salvia pratensis","Bromus erectus"," Salvia pratensis ","Bromus erectus"]}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/species/habitat-types?area=GER&only_in_area=true",
+		strings.NewReader(`{"concept_ids":["wcvp:concept:1"]}`))
 	rec := httptest.NewRecorder()
 	srv.Router().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-
-	// Property one: each distinct name reached the resolver exactly once.
-	if want := []string{"Salvia pratensis", "Bromus erectus"}; !slices.Equal(names.gotNames, want) {
-		t.Errorf("resolver saw %q, want %q — deduplicated in input order", names.gotNames, want)
-	}
-
-	// Property two: one entry per input name, in input order, duplicates included.
-	var got []input.NameResolution
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decoding body %s: %v", rec.Body, err)
-	}
-	verbatims := make([]string, 0, len(got))
-	for _, r := range got {
-		verbatims = append(verbatims, r.Verbatim)
-	}
-	want := []string{"Salvia pratensis", "Bromus erectus", "Salvia pratensis", "Bromus erectus"}
-	if !slices.Equal(verbatims, want) {
-		t.Fatalf("response verbatims = %q, want %q (one per input name, input order)", verbatims, want)
-	}
-
-	// A repeated name must carry the same resolution both times, not an empty one.
-	if got[1].ConceptID != got[3].ConceptID || !got[1].Resolved || !got[3].Resolved {
-		t.Errorf("duplicate entries = %+v / %+v, want the same resolution twice", got[1], got[3])
-	}
-	if len(got[1].HabitatTypes) == 0 || len(got[3].HabitatTypes) == 0 {
-		t.Error("a duplicated resolved name lost its habitat types on one of its entries")
+	want := input.AreaFilter{Code: "GER", OnlyInArea: true}
+	if q.areaFilter != want {
+		t.Errorf("filter reached the use case as %+v, want %+v", q.areaFilter, want)
 	}
 }
 
-// partialNameQueryService answers about fewer names than it was asked about —
-// the one way the fan-out can find no resolution for an input name.
-type partialNameQueryService struct{}
+// A query parameter that does not parse must be rejected before the body is even
+// read — and must not be silently read as false.
+func TestSpeciesBatch_UnparseableOnlyInAreaIsInvalidQuery(t *testing.T) {
+	q := seededQueryService()
+	srv := newTestServer(t, q)
 
-func (partialNameQueryService) SpeciesHabitatTypesByName(
-	_ context.Context, names []string, _ string,
-) ([]input.NameResolution, error) {
-	return []input.NameResolution{
-		{Verbatim: names[0], Resolved: true, ConceptID: "wcvp-1", HabitatTypes: []input.HabitatTypeRole{}},
-	}, nil
-}
-
-// An input name the use case said nothing about must still come back — an input
-// is never silently dropped, and habitat_types must be [] rather than null.
-func TestSpeciesBatch_InputNameWithoutAResolutionIsStillReported(t *testing.T) {
-	srv := newServerWithNames(t, seededQueryService(), partialNameQueryService{})
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/species/habitat-types",
-		strings.NewReader(`{"names":["Bromus erectus","Salvia pratensis"]}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/species/habitat-types?only_in_area=beliebig",
+		strings.NewReader(`{"concept_ids":["wcvp:concept:1"]}`))
 	rec := httptest.NewRecorder()
 	srv.Router().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
 	}
-	var got []input.NameResolution
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decoding body %s: %v", rec.Body, err)
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"INVALID_QUERY"`)) {
+		t.Errorf("body = %s, want the INVALID_QUERY error envelope", rec.Body)
 	}
-	if len(got) != 2 {
-		t.Fatalf("got %d entries, want one per input name even so", len(got))
-	}
-	if got[1].Verbatim != "Salvia pratensis" || got[1].Resolved {
-		t.Errorf("got[1] = %+v, want the unanswered name reported with resolved=false", got[1])
-	}
-	if !bytes.Contains(rec.Body.Bytes(), []byte(`"habitat_types":[]`)) {
-		t.Errorf("body = %s, want habitat_types as [] rather than null", rec.Body)
+	if q.conceptSetCalls != 0 {
+		t.Errorf("the use case was called %d times, want 0 for a rejected query string", q.conceptSetCalls)
 	}
 }
 
-// The 1 MiB body cap does not bound the item count, and each 50 names is a
-// hostus round trip — so the array length needs its own bound. The bound is on
-// the raw array length, exactly as `maxItems` in the spec is defined, so a
-// validating gateway and this handler cannot disagree: 301 entries are rejected
-// even when they collapse to a single distinct name.
-func TestSpeciesBatch_TooManyNamesIsInvalidQuery(t *testing.T) {
+// The 1 MiB body cap does not bound the item count, and each distinct id costs
+// index work — so the array length needs its own bound. The bound is on the raw
+// array length, exactly as `maxItems` in the spec is defined, so a validating
+// gateway and this handler cannot disagree: 301 entries are rejected even when
+// they collapse to a single distinct id.
+func TestSpeciesBatch_TooManyConceptIDsIsInvalidQuery(t *testing.T) {
 	distinctList := make([]string, 0, 301)
 	for i := range 301 {
-		distinctList = append(distinctList, fmt.Sprintf("Genus species%d", i))
+		distinctList = append(distinctList, fmt.Sprintf("wcvp:concept:%d", i))
 	}
 	duplicateList := make([]string, 301)
 	for i := range duplicateList {
-		duplicateList[i] = "Bromus erectus"
+		duplicateList[i] = "wcvp:concept:1"
 	}
 
 	for name, list := range map[string][]string{
-		"301 distinct names":               distinctList,
-		"301 entries of one repeated name": duplicateList,
+		"301 distinct ids":               distinctList,
+		"301 entries of one repeated id": duplicateList,
 	} {
 		t.Run(name, func(t *testing.T) {
-			names := seededNameQueryService()
-			srv := newServerWithNames(t, seededQueryService(), names)
+			q := seededQueryService()
+			srv := newTestServer(t, q)
 
-			body, err := json.Marshal(map[string][]string{"names": list})
+			body, err := json.Marshal(map[string][]string{"concept_ids": list})
 			if err != nil {
 				t.Fatalf("encoding body: %v", err)
 			}
@@ -574,8 +577,8 @@ func TestSpeciesBatch_TooManyNamesIsInvalidQuery(t *testing.T) {
 			if !bytes.Contains(rec.Body.Bytes(), []byte(`"INVALID_QUERY"`)) {
 				t.Errorf("body = %s, want the INVALID_QUERY error envelope", rec.Body)
 			}
-			if names.gotNames != nil {
-				t.Errorf("resolver was called with %d names, want no upstream call at all", len(names.gotNames))
+			if q.conceptSetCalls != 0 {
+				t.Errorf("the use case was called %d times, want no call at all", q.conceptSetCalls)
 			}
 		})
 	}
@@ -585,13 +588,13 @@ func TestSpeciesBatch_TooManyNamesIsInvalidQuery(t *testing.T) {
 // first and discarding the rest would leave the caller believing it sent both.
 func TestSpeciesBatch_TrailingDataIsInvalidQuery(t *testing.T) {
 	for name, body := range map[string]string{
-		"two objects":         `{"names":["Bromus erectus"]}{"names":["Inula hirta"]}`,
-		"object then garbage": `{"names":["Bromus erectus"]} nonsense`,
-		"object then array":   `{"names":["Bromus erectus"]}[]`,
+		"two objects":         `{"concept_ids":["wcvp:concept:1"]}{"concept_ids":["wcvp:concept:2"]}`,
+		"object then garbage": `{"concept_ids":["wcvp:concept:1"]} nonsense`,
+		"object then array":   `{"concept_ids":["wcvp:concept:1"]}[]`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			names := seededNameQueryService()
-			srv := newServerWithNames(t, seededQueryService(), names)
+			q := seededQueryService()
+			srv := newTestServer(t, q)
 
 			req := httptest.NewRequest(http.MethodPost, "/v1/species/habitat-types", strings.NewReader(body))
 			rec := httptest.NewRecorder()
@@ -603,8 +606,8 @@ func TestSpeciesBatch_TrailingDataIsInvalidQuery(t *testing.T) {
 			if !bytes.Contains(rec.Body.Bytes(), []byte(`"INVALID_QUERY"`)) {
 				t.Errorf("body = %s, want the INVALID_QUERY error envelope", rec.Body)
 			}
-			if names.gotNames != nil {
-				t.Errorf("resolver was called with %v, want no upstream call for a rejected body", names.gotNames)
+			if q.conceptSetCalls != 0 {
+				t.Errorf("the use case was called %d times, want no call for a rejected body", q.conceptSetCalls)
 			}
 		})
 	}
@@ -612,9 +615,9 @@ func TestSpeciesBatch_TrailingDataIsInvalidQuery(t *testing.T) {
 
 func TestSpeciesBatch_MalformedBodyIsInvalidQuery(t *testing.T) {
 	for name, body := range map[string]string{
-		"not json":   `{`,
-		"no names":   `{"names":[]}`,
-		"blank name": `{"names":["  "]}`,
+		"not json":         `{`,
+		"no concept ids":   `{"concept_ids":[]}`,
+		"blank concept id": `{"concept_ids":["  "]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			srv := newTestServer(t, seededQueryService())
@@ -633,22 +636,23 @@ func TestSpeciesBatch_MalformedBodyIsInvalidQuery(t *testing.T) {
 	}
 }
 
-// hostus being down must be visible as such, not as a 500 or an empty answer.
-func TestSpeciesBatch_UpstreamFailureIsReportedAsSuch(t *testing.T) {
-	names := seededNameQueryService()
-	names.err = fmt.Errorf("dialing hostus: %w", input.ErrUpstreamUnavailable)
-	srv := newServerWithNames(t, seededQueryService(), names)
+// An unclassifiable failure from the use case on the batch route is a 500 with
+// the envelope, never a partial answer.
+func TestSpeciesBatch_UnexpectedFailureIsInternalError(t *testing.T) {
+	q := seededQueryService()
+	q.err = fmt.Errorf("index is on fire")
+	srv := newTestServer(t, q)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/species/habitat-types",
-		strings.NewReader(`{"names":["Bromus erectus"]}`))
+		strings.NewReader(`{"concept_ids":["wcvp:concept:1"]}`))
 	rec := httptest.NewRecorder()
 	srv.Router().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusBadGateway {
-		t.Fatalf("status = %d, want 502", rec.Code)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
 	}
-	if !bytes.Contains(rec.Body.Bytes(), []byte(`"UPSTREAM_UNAVAILABLE"`)) {
-		t.Errorf("body = %s, want the UPSTREAM_UNAVAILABLE error envelope", rec.Body)
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"INTERNAL_ERROR"`)) {
+		t.Errorf("body = %s, want the INTERNAL_ERROR error envelope", rec.Body)
 	}
 }
 
@@ -678,16 +682,6 @@ func unknownAreaQueryService() *fakeQueryService {
 	return q
 }
 
-// newServerWithNames wires a specific verbatim-name double, for the cases where
-// the upstream path itself is under test.
-func newServerWithNames(t *testing.T, query input.QueryService, names input.SpeciesNameQueryService) *httpapi.Server {
-	t.Helper()
-	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
-	return httpapi.NewServer(":0", httpapi.Deps{
-		Health: stubHealth{ready: true}, Query: query, Names: names,
-	}, logger, httpapi.Options{})
-}
-
 // --- doubles ------------------------------------------------------------------
 
 // fakeQueryService is a seeded double for input.QueryService. The HTTP layer is
@@ -702,6 +696,9 @@ type fakeQueryService struct {
 	lang              string
 	speciesRoleFilter string
 	habitatTypeCalls  int
+	// conceptSetCalls counts the batch use case, so a test can prove a rejected
+	// request never reached it.
+	conceptSetCalls int
 	// areaFilter records what the last call of any of the three area-aware
 	// methods received, so a test can assert the parsed query string actually
 	// reached the use case, not just that the route parses.
@@ -748,7 +745,8 @@ func seededQueryService() *fakeQueryService {
 			},
 		},
 		byConcept: map[string][]input.HabitatTypeRole{
-			"wcvp-1": {{HabitatTypeSummary: r22, Role: input.RoleDiagnostic, Syntaxa: syntaxa}},
+			"wcvp-1":         {{HabitatTypeSummary: r22, Role: input.RoleDiagnostic, Syntaxa: syntaxa}},
+			"wcvp:concept:1": {{HabitatTypeSummary: r22, Role: input.RoleDiagnostic, Syntaxa: syntaxa}},
 		},
 		bySyntaxon: map[string][]input.HabitatTypeSummary{"BRO-01A": {r22}},
 	}
@@ -832,35 +830,34 @@ func (f *fakeQueryService) SyntaxonHabitatTypes(_ context.Context, syntaxonID, l
 	return types, nil
 }
 
-// fakeNameQueryService doubles the one non-autark read path.
-type fakeNameQueryService struct {
-	query *fakeQueryService
-	err   error
-	// gotNames records what the handler passed down, so the dedupe and the
-	// preserved input order can be asserted at the seam that matters.
-	gotNames []string
-}
-
-func seededNameQueryService() *fakeNameQueryService {
-	return &fakeNameQueryService{query: seededQueryService()}
-}
-
-func (f *fakeNameQueryService) SpeciesHabitatTypesByName(ctx context.Context, names []string, lang string) ([]input.NameResolution, error) {
-	f.gotNames = append([]string(nil), names...)
+// SpeciesSetHabitatTypes mirrors the use case's contract closely enough for the
+// adapter to be tested against it: one entry per input in input order, and the
+// two reasons kept apart. It is deliberately a re-statement of the contract, not
+// a call into the real service — the HTTP layer is tested against the port.
+func (f *fakeQueryService) SpeciesSetHabitatTypes(ctx context.Context, conceptIDs []string, lang string, filter input.AreaFilter) ([]input.ConceptResolution, error) {
+	f.conceptSetCalls++
+	f.lang = lang
+	// Recorded on the way out: the nested SpeciesHabitatTypes calls below record
+	// their own (empty) filter and would otherwise overwrite this one.
+	defer func() { f.areaFilter = filter }()
 	if f.err != nil {
 		return nil, f.err
 	}
-	out := make([]input.NameResolution, 0, len(names))
-	for _, n := range names {
-		res := input.NameResolution{Verbatim: n, HabitatTypes: []input.HabitatTypeRole{}}
-		if n == "Bromus erectus" {
-			roles, err := f.query.SpeciesHabitatTypes(ctx, "wcvp-1", lang, input.AreaFilter{})
+	out := make([]input.ConceptResolution, 0, len(conceptIDs))
+	for _, id := range conceptIDs {
+		entry := input.ConceptResolution{ConceptID: id, HabitatTypes: []input.HabitatTypeRole{}}
+		switch {
+		case !strings.HasPrefix(id, "wcvp:"):
+			entry.Reason = input.ReasonUnknownBackbone
+		default:
+			types, err := f.SpeciesHabitatTypes(ctx, id, lang, input.AreaFilter{})
 			if err != nil {
-				return nil, err
+				entry.Reason = input.ReasonUnknownConcept
+			} else {
+				entry.Known, entry.HabitatTypes = true, types
 			}
-			res.ConceptID, res.Resolved, res.HabitatTypes = "wcvp-1", true, roles
 		}
-		out = append(out, res)
+		out = append(out, entry)
 	}
 	return out, nil
 }

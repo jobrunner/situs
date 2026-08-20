@@ -108,6 +108,8 @@ paths:
         - $ref: "#/components/parameters/Typology"
         - $ref: "#/components/parameters/Code"
         - $ref: "#/components/parameters/Lang"
+        - $ref: "#/components/parameters/Area"
+        - $ref: "#/components/parameters/OnlyInArea"
       responses:
         "200":
           description: Der Habitattyp.
@@ -132,6 +134,8 @@ paths:
           description: Filtert auf eine Rolle; ohne Angabe werden alle geliefert.
           schema:
             $ref: "#/components/schemas/Role"
+        - $ref: "#/components/parameters/Area"
+        - $ref: "#/components/parameters/OnlyInArea"
       responses:
         "200":
           description: Die Arten des Habitattyps.
@@ -160,6 +164,8 @@ paths:
           schema:
             type: string
         - $ref: "#/components/parameters/Lang"
+        - $ref: "#/components/parameters/Area"
+        - $ref: "#/components/parameters/OnlyInArea"
       responses:
         "200":
           description: Die Habitattypen samt Rolle der Art.
@@ -181,51 +187,52 @@ paths:
                 $ref: "#/components/schemas/Error"
   /v1/species/habitat-types:
     post:
-      summary: Habitattypen zu verbatim Artnamen (Batch)
+      summary: Habitattypen zu einem Satz Konzept-IDs (Batch)
       description: >-
-        Der einzige Lesepfad, der nicht autark ist: die Namen werden über hostus
-        auf Konzepte aufgelöst, dann wird der lokale Index befragt. Ein nicht
-        auflösbarer Name wird mit resolved=false zurückgemeldet, nie verworfen.
-      operationId: speciesHabitatTypesByName
+        Eine ganze Geländeaufnahme in einer Anfrage, und autark: situs löst zur
+        Laufzeit keine verbatim Namen auf, der Aufrufer schickt bereits
+        aufgelöste Konzept-IDs. Kann der Index eine ID nicht beantworten, wird
+        sie mit known=false und einem reason zurückgemeldet, nie verworfen.
+      operationId: speciesSetHabitatTypes
       parameters:
         - $ref: "#/components/parameters/Lang"
+        - $ref: "#/components/parameters/Area"
+        - $ref: "#/components/parameters/OnlyInArea"
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [names]
+              required: [concept_ids]
               properties:
-                names:
+                concept_ids:
                   type: array
                   description: >-
-                    Verbatim-Namen, wie im Gelände aufgenommen. Mehr als
-                    maxItems Einträge ergeben INVALID_QUERY. Doppelte Namen sind
-                    erlaubt: nach oben (hostus) wird dedupliziert, die Antwort
-                    trägt aber einen Eintrag je Eingabename in
-                    Eingabereihenfolge, sodass response[i] zu names[i] gehört.
+                    Konzept-IDs, wie der Aufrufer sie aufgelöst hat. Mehr als
+                    maxItems Einträge ergeben INVALID_QUERY. Doppelte IDs sind
+                    erlaubt: intern wird die Index-Arbeit dedupliziert, die
+                    Antwort trägt aber einen Eintrag je Eingabe in
+                    Eingabereihenfolge, sodass response[i] zu concept_ids[i]
+                    gehört.
                   minItems: 1
                   maxItems: 300
                   items:
                     type: string
+                    example: "wcvp:concept:123456"
       responses:
         "200":
-          description: Je Eingabename die Auflösung und die Habitattypen.
+          description: >-
+            Je Eingabe-Konzept-ID ein Eintrag, in Eingabereihenfolge,
+            Duplikate eingeschlossen.
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/NameResolution"
+                  $ref: "#/components/schemas/ConceptResolution"
         "400":
           $ref: "#/components/responses/InvalidQuery"
-        "502":
-          description: hostus ist nicht erreichbar (UPSTREAM_UNAVAILABLE).
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
   /v1/syntaxon/{id}/habitat-types:
     get:
       summary: Habitattypen einer Pflanzengesellschaft
@@ -283,6 +290,31 @@ components:
       schema:
         type: string
         enum: [en, de]
+    Area:
+      name: area
+      in: query
+      required: false
+      description: >-
+        Gebietscode nach WGSRPD Level 3 — das Frontend leitet ihn aus GPS ab, so
+        braucht situs keine ISO-Zuordnung. Ist er gesetzt, tragen die Arten- und
+        Habitattyp-Einträge zusätzlich in_area. Ein Code, zu dem der Index keine
+        Verbreitungsdaten hat, ist INVALID_QUERY und nicht "kommt nicht vor" —
+        sonst sähen ein Tippfehler und eine echte Abwesenheit gleich aus.
+      schema:
+        type: string
+        example: GER
+    OnlyInArea:
+      name: only_in_area
+      in: query
+      required: false
+      description: >-
+        Verwirft die sicheren Abwesenheiten (in_area=false). Was nicht beurteilbar
+        ist (in_area fehlt), bleibt immer stehen. Ohne area ist der Parameter
+        absichtlich wirkungslos statt ein Fehler. Auf dem Batch-Endpunkt markiert
+        area nur, verwirft aber keinen Eintrag: dort gehört response[i] zu
+        concept_ids[i], ein Eintrag darf also nicht fehlen.
+      schema:
+        type: boolean
   responses:
     InvalidQuery:
       description: Die Anfrage ist fehlerhaft (INVALID_QUERY).
@@ -366,6 +398,8 @@ components:
           type: number
         constancy:
           type: number
+        in_area:
+          $ref: "#/components/schemas/InArea"
     HabitatTypeDetail:
       allOf:
         - $ref: "#/components/schemas/HabitatTypeSummary"
@@ -405,16 +439,35 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/SyntaxonRef"
-    NameResolution:
+            in_area:
+              $ref: "#/components/schemas/InArea"
+    InArea:
+      description: >-
+        Dreiwertig: true/false, wenn der Index Verbreitungsdaten zum Konzept
+        hat, und abwesend, wenn die Frage nicht beantwortbar ist (keine
+        Konzept-ID oder keine Verbreitungszeilen). Ohne ?area= fehlt das Feld
+        immer — Abwesenheit ist hier "unbekannt", nie "kommt nicht vor".
+      type: boolean
+    ConceptResolution:
+      description: >-
+        Ein Eintrag der Batch-Antwort. Bei known=false ist habitat_types leer und
+        reason sagt, warum: unknown_backbone heißt, die ID stammt aus einer
+        anderen taxonomischen Referenz als der, gegen die der Index gebaut wurde
+        (ihre IDs können hier gar nicht treffen); unknown_concept heißt, die
+        Referenz stimmt, aber der Index kennt keine Habitat-Fakten zu diesem
+        Konzept. Die Eingabe wird in beiden Fällen zurückgemeldet, nie verworfen.
       type: object
-      required: [verbatim, resolved, habitat_types]
+      required: [concept_id, known, habitat_types]
       properties:
-        verbatim:
-          type: string
         concept_id:
           type: string
-        resolved:
+        known:
           type: boolean
+        reason:
+          type: string
+          enum: [unknown_backbone, unknown_concept]
+        in_area:
+          $ref: "#/components/schemas/InArea"
         habitat_types:
           type: array
           items:
@@ -428,10 +481,12 @@ components:
         version:
           type: string
     # Die einheitliche Fehlerhülle jeder Antwort (writeError) — identisch zu
-    # hostus. Codes: INVALID_QUERY, NOT_FOUND, UPSTREAM_UNAVAILABLE,
-    # INTERNAL_ERROR. Ein nicht auflösbarer verbatim Name ist ausdrücklich KEIN
-    # Fehler: der Batch-Endpunkt meldet ihn je Eingabe mit resolved=false
-    # zurück, damit eine Teilauflösung nicht die ganze Anfrage verwirft.
+    # hostus. Codes: INVALID_QUERY, NOT_FOUND, INTERNAL_ERROR. Es gibt kein
+    # UPSTREAM_UNAVAILABLE: der Lesepfad ist autark, zur Laufzeit hängt kein
+    # Upstream-Dienst daran. Eine Konzept-ID, die der Index nicht beantworten
+    # kann, ist ausdrücklich KEIN Fehler: der Batch-Endpunkt meldet sie je
+    # Eingabe mit known=false und einem reason zurück, damit eine unbekannte ID
+    # nicht die ganze Anfrage verwirft.
     Error:
       type: object
       required: [error]

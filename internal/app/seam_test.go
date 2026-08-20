@@ -102,12 +102,10 @@ func seamServer(t *testing.T) *httpapi.Server {
 		t.Fatalf("Commit: %v", err)
 	}
 
-	query := application.NewQueryService(db)
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 	return httpapi.NewServer(":0", httpapi.Deps{
 		Health: application.NewHealthService(true),
-		Query:  query,
-		Names:  application.NewNameQueryService(query, nil),
+		Query:  application.NewQueryService(db),
 	}, logger, httpapi.Options{})
 }
 

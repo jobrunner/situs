@@ -421,6 +421,23 @@ func TestQueryService_RepositoryFailuresSurface(t *testing.T) {
 				return err
 			},
 		},
+		"KnownAreaCodes fails on the batch path": {
+			arrange: func(r *fakeRepo) { r.areasErr = boom },
+			call: func(q *QueryService) error {
+				_, err := q.SpeciesSetHabitatTypes(ctx, []string{"wcvp:concept:1"}, "en",
+					input.AreaFilter{Code: "GER"})
+				return err
+			},
+		},
+		// An index failure must fail the batch, not quietly become "no facts for
+		// this concept" — that would report a real outage as a normal answer.
+		"the index fails on the batch path": {
+			arrange: func(r *fakeRepo) { r.speciesRolesErr = boom },
+			call: func(q *QueryService) error {
+				_, err := q.SpeciesSetHabitatTypes(ctx, []string{"wcvp:concept:1"}, "en", input.AreaFilter{})
+				return err
+			},
+		},
 		"Syntaxa fails on the species path": {
 			arrange: func(r *fakeRepo) { r.syntaxaErr = boom },
 			call: func(q *QueryService) error {
@@ -473,102 +490,6 @@ func TestQueryService_RepositoryFailuresSurface(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestNameQueryService_KeepsUnresolvableNames(t *testing.T) {
-	repo := seedQueryRepo()
-	resolver := fakeResolver{"Bromus erectus": "wcvp-1"}
-	svc := NewNameQueryService(NewQueryService(repo), resolver)
-
-	got, err := svc.SpeciesHabitatTypesByName(context.Background(),
-		[]string{"Bromus erectus", "Nonexistens dubia"}, "en")
-	if err != nil {
-		t.Fatalf("SpeciesHabitatTypesByName: %v", err)
-	}
-	if len(got) != 2 {
-		t.Fatalf("got %d entries, want one per input name", len(got))
-	}
-	if !got[0].Resolved || got[0].ConceptID != "wcvp-1" || len(got[0].HabitatTypes) != 1 {
-		t.Errorf("got[0] = %+v, want the resolved name with its habitat types", got[0])
-	}
-	if got[1].Resolved || got[1].Verbatim != "Nonexistens dubia" {
-		t.Errorf("got[1] = %+v, want the unresolved name kept and marked", got[1])
-	}
-	if got[1].HabitatTypes == nil || len(got[1].HabitatTypes) != 0 {
-		t.Errorf("got[1].HabitatTypes = %+v, want an empty, non-nil list", got[1].HabitatTypes)
-	}
-}
-
-// A name hostus resolves but the index has no facts about is a normal answer:
-// resolved, no habitat types — not a 404 and not a failed batch.
-func TestNameQueryService_ResolvedButUnknownConceptIsAnEmptyList(t *testing.T) {
-	svc := NewNameQueryService(NewQueryService(seedQueryRepo()),
-		fakeResolver{"Ginkgo biloba": "wcvp-ginkgo"})
-
-	got, err := svc.SpeciesHabitatTypesByName(context.Background(), []string{"Ginkgo biloba"}, "en")
-	if err != nil {
-		t.Fatalf("SpeciesHabitatTypesByName: %v", err)
-	}
-	if len(got) != 1 || !got[0].Resolved || len(got[0].HabitatTypes) != 0 {
-		t.Errorf("got %+v, want the resolved name with an empty habitat-type list", got)
-	}
-}
-
-func TestNameQueryService_UpstreamFailureIsMarkedAsSuch(t *testing.T) {
-	cause := fmt.Errorf("connection refused: %w", output.ErrResolverUnavailable)
-	svc := NewNameQueryService(NewQueryService(seedQueryRepo()), failingResolver{err: cause})
-
-	_, err := svc.SpeciesHabitatTypesByName(context.Background(), []string{"Bromus erectus"}, "en")
-	if !errors.Is(err, input.ErrUpstreamUnavailable) {
-		t.Errorf("error = %v, want input.ErrUpstreamUnavailable", err)
-	}
-	// The classification must not swallow the cause — an operator needs to see
-	// what actually failed.
-	if !errors.Is(err, cause) {
-		t.Errorf("error = %v, want the resolver's cause still reachable", err)
-	}
-}
-
-// A resolver that answered and refused the request is a fault on this side. If
-// that surfaced as UPSTREAM_UNAVAILABLE, an operator would go looking at hostus
-// for a bug that lives here.
-func TestNameQueryService_AResolverRejectionIsNotAnUpstreamOutage(t *testing.T) {
-	cause := fmt.Errorf("status 400: unknown entry_backbone: %w", output.ErrResolverRejected)
-	svc := NewNameQueryService(NewQueryService(seedQueryRepo()), failingResolver{err: cause})
-
-	_, err := svc.SpeciesHabitatTypesByName(context.Background(), []string{"Bromus erectus"}, "en")
-	if err == nil {
-		t.Fatal("SpeciesHabitatTypesByName = nil error, want the rejection reported")
-	}
-	if errors.Is(err, input.ErrUpstreamUnavailable) {
-		t.Errorf("error = %v, must not be classified as hostus being unavailable", err)
-	}
-	if !errors.Is(err, output.ErrResolverRejected) {
-		t.Errorf("error = %v, want the rejection still reachable", err)
-	}
-}
-
-func TestNameQueryService_IndexFailureIsNotMistakenForAnUpstreamFailure(t *testing.T) {
-	repo := seedQueryRepo()
-	boom := errors.New("boom")
-	repo.speciesRolesErr = boom
-	svc := NewNameQueryService(NewQueryService(repo), fakeResolver{"Bromus erectus": "wcvp-1"})
-
-	_, err := svc.SpeciesHabitatTypesByName(context.Background(), []string{"Bromus erectus"}, "en")
-	if !errors.Is(err, boom) {
-		t.Errorf("error = %v, want the index failure", err)
-	}
-	if errors.Is(err, input.ErrUpstreamUnavailable) {
-		t.Error("an index failure must not be reported as hostus being unavailable")
-	}
-}
-
-// failingResolver fails with a caller-supplied cause, so a test can assert the
-// cause stays reachable through the classification.
-type failingResolver struct{ err error }
-
-func (f failingResolver) Resolve(context.Context, []string) (map[string]string, error) {
-	return nil, f.err
 }
 
 // The read side of fakeRepo. It is deliberately a naive scan over the seeded
@@ -911,5 +832,62 @@ func TestInArea_ThreeStatesDirectly(t *testing.T) {
 	}
 	if got := inArea(areas, "wcvp-1", "FRA"); got == nil || *got {
 		t.Errorf("concept present, area does not match: got %v, want false", got)
+	}
+}
+
+func TestSpeciesSetHabitatTypes_OneEntryPerInputInOrder(t *testing.T) {
+	repo := newFakeRepo()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	repo.types = []domain.HabitatType{{Key: key, NameEN: "Hay meadow"}}
+	known := "wcvp:concept:known"
+	repo.speciesRoles = []domain.SpeciesRole{
+		{Key: key, ConceptID: &known, VerbatimName: "A", Role: "diagnostic"},
+	}
+
+	in := []string{known, "wcvp:concept:nofacts", "cdm:concept:other", known}
+	got, err := NewQueryService(repo).SpeciesSetHabitatTypes(context.Background(), in, "", input.AreaFilter{})
+	if err != nil {
+		t.Fatalf("SpeciesSetHabitatTypes: %v", err)
+	}
+	if len(got) != len(in) {
+		t.Fatalf("got %d entries, want %d — one per input, duplicates included", len(got), len(in))
+	}
+	for i, want := range in {
+		if got[i].ConceptID != want {
+			t.Errorf("entry %d = %q, want %q (input order)", i, got[i].ConceptID, want)
+		}
+	}
+	if !got[0].Known || len(got[0].HabitatTypes) != 1 {
+		t.Errorf("entry 0 = %+v, want known with one habitat type", got[0])
+	}
+	if got[3].ConceptID != known || !got[3].Known {
+		t.Errorf("entry 3 = %+v, want the duplicate answered too", got[3])
+	}
+}
+
+// The two reasons are different diagnoses: a wrong backbone is the caller's
+// mistake, a concept without facts is the data's limit. One label for both
+// sends people looking in the wrong place.
+func TestSpeciesSetHabitatTypes_DistinguishesTheTwoReasons(t *testing.T) {
+	repo := newFakeRepo()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	repo.types = []domain.HabitatType{{Key: key, NameEN: "Hay meadow"}}
+	known := "wcvp:concept:known"
+	repo.speciesRoles = []domain.SpeciesRole{
+		{Key: key, ConceptID: &known, VerbatimName: "A", Role: "diagnostic"},
+	}
+
+	got, err := NewQueryService(repo).SpeciesSetHabitatTypes(context.Background(),
+		[]string{"cdm:concept:x", "wcvp:concept:nofacts"}, "", input.AreaFilter{})
+	if err != nil {
+		t.Fatalf("SpeciesSetHabitatTypes: %v", err)
+	}
+	if got[0].Known || got[0].Reason != "unknown_backbone" {
+		t.Errorf("entry 0 = %+v, want unknown_backbone", got[0])
+	}
+	if got[1].Known || got[1].Reason != "unknown_concept" {
+		t.Errorf("entry 1 = %+v, want unknown_concept", got[1])
 	}
 }

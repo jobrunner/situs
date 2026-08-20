@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jobrunner/situs/internal/domain"
 	"github.com/jobrunner/situs/internal/ports/input"
@@ -290,52 +291,61 @@ func translateNotFound(err error, what string) error {
 	return fmt.Errorf("fetching %s: %w", what, err)
 }
 
-// NameQueryService is the one read path that is not autark: it resolves
-// verbatim names through hostus first, then answers from the local index.
-type NameQueryService struct {
-	query    *QueryService
-	resolver output.NameResolver
-}
+// indexBackbone is the concept-id prefix the index was built from. Anything
+// else cannot match and is reported as such instead of answering empty. It is a
+// constant, not something derived per request: deriving it would cost a query on
+// every batch call, and an index mixing backbones is not a state this design
+// supports. GET /v1/info reports what the index actually holds, so a mismatch
+// stays observable.
+const indexBackbone = "wcvp"
 
-func NewNameQueryService(query *QueryService, resolver output.NameResolver) *NameQueryService {
-	return &NameQueryService{query: query, resolver: resolver}
-}
-
-// SpeciesHabitatTypesByName answers per input name. An unresolvable name is
-// reported back with Resolved false and an empty list — it is never dropped,
-// and it never fails the whole batch.
-func (n *NameQueryService) SpeciesHabitatTypesByName(ctx context.Context, names []string, lang string) ([]input.NameResolution, error) {
-	resolved, err := n.resolver.Resolve(ctx, names)
+// SpeciesSetHabitatTypes answers a whole field record at once — one entry per
+// input concept id, in input order, duplicates included. It is autark: no
+// verbatim name is resolved anywhere on this path.
+//
+// The area filter marks each entry with InArea but never drops one: the caller
+// pairs response[i] with conceptIDs[i], so an entry must not go missing.
+func (q *QueryService) SpeciesSetHabitatTypes(ctx context.Context, conceptIDs []string, lang string, filter input.AreaFilter) ([]input.ConceptResolution, error) {
+	areas, err := q.areaLookup(ctx, filter, conceptIDs)
 	if err != nil {
-		// Only the resolver not answering is an upstream outage. A resolver that
-		// answered and refused the request (its 4xx) is a fault on this side and
-		// must not send an operator looking at hostus.
-		if errors.Is(err, output.ErrResolverUnavailable) {
-			return nil, fmt.Errorf("resolving %d names: %w: %w", len(names), input.ErrUpstreamUnavailable, err)
-		}
-		return nil, fmt.Errorf("resolving %d names: %w", len(names), err)
+		return nil, err
 	}
 
-	out := make([]input.NameResolution, 0, len(names))
-	for _, name := range names {
-		res := input.NameResolution{Verbatim: name, HabitatTypes: []input.HabitatTypeRole{}}
-		// A present key is enough: output.NameResolver guarantees no
-		// empty-string concept id ever reaches this map.
-		conceptID, ok := resolved[name]
-		if ok {
-			res.ConceptID, res.Resolved = conceptID, true
-			types, err := n.query.SpeciesHabitatTypes(ctx, conceptID, lang, input.AreaFilter{})
-			switch {
-			// A concept hostus knows but the index has no facts about is a
-			// normal answer: resolved, no habitat types.
-			case errors.Is(err, input.ErrNotFound):
-			case err != nil:
-				return nil, err
-			default:
-				res.HabitatTypes = types
-			}
+	// Deduplicated index work, one answer per input: the caller pairs
+	// response[i] with conceptIDs[i], so duplicates must keep their positions.
+	cache := map[string][]input.HabitatTypeRole{}
+	out := make([]input.ConceptResolution, 0, len(conceptIDs))
+	for _, id := range conceptIDs {
+		entry := input.ConceptResolution{
+			ConceptID:    id,
+			HabitatTypes: []input.HabitatTypeRole{},
+			InArea:       inArea(areas, id, filter.Code),
 		}
-		out = append(out, res)
+		if !strings.HasPrefix(id, indexBackbone+":") {
+			entry.Reason = input.ReasonUnknownBackbone
+			out = append(out, entry)
+			continue
+		}
+		types, ok := cache[id]
+		if !ok {
+			types, err = q.SpeciesHabitatTypes(ctx, id, lang, input.AreaFilter{})
+			// The right backbone but no facts is a normal answer, not a failure.
+			if err != nil && !errors.Is(err, input.ErrNotFound) {
+				return nil, err
+			}
+			if types == nil {
+				types = []input.HabitatTypeRole{}
+			}
+			cache[id] = types
+		}
+		if len(types) == 0 {
+			entry.Reason = input.ReasonUnknownConcept
+			out = append(out, entry)
+			continue
+		}
+		entry.Known = true
+		entry.HabitatTypes = types
+		out = append(out, entry)
 	}
 	return out, nil
 }

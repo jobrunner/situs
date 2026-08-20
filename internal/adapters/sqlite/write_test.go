@@ -635,6 +635,50 @@ func TestAreasForConcepts_EmptyInputNeedsNoQuery(t *testing.T) {
 	}
 }
 
+// SQLite caps bound parameters (SQLITE_LIMIT_VARIABLE_NUMBER, measured at 32766
+// with this driver), and the query builds one placeholder per concept id. A
+// caller with more ids than that must still get an answer instead of a "too many
+// SQL variables" error, so the call is chunked — and this asserts it across more
+// than one chunk boundary as well as past the driver's own ceiling.
+func TestAreasForConcepts_ChunksPastTheBoundParameterLimit(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	// One seeded concept in the first chunk and one far past the driver's limit,
+	// so a chunking bug that drops all but the first chunk cannot pass.
+	seeded := map[string]string{"wcvp:concept:1": "GER", "wcvp:concept:33000": "FRA"}
+	for id, code := range seeded {
+		if err := tx.UpsertDistribution(id, domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: code}); err != nil {
+			t.Fatalf("UpsertDistribution(%s): %v", id, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	ids := make([]string, 0, 33001)
+	for i := range 33001 {
+		ids = append(ids, fmt.Sprintf("wcvp:concept:%d", i))
+	}
+
+	got, err := db.AreasForConcepts(ctx, ids, domain.SchemeWGSRPDL3)
+	if err != nil {
+		t.Fatalf("AreasForConcepts with %d ids: %v", len(ids), err)
+	}
+	for id, code := range seeded {
+		if !slices.Equal(got[id], []string{code}) {
+			t.Errorf("areas[%s] = %v, want %v — a chunk was lost", id, got[id], []string{code})
+		}
+	}
+	if len(got) != len(seeded) {
+		t.Errorf("got %d concepts with data, want %d", len(got), len(seeded))
+	}
+}
+
 func TestKnownAreaCodes_ListsWhatTheIndexHas(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()

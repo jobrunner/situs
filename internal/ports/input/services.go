@@ -39,10 +39,6 @@ var (
 	// The query names a classification system that does not exist, which is a
 	// malformed question, not a missing answer (see the spec's Fehlerbehandlung).
 	ErrUnknownTypology = errors.New("unknown typology")
-	// ErrUpstreamUnavailable is hostus being unreachable on the verbatim-name
-	// path -> UPSTREAM_UNAVAILABLE. Only that path can raise it; concept-ID
-	// queries are autark.
-	ErrUpstreamUnavailable = errors.New("upstream unavailable")
 	// ErrUnknownArea is an area code the index has no data for. It must not be
 	// answered with a list of "does not occur": a typo and a genuine absence
 	// would look the same -> INVALID_QUERY.
@@ -138,16 +134,24 @@ type HabitatTypeRole struct {
 	InArea *bool `json:"in_area,omitempty"`
 }
 
-// NameResolution is one entry of the batch answer for verbatim names: the
-// resolution itself plus the facts it unlocked. Resolved is false and
-// HabitatTypes empty when hostus knows no concept for the name — the input is
-// reported back either way, never dropped.
-type NameResolution struct {
-	Verbatim     string            `json:"verbatim"`
-	ConceptID    string            `json:"concept_id,omitempty"`
-	Resolved     bool              `json:"resolved"`
+// ConceptResolution is one entry of the batch answer. Known is false and
+// HabitatTypes empty when the index cannot answer — the input is reported back
+// either way, never dropped.
+type ConceptResolution struct {
+	ConceptID    string            `json:"concept_id"`
+	Known        bool              `json:"known"`
+	Reason       string            `json:"reason,omitempty"`
+	InArea       *bool             `json:"in_area,omitempty"`
 	HabitatTypes []HabitatTypeRole `json:"habitat_types"`
 }
+
+// The two diagnoses an unanswerable concept id can have. They are different
+// faults: a wrong backbone is the caller's, a concept without facts is the
+// data's limit — one label for both sends people looking in the wrong place.
+const (
+	ReasonUnknownBackbone = "unknown_backbone"
+	ReasonUnknownConcept  = "unknown_concept"
+)
 
 // QueryService is the read API's use cases over the local index. Every method
 // is autark: it needs no upstream service.
@@ -162,11 +166,7 @@ type QueryService interface {
 	HabitatTypeSpecies(ctx context.Context, key domain.HabitatTypeKey, role string, filter AreaFilter) ([]SpeciesEntry, error)
 	// SyntaxonHabitatTypes returns the habitat types a syntaxon is linked to.
 	SyntaxonHabitatTypes(ctx context.Context, syntaxonID, lang string) ([]HabitatTypeSummary, error)
-}
-
-// SpeciesNameQueryService is the one read path that is not autark: it resolves
-// verbatim names through hostus before answering from the local index, so it
-// can fail with ErrUpstreamUnavailable.
-type SpeciesNameQueryService interface {
-	SpeciesHabitatTypesByName(ctx context.Context, names []string, lang string) ([]NameResolution, error)
+	// SpeciesSetHabitatTypes answers a whole field record at once: one entry per
+	// input concept id, in input order, duplicates included.
+	SpeciesSetHabitatTypes(ctx context.Context, conceptIDs []string, lang string, filter AreaFilter) ([]ConceptResolution, error)
 }

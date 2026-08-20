@@ -31,17 +31,17 @@ const (
 	CodeInternalError = "INTERNAL_ERROR"
 	CodeInvalidQuery  = "INVALID_QUERY"
 	CodeNotFound      = "NOT_FOUND"
-	// CodeUpstreamUnavailable is reserved for the verbatim-name path, the only
-	// read path that talks to hostus at runtime.
-	CodeUpstreamUnavailable = "UPSTREAM_UNAVAILABLE"
 )
 
 // Deps are the driving ports the server serves its routes from. The composition
 // root injects them; the adapter never constructs an application service.
+//
+// There is deliberately no name-resolution port here: serving is autark, and a
+// nil-able resolver field would be an invitation to reintroduce the runtime
+// dependency on hostus.
 type Deps struct {
 	Health input.HealthChecker
 	Query  input.QueryService
-	Names  input.SpeciesNameQueryService
 }
 
 // Server wraps the HTTP server and its router. It holds only driving ports.
