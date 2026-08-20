@@ -1,7 +1,9 @@
 package application
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -771,6 +773,16 @@ func TestHabitatTypeSpecies_WithoutAreaThereIsNoField(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].InArea != nil {
 		t.Errorf("in_area = %v, want nil without an area filter", got[0].InArea)
+	}
+
+	// The requirement is on the wire, not on the Go zero value: omitempty on a
+	// nil *bool must drop the key entirely, not serve a literal null.
+	raw, err := json.Marshal(got[0])
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if bytes.Contains(raw, []byte(`"in_area"`)) {
+		t.Errorf("body = %s, want no in_area key at all without an area filter", raw)
 	}
 }
 

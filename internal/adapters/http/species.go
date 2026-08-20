@@ -34,7 +34,12 @@ func (s *Server) handleSpeciesHabitatTypes(w http.ResponseWriter, r *http.Reques
 		s.writeError(w, http.StatusBadRequest, CodeInvalidQuery, "conceptId is empty")
 		return
 	}
-	types, err := s.deps.Query.SpeciesHabitatTypes(r.Context(), conceptID, language(r), areaFilter(r))
+	filter, ferr := areaFilter(r)
+	if ferr != nil {
+		s.writeError(w, http.StatusBadRequest, CodeInvalidQuery, ferr.Error())
+		return
+	}
+	types, err := s.deps.Query.SpeciesHabitatTypes(r.Context(), conceptID, language(r), filter)
 	if err != nil {
 		s.writeQueryError(w, r, err)
 		return

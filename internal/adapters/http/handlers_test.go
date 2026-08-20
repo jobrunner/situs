@@ -216,6 +216,62 @@ func TestHabitatTypeSpecies_UnknownRoleIsInvalidQuery(t *testing.T) {
 	}
 }
 
+// A regression that drops the filter before it reaches the use case (or never
+// reads only_in_area) would leave the whole suite green otherwise — none of
+// the other tests inspect what the use case actually received.
+func TestHabitatTypeSpecies_AreaFilterReachesTheUseCase(t *testing.T) {
+	q := seededQueryService()
+	srv := newTestServer(t, q)
+
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
+		"/v1/habitat-type/eunis@2021/R22/species?area=GER&only_in_area=true", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	want := input.AreaFilter{Code: "GER", OnlyInArea: true}
+	if q.areaFilter != want {
+		t.Errorf("filter reached the use case as %+v, want %+v", q.areaFilter, want)
+	}
+}
+
+// only_in_area is a boolean the client sets explicitly, and a value that does
+// not parse as one must not be silently read as false — the same rule as an
+// unknown area code.
+func TestHabitatTypeSpecies_UnparseableOnlyInAreaIsInvalidQuery(t *testing.T) {
+	srv := newTestServer(t, seededQueryService())
+
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
+		"/v1/habitat-type/eunis@2021/R22/species?only_in_area=beliebig", nil))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"INVALID_QUERY"`)) {
+		t.Errorf("body = %s, want the INVALID_QUERY error envelope", rec.Body)
+	}
+}
+
+// only_in_area=true without an area is a plausible caller (a client that
+// always sends the flag, only sometimes with a fix on the area), not an error.
+func TestHabitatTypeSpecies_OnlyInAreaWithoutAreaIsNotRejected(t *testing.T) {
+	q := seededQueryService()
+	srv := newTestServer(t, q)
+
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
+		"/v1/habitat-type/eunis@2021/R22/species?only_in_area=true", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 — only_in_area without area is a no-op, not an error", rec.Code)
+	}
+	if q.areaFilter.Active() {
+		t.Errorf("filter = %+v, want an inactive filter (no area code was given)", q.areaFilter)
+	}
+}
+
 func TestSpeciesHabitatTypes_ByConceptID(t *testing.T) {
 	srv := newTestServer(t, seededQueryService())
 
@@ -646,6 +702,10 @@ type fakeQueryService struct {
 	lang              string
 	speciesRoleFilter string
 	habitatTypeCalls  int
+	// areaFilter records what the last call of any of the three area-aware
+	// methods received, so a test can assert the parsed query string actually
+	// reached the use case, not just that the route parses.
+	areaFilter input.AreaFilter
 }
 
 func seededQueryService() *fakeQueryService {
@@ -704,9 +764,10 @@ func germanOverlay(s input.HabitatTypeSummary, lang string) input.HabitatTypeSum
 	return s
 }
 
-func (f *fakeQueryService) HabitatType(_ context.Context, key domain.HabitatTypeKey, lang string, _ input.AreaFilter) (input.HabitatTypeDetail, error) {
+func (f *fakeQueryService) HabitatType(_ context.Context, key domain.HabitatTypeKey, lang string, filter input.AreaFilter) (input.HabitatTypeDetail, error) {
 	f.habitatTypeCalls++
 	f.lang = lang
+	f.areaFilter = filter
 	if f.err != nil {
 		return input.HabitatTypeDetail{}, f.err
 	}
@@ -721,8 +782,9 @@ func (f *fakeQueryService) HabitatType(_ context.Context, key domain.HabitatType
 	return detail, nil
 }
 
-func (f *fakeQueryService) SpeciesHabitatTypes(_ context.Context, conceptID, lang string, _ input.AreaFilter) ([]input.HabitatTypeRole, error) {
+func (f *fakeQueryService) SpeciesHabitatTypes(_ context.Context, conceptID, lang string, filter input.AreaFilter) ([]input.HabitatTypeRole, error) {
 	f.lang = lang
+	f.areaFilter = filter
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -738,8 +800,9 @@ func (f *fakeQueryService) SpeciesHabitatTypes(_ context.Context, conceptID, lan
 	return out, nil
 }
 
-func (f *fakeQueryService) HabitatTypeSpecies(_ context.Context, key domain.HabitatTypeKey, role string, _ input.AreaFilter) ([]input.SpeciesEntry, error) {
+func (f *fakeQueryService) HabitatTypeSpecies(_ context.Context, key domain.HabitatTypeKey, role string, filter input.AreaFilter) ([]input.SpeciesEntry, error) {
 	f.speciesRoleFilter = role
+	f.areaFilter = filter
 	if f.err != nil {
 		return nil, f.err
 	}
