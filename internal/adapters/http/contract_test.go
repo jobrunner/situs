@@ -51,6 +51,24 @@ func TestOpenAPICopiesAreIdentical(t *testing.T) {
 	}
 }
 
+// The servers entry drives Swagger-UI's "Try it out" requests. An absolute URL
+// with a hardcoded port aims past the port the service actually listens on as
+// soon as the two differ — which is the normal case, since the port is
+// configurable. A relative URL resolves against the origin that served the page
+// and therefore always hits the right server.
+func TestOpenAPIServerURLIsRelative(t *testing.T) {
+	spec := string(readFile(t, filepath.Join(repoRoot(t), "internal", "adapters", "http", "openapi.yaml")))
+
+	if !strings.Contains(spec, "- url: /") {
+		t.Error(`the servers entry is not "- url: /" — a relative URL is what keeps "Try it out" working on any port`)
+	}
+	for _, hardcoded := range []string{"url: http://localhost", "url: https://localhost", "url: http://127.0.0.1"} {
+		if strings.Contains(spec, hardcoded) {
+			t.Errorf("the spec pins a server URL (%q); it would point past a service on any other port", hardcoded)
+		}
+	}
+}
+
 // routerSurface returns the set of "METHOD /path" the router mounts.
 func routerSurface(t *testing.T) map[string]bool {
 	t.Helper()

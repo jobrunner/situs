@@ -18,7 +18,7 @@ COPY --from=build /out/situs /usr/local/bin/situs
 # port unreachable in a container. The distroless/nonroot image is the isolation
 # boundary here, not the bind address.
 ENV SITUS_SERVER_HOST=0.0.0.0
-EXPOSE 8080
+EXPOSE 8070
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/situs"]
 CMD ["serve"]

@@ -51,7 +51,7 @@ Standardbibliothek.
 ```bash
 make verify      # fmt-check, vet, lint, test, pipeline-test, arch, debt, build
 make build       # ./situs
-./situs serve    # HTTP auf 127.0.0.1:8080
+./situs serve    # HTTP auf 127.0.0.1:8070
 ```
 
 Erreichbar sind `GET /health/live`, `GET /health/ready`, `GET /metrics`,
@@ -63,10 +63,10 @@ ohne Netz), `GET /v1/info` und die Lese-Endpunkte:
 ./situs ingest --csv-dir pipelines/eunis/out
 ./situs serve
 
-curl -s 'localhost:8080/v1/habitat-type/eunis@2021/R22?lang=de'
-curl -s 'localhost:8080/v1/habitat-type/annex1/6510'
-curl -s 'localhost:8080/v1/species/<conceptId>/habitat-types'
-curl -s 'localhost:8080/v1/syntaxon/<syntaxonId>/habitat-types'
+curl -s 'localhost:8070/v1/habitat-type/eunis@2021/R22?lang=de'
+curl -s 'localhost:8070/v1/habitat-type/annex1/6510'
+curl -s 'localhost:8070/v1/species/<conceptId>/habitat-types'
+curl -s 'localhost:8070/v1/syntaxon/<syntaxonId>/habitat-types'
 ```
 
 ### Fertige Artefakte
@@ -76,7 +76,7 @@ Multi-Arch-Container-Image. Der Index gehört **nicht** ins Image — er wird
 eingehängt, damit dasselbe Image jeden Datenstand bedienen kann:
 
 ```bash
-docker run --rm -p 8080:8080 \
+docker run --rm -p 8070:8070 \
   --user "$(id -u):$(id -g)" \
   -v "$PWD:/data" -e SITUS_INDEX_PATH=/data/situs.sqlite \
   ghcr.io/jobrunner/situs:latest

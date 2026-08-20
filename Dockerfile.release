@@ -15,7 +15,7 @@ ENV SITUS_SERVER_HOST=0.0.0.0
 # goreleaser legt das Binary der passenden Architektur in den Build-Kontext.
 COPY situs /usr/local/bin/situs
 
-EXPOSE 8080
+EXPOSE 8070
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/situs"]
 CMD ["serve"]
