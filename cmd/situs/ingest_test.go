@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -148,6 +149,63 @@ func TestPacedDistributionSource_ToleratesASingleConceptFailureAndKeepsTheRest(t
 	}
 }
 
+// A real outage must not put one line per failed concept in the log — only
+// the first few individual failures get their own line, and the aggregate
+// at the end always says how many there really were.
+func TestPacedDistributionSource_CapsPerConceptFailureLogLines(t *testing.T) {
+	src := &fakeSequentialSource{}
+	paced := &pacedDistributionSource{src: src, pause: time.Millisecond}
+	ids := []string{"a", "b", "c", "d", "e"}
+	// Every id fails except the last, so this is a partial (not whole-batch)
+	// failure with more failures than maxLoggedConceptFailures.
+	failing := &fakeConditionalSource{failExcept: "e"}
+	paced.src = failing
+
+	logOutput := captureLogOutput(t, func() {
+		if _, err := paced.Areas(context.Background(), ids); err != nil {
+			t.Fatalf("Areas: %v", err)
+		}
+	})
+
+	individualLines := strings.Count(logOutput, "distribution request for one concept failed")
+	if individualLines != maxLoggedConceptFailures {
+		t.Errorf("logged %d individual failure lines, want exactly %d (the cap)", individualLines, maxLoggedConceptFailures)
+	}
+	if !strings.Contains(logOutput, "some distribution requests failed") {
+		t.Error("log output is missing the aggregate line")
+	}
+	if !strings.Contains(logOutput, "failed=4") {
+		t.Errorf("log output = %q, want the aggregate line to name the true failure count (4), not just the capped log lines", logOutput)
+	}
+}
+
+// fakeConditionalSource fails every concept id except failExcept.
+type fakeConditionalSource struct {
+	failExcept string
+}
+
+func (f *fakeConditionalSource) Areas(_ context.Context, ids []string) (map[string][]domain.Area, error) {
+	id := ids[0]
+	if id != f.failExcept {
+		return nil, fmt.Errorf("hostus: %s unavailable", id)
+	}
+	return map[string][]domain.Area{id: {{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}}}, nil
+}
+
+// captureLogOutput points the default slog logger at a buffer for fn's
+// duration. pacedDistributionSource logs via slog.WarnContext against
+// whatever the default logger is; the ingest command itself installs its own
+// via installLogger, but these decorator-level tests call Areas directly.
+func captureLogOutput(t *testing.T, fn func()) string {
+	t.Helper()
+	var buf bytes.Buffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	defer slog.SetDefault(old)
+	fn()
+	return buf.String()
+}
+
 // If every single request fails, Areas must report that as one whole-batch
 // failure — not as a "successful" empty map — so IngestDistribution takes
 // the same all-or-nothing warn-and-zero path as a plain source outage.
@@ -160,6 +218,9 @@ func TestPacedDistributionSource_AllConceptsFailingIsAWholeBatchFailure(t *testi
 	}
 	if got != nil {
 		t.Errorf("Areas returned %v, want a nil map on whole-batch failure", got)
+	}
+	if failed := paced.FailedConcepts(); failed != 0 {
+		t.Errorf("FailedConcepts() = %d, want 0 — a whole-batch failure is folded into the ordinary outage path, not a partial-failure count", failed)
 	}
 }
 
@@ -183,6 +244,66 @@ func TestPacedDistributionSource_PropagatesContextCancellationFromTheSource(t *t
 	_, err := paced.Areas(context.Background(), []string{"a", "b"})
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("Areas returned %v, want context.Canceled to propagate", err)
+	}
+}
+
+// TestIngestCommand_ReportsFailedConceptsFromThePacedDecorator drives the
+// full ingest command against a stub hostus that resolves two species to two
+// concepts and then fails one concept's GET /v1/concept/{id} — pinning that
+// runIngest reads pacedDistributionSource.FailedConcepts() into the printed
+// report (DistributionReport.Failed is never set by IngestDistribution
+// itself; see internal/application/distribution_ingest_test.go).
+func TestIngestCommand_ReportsFailedConceptsFromThePacedDecorator(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/match":
+			_, _ = w.Write([]byte(`{"results":[
+				{"id":"0","concept_id":"wcvp:concept:1","match_type":"exact"},
+				{"id":"1","concept_id":"wcvp:concept:2","match_type":"exact"}
+			]}`))
+		case strings.HasSuffix(r.URL.Path, "wcvp:concept:1"):
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":"boom"}`))
+		case strings.HasSuffix(r.URL.Path, "wcvp:concept:2"):
+			_, _ = w.Write([]byte(`{"distribution":[{"area_scheme":"wgsrpd_l3","area_code":"GER"}]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("SITUS_HOSTUS_BASE_URL", srv.URL)
+
+	dir := t.TempDir()
+	writeIngestCSV(t, dir, "typologies.csv",
+		"id,scheme,version,name,source_ref\neunis@2021,eunis,2021,EUNIS 2021,https://example.org\n")
+	writeIngestCSV(t, dir, "habitat_types.csv",
+		"typology_id,code,level,name_en,parent_code,priority\neunis@2021,R22,3,Hay meadow,R2,\n")
+	writeIngestCSV(t, dir, "crosswalks.csv",
+		"from_typology,from_code,to_typology,to_code,qualifier\n")
+	writeIngestCSV(t, dir, "syntaxa.csv", "id,rank,name,parent_id\n")
+	writeIngestCSV(t, dir, "habitat_type_syntaxa.csv", "typology_id,code,syntaxon_id\n")
+	writeIngestCSV(t, dir, "species_roles.csv",
+		"typology_id,code,verbatim_name,role,fidelity,constancy\n"+
+			"eunis@2021,R22,Species A,diagnostic,0.8,\n"+
+			"eunis@2021,R22,Species B,diagnostic,0.8,\n")
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", filepath.Join(t.TempDir(), "situs.sqlite")})
+
+	captureStdout(t, func() {
+		if err := root.Execute(); err != nil {
+			t.Fatalf("executing ingest: %v", err)
+		}
+	})
+
+	if !strings.Contains(out.String(), `"Failed": 1`) {
+		t.Errorf("output = %q, want the Distribution report's Failed field to show the one tolerated concept failure", out.String())
+	}
+	if !strings.Contains(out.String(), `"WithAreas": 1`) {
+		t.Errorf("output = %q, want the other concept's area to have been stored despite the failure", out.String())
 	}
 }
 

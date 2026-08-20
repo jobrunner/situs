@@ -94,15 +94,3 @@ type NameResolver interface {
 type DistributionSource interface {
 	Areas(ctx context.Context, conceptIDs []string) (map[string][]domain.Area, error)
 }
-
-// PartialDistributionSource is an optional capability: a DistributionSource
-// that tolerates individual concept requests failing, instead of aborting the
-// whole batch, can implement this to report how many it had to give up on —
-// so that count stays visible in DistributionReport rather than collapsing
-// into "no data for this concept" (which is legitimate on its own). Checked
-// with a type assertion, not required by DistributionSource itself, because
-// a source with no batching (like a test fake) has nothing partial to report.
-type PartialDistributionSource interface {
-	DistributionSource
-	FailedConcepts() int
-}
