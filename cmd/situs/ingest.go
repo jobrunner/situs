@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -31,13 +33,26 @@ const hostusDistributionPause = 70 * time.Millisecond
 // its own (Areas issues one hostus request per concept) and spaces those
 // requests out, one concept at a time, so a full ingest run does not fail in
 // a wall of 429s.
+//
+// It also tolerates individual concept requests failing instead of
+// discarding the whole batch: a timeout on concept 3400 of 3600 must not
+// throw away three minutes of work and leave the index unfiltered. A
+// canceled/expired context is the one failure that is not tolerated — that
+// is the run being told to stop, not a data problem, and it must fail here,
+// not resurface as an unrelated error two ingest steps later. If every single
+// request fails, Areas reports that as a whole-batch failure (nil map, error)
+// so IngestDistribution treats it exactly like the previous all-or-nothing
+// behavior: zeros in the report, plus the warning.
 type pacedDistributionSource struct {
-	src   output.DistributionSource
-	pause time.Duration
+	src    output.DistributionSource
+	pause  time.Duration
+	failed int
 }
 
-func (p pacedDistributionSource) Areas(ctx context.Context, conceptIDs []string) (map[string][]domain.Area, error) {
+func (p *pacedDistributionSource) Areas(ctx context.Context, conceptIDs []string) (map[string][]domain.Area, error) {
 	out := map[string][]domain.Area{}
+	p.failed = 0
+	var lastErr error
 	for i, id := range conceptIDs {
 		if i > 0 {
 			select {
@@ -48,14 +63,33 @@ func (p pacedDistributionSource) Areas(ctx context.Context, conceptIDs []string)
 		}
 		areas, err := p.src.Areas(ctx, []string{id})
 		if err != nil {
-			return nil, err
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return out, err
+			}
+			p.failed++
+			lastErr = err
+			slog.WarnContext(ctx, "distribution request for one concept failed, continuing with the rest",
+				"concept_id", id, "error", err)
+			continue
 		}
 		for k, v := range areas {
 			out[k] = v
 		}
 	}
+	if len(conceptIDs) > 0 && p.failed == len(conceptIDs) {
+		return nil, fmt.Errorf("all %d distribution requests failed, last error: %w", p.failed, lastErr)
+	}
+	if p.failed > 0 {
+		slog.WarnContext(ctx, "some distribution requests failed, the index will be partially filtered",
+			"failed", p.failed, "requested", len(conceptIDs))
+	}
 	return out, nil
 }
+
+// FailedConcepts implements output.PartialDistributionSource, so
+// IngestDistribution can keep the partial-failure count visible in
+// DistributionReport instead of it collapsing into "no data".
+func (p *pacedDistributionSource) FailedConcepts() int { return p.failed }
 
 func newIngestCmd() *cobra.Command {
 	var csvDir, dbPath string
@@ -126,7 +160,7 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath string) er
 
 	// Runs after IngestSpeciesRoles (it needs the indexed concept ids) and
 	// before the localization/derivation steps, which do not depend on it.
-	distSrc := pacedDistributionSource{src: resolver, pause: hostusDistributionPause}
+	distSrc := &pacedDistributionSource{src: resolver, pause: hostusDistributionPause}
 	distributionReport, err := application.IngestDistribution(ctx, db, distSrc)
 	if err != nil {
 		return fmt.Errorf("ingesting species distribution: %w", err)

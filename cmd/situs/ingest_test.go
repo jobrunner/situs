@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -78,10 +79,13 @@ func seedIngestDir(t *testing.T) string {
 }
 
 // fakeSequentialSource records the concept ids each Areas call carries, so a
-// test can pin that pacedDistributionSource asks one id at a time.
+// test can pin that pacedDistributionSource asks one id at a time. failOn
+// names the one concept id whose single-concept request should fail; every
+// other id succeeds.
 type fakeSequentialSource struct {
-	asked [][]string
-	err   error
+	asked  [][]string
+	err    error
+	failOn string
 }
 
 func (f *fakeSequentialSource) Areas(_ context.Context, ids []string) (map[string][]domain.Area, error) {
@@ -91,6 +95,9 @@ func (f *fakeSequentialSource) Areas(_ context.Context, ids []string) (map[strin
 	}
 	out := map[string][]domain.Area{}
 	for _, id := range ids {
+		if id == f.failOn {
+			return nil, fmt.Errorf("hostus: %s unavailable", id)
+		}
 		out[id] = []domain.Area{{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}}
 	}
 	return out, nil
@@ -98,7 +105,7 @@ func (f *fakeSequentialSource) Areas(_ context.Context, ids []string) (map[strin
 
 func TestPacedDistributionSource_AsksOneConceptAtATime(t *testing.T) {
 	src := &fakeSequentialSource{}
-	paced := pacedDistributionSource{src: src, pause: time.Millisecond}
+	paced := &pacedDistributionSource{src: src, pause: time.Millisecond}
 
 	got, err := paced.Areas(context.Background(), []string{"a", "b", "c"})
 	if err != nil {
@@ -117,22 +124,65 @@ func TestPacedDistributionSource_AsksOneConceptAtATime(t *testing.T) {
 	}
 }
 
-func TestPacedDistributionSource_PropagatesTheUnderlyingError(t *testing.T) {
-	paced := pacedDistributionSource{src: &fakeSequentialSource{err: errors.New("upstream down")}, pause: time.Millisecond}
+// A timeout on one concept out of many must not throw away the rest of an
+// otherwise-successful batch.
+func TestPacedDistributionSource_ToleratesASingleConceptFailureAndKeepsTheRest(t *testing.T) {
+	src := &fakeSequentialSource{failOn: "b"}
+	paced := &pacedDistributionSource{src: src, pause: time.Millisecond}
 
-	if _, err := paced.Areas(context.Background(), []string{"a"}); err == nil {
-		t.Fatal("Areas: want an error, got nil")
+	got, err := paced.Areas(context.Background(), []string{"a", "b", "c"})
+	if err != nil {
+		t.Fatalf("Areas: %v", err)
+	}
+	if _, ok := got["a"]; !ok {
+		t.Error("concept a is missing, want it kept despite b's failure")
+	}
+	if _, ok := got["c"]; !ok {
+		t.Error("concept c is missing, want it kept despite b's failure")
+	}
+	if _, ok := got["b"]; ok {
+		t.Error("concept b should have no areas, its request failed")
+	}
+	if got := paced.FailedConcepts(); got != 1 {
+		t.Errorf("FailedConcepts() = %d, want 1", got)
+	}
+}
+
+// If every single request fails, Areas must report that as one whole-batch
+// failure — not as a "successful" empty map — so IngestDistribution takes
+// the same all-or-nothing warn-and-zero path as a plain source outage.
+func TestPacedDistributionSource_AllConceptsFailingIsAWholeBatchFailure(t *testing.T) {
+	paced := &pacedDistributionSource{src: &fakeSequentialSource{err: errors.New("upstream down")}, pause: time.Millisecond}
+
+	got, err := paced.Areas(context.Background(), []string{"a", "b"})
+	if err == nil {
+		t.Fatal("Areas: want an error when every request failed, got nil")
+	}
+	if got != nil {
+		t.Errorf("Areas returned %v, want a nil map on whole-batch failure", got)
 	}
 }
 
 func TestPacedDistributionSource_StopsWhenTheContextIsCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	paced := pacedDistributionSource{src: &fakeSequentialSource{}, pause: time.Hour}
+	paced := &pacedDistributionSource{src: &fakeSequentialSource{}, pause: time.Hour}
 
 	_, err := paced.Areas(ctx, []string{"a", "b"})
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("Areas returned %v, want context.Canceled", err)
+	}
+}
+
+// A canceled context surfacing from the underlying source (mid-request, not
+// between requests) must abort the whole batch too, not be folded into the
+// per-concept tolerance.
+func TestPacedDistributionSource_PropagatesContextCancellationFromTheSource(t *testing.T) {
+	paced := &pacedDistributionSource{src: &fakeSequentialSource{err: context.Canceled}, pause: time.Millisecond}
+
+	_, err := paced.Areas(context.Background(), []string{"a", "b"})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Areas returned %v, want context.Canceled to propagate", err)
 	}
 }
 
@@ -151,6 +201,13 @@ func TestIngestCommandLoadsCSVsAndPrintsTheReport(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `"HabitatTypes": 1`) {
 		t.Errorf("output = %q, want it to report one habitat type", out.String())
+	}
+	// WithAreas == 0 must be a visible statement in the printed report, not
+	// an absent field an "omitempty" could later drop unnoticed — the stub
+	// hostus server here resolves nothing, so the distribution step never
+	// finds a concept id and WithAreas is legitimately 0.
+	if !strings.Contains(out.String(), `"WithAreas": 0`) {
+		t.Errorf("output = %q, want the Distribution report's WithAreas field present", out.String())
 	}
 	if _, err := os.Stat(dbPath); err != nil {
 		t.Errorf("sqlite index was not created: %v", err)
