@@ -2,6 +2,7 @@ package hostus
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/jobrunner/situs/internal/domain"
+	"github.com/jobrunner/situs/internal/ports/output"
 )
 
 func TestClient_AreasReadsOneConceptPerRequest(t *testing.T) {
@@ -66,8 +68,8 @@ func TestClient_AreasReportsAnUnavailableUpstream(t *testing.T) {
 	defer srv.Close()
 
 	if _, err := NewClient(srv.URL, srv.Client(), 50, "wcvp").
-		Areas(context.Background(), []string{"wcvp:concept:1"}); err == nil {
-		t.Error("Areas returned nil error on 503; the caller must be able to see the outage")
+		Areas(context.Background(), []string{"wcvp:concept:1"}); !errors.Is(err, output.ErrResolverUnavailable) {
+		t.Errorf("error = %v, want it to wrap output.ErrResolverUnavailable", err)
 	}
 }
 
@@ -89,8 +91,8 @@ func TestClient_AreasTransportFailureIsUnavailability(t *testing.T) {
 	srv.Close()
 
 	if _, err := NewClient(srv.URL, srv.Client(), 50, "wcvp").
-		Areas(context.Background(), []string{"wcvp:concept:1"}); err == nil {
-		t.Error("Areas returned nil error against an unreachable server, want an error")
+		Areas(context.Background(), []string{"wcvp:concept:1"}); !errors.Is(err, output.ErrResolverUnavailable) {
+		t.Errorf("error = %v, want it to wrap output.ErrResolverUnavailable", err)
 	}
 }
 
@@ -123,5 +125,25 @@ func TestClient_AreasIgnoresOtherSchemes(t *testing.T) {
 	}
 	if len(got["wcvp:concept:1"]) != 1 {
 		t.Errorf("areas = %v, want only the wgsrpd_l3 one", got["wcvp:concept:1"])
+	}
+}
+
+// When every area of a known concept is filtered out, the key must be absent,
+// not present with an empty slice: absence means "unknown to situs", an empty
+// slice would wrongly mean "known to not occur anywhere".
+func TestClient_AreasOmitsAConceptWhenAllAreasAreFiltered(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"distribution":[{"area_scheme":"tdwg_l4","area_code":"GER-OO"}]}`))
+	}))
+	defer srv.Close()
+
+	got, err := NewClient(srv.URL, srv.Client(), 50, "wcvp").
+		Areas(context.Background(), []string{"wcvp:concept:1"})
+	if err != nil {
+		t.Fatalf("Areas: %v", err)
+	}
+	if _, ok := got["wcvp:concept:1"]; ok {
+		t.Errorf("got %v, want the key absent when every area is filtered out", got)
 	}
 }
