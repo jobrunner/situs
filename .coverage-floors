@@ -12,9 +12,10 @@ internal/adapters/hostus                  98
 internal/adapters/http                    88
 internal/adapters/sqlite                  96
 internal/adapters/telemetry              100
-internal/app                              92
+internal/app                             100
 internal/application                     100
 internal/config                           96
 internal/domain                          100
+internal/ports/input                     100
 internal/ports/output                     66
-TOTAL                                      94
+TOTAL                                      95
