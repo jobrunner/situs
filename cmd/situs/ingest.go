@@ -23,16 +23,16 @@ import (
 
 // hostusDistributionPause is the gap between two hostus concept requests
 // during ingest. hostus rate-limits at 20 req/s and answers 429 above that;
-// the adapter deliberately has no pacing of its own (it is also used from the
-// serve path, where pacing does not belong), so the ingest path enforces it.
-// Measured against the real service: 0.07s works, and ~3600 concepts take
-// about 3 minutes — an ingest run is offline maintenance, not latency-critical.
+// the adapter deliberately has no pacing of its own, because how fast to call
+// is the caller's decision, and ingest is the only caller. Measured against the
+// real service: 0.07s works, and the index's 3135 concepts take about four
+// minutes — an ingest run is offline maintenance, not latency-critical.
 const hostusDistributionPause = 70 * time.Millisecond
 
 // maxLoggedConceptFailures caps how many individual per-concept failures get
 // their own log line. Beyond that, the run-end aggregate line (which always
 // fires once len(failed) > 0) says how many there were — a real outage on
-// this call must not put ~3600 nearly identical lines in the log.
+// this call must not put thousands of nearly identical lines in the log.
 const maxLoggedConceptFailures = 3
 
 // pacedDistributionSource wraps a DistributionSource that has no pacing of
@@ -41,8 +41,8 @@ const maxLoggedConceptFailures = 3
 // a wall of 429s.
 //
 // It also tolerates individual concept requests failing instead of
-// discarding the whole batch: a timeout on concept 3400 of 3600 must not
-// throw away three minutes of work and leave the index unfiltered.
+// discarding the whole batch: a timeout on the last few hundred concepts must
+// not throw away minutes of work and leave the index unfiltered.
 // FailedConcepts reports how many of the last Areas call's requests were
 // tolerated this way.
 // A canceled/expired context is the one failure that is not tolerated —

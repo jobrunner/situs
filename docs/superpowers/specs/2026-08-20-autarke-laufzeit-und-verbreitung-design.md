@@ -13,7 +13,11 @@ Exkursionstagebuch. Wenn es situs fragt, **hat es die Konzept-IDs schon**. Dass
 situs sie erneut auflöst, ist überflüssige Komplexität und eine
 Betriebsabhängigkeit ohne Gegenwert.
 
-Grundlage der Messwerte: `docs/research/2026-08-20-verbreitungsfilter-spike.md`.
+Grundlage der Messwerte ist ein Verbreitungsfilter-Spike, der **bewusst
+unversioniert** bleibt (`docs/research/2026-08-20-verbreitungsfilter-spike.md`
+ist in `.gitignore`). Wer die Zahlen nachprüfen will, findet die
+reproduzierbaren Werte in `docs/reference/measured-index.md` — dort steht, was
+am echten Index gemessen wurde, und das ist die versionierte Quelle.
 
 ## Ausgangslage
 
