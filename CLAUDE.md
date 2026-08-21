@@ -200,7 +200,14 @@ and region data), and full plot classification.
   and zero `TODO`/`FIXME`/`HACK`/`XXX` markers in Go files.
 - `.coverage-floors` is a raise-only ratchet (`make debt-coverage`): lower a
   floor only with a written justification, and raise it when coverage improves.
-- Mutation testing (gremlins) runs **in CI** — it panics on macOS.
+- Mutation testing (gremlins v0.6.0) runs in CI **and locally, macOS included**
+  (`make mutation`); the earlier "panics on macOS" note was wrong. Thresholds are
+  per package in `.mutation-thresholds`, a raise-only ratchet enforced by
+  `scripts/mutation-gate.sh`. **Never invoke gremlins with a `...` wildcard** —
+  it does not expand it and silently generates zero mutants, which is how the
+  gate stayed vacuous through the whole foundation. The script runs one package
+  per invocation and fails on a package that yields no mutants unless
+  `.mutation-thresholds` declares `NONE` for it.
 - TDD: write the failing test, watch it fail, then implement.
 - `golangci-lint` must be built with a Go ≥ the `go` directive in `go.mod`,
   otherwise it refuses to load the config. Install a matching one with

@@ -1,0 +1,40 @@
+# Per-package mutation-testing thresholds — a RATCHET (raise only, never lower
+# without justification). Enforced by scripts/mutation-gate.sh.
+#
+# Coverage says a line ran; mutation says a test would have caught a bug in it.
+# gremlins rewrites one operator at a time in covered code and re-runs the tests:
+# a mutant the suite still passes ("LIVED") is a line no assertion is watching.
+#
+#   efficacy = killed / (killed + lived)   — how many mutants the tests catch
+#   mcover   = mutable lines covered       — how much of the package is reachable
+#              by the suite at all
+#
+# Two columns per package, or the keyword NONE for a package that generates no
+# mutants at all (declarations and interfaces only). NONE is asserted, not
+# ignored: if such a package grows mutable logic, the gate fails and demands real
+# numbers. A package missing from this file also fails the gate — a new package
+# must not be able to slip past it silently.
+#
+# WHY THIS FILE EXISTS: from the scaffold until 2026-08-21 the gate ran
+# `gremlins unleash ./internal/...` and reported success while generating ZERO
+# mutants — gremlins does not expand the `...` wildcard, so it silently measured
+# nothing for eight tasks. Every package is therefore listed explicitly here, and
+# the script fails on a package that produces no mutants unless it says NONE.
+#
+# package                                efficacy(%)  mcover(%)
+cmd/situs                                  100          82
+internal/adapters/hostus                   100         100
+internal/adapters/http                     100         100
+# sqlite sits at 98, not 100, for one documented equivalent mutant:
+# read.go's `make([]any, 0, len(conceptIDs)+1)` capacity hint. Mutating +1 to -1
+# changes no behaviour (append grows the slice regardless), and the only input
+# that would expose it — an empty chunk — slices.Chunk never produces. Raise this
+# to 100 only if that allocation gains real semantics.
+internal/adapters/sqlite                    98         100
+internal/adapters/telemetry                NONE
+internal/app                               100         100
+internal/application                       100         100
+internal/config                            100         100
+internal/domain                            100         100
+internal/ports/input                       100         100
+internal/ports/output                      NONE
