@@ -1,0 +1,101 @@
+# CodeCharta analysis — a 3D "code city" of the Go core, combining structure +
+# complexity (ccsh unifiedparser), test coverage (go cover -> lcov ->
+# coverageimport) and git history / churn / authors (gitlogparser). The merged map
+# is uploaded as an artifact; open it at
+# https://maibornwolff.github.io/codecharta/visualization/ (load situs.cc.json.gz).
+#
+# The map is also a RATCHET: scripts/codecharta-ratchet.py gates it against
+# .codecharta-ratchet.json — a per-file complexity cap and a per-FUNCTION
+# complexity cap (baselines can't grow; everything else <= default_cap), plus a
+# hotspot gate (complex AND under-tested files fail unless grandfathered, and
+# situs' allowlist is empty). The job fails on a regression; the artifact is still
+# uploaded (if: always()). Ratchet the baselines DOWN as code improves.
+#
+# This is the third ratchet, next to .coverage-floors and .mutation-thresholds,
+# and it covers what neither does: complexity, and the complex-and-untested
+# combination.
+name: CodeCharta
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CCSH_VERSION: '1.143.0'
+  GCOV2LCOV_VERSION: 'v1.1.1'
+
+permissions:
+  contents: read
+
+jobs:
+  codecharta:
+    name: CodeCharta analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # gitlogparser needs full history for churn/authors/age
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Java (ccsh runtime)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install ccsh + gcov2lcov
+        run: |
+          npm install -g codecharta-analysis@${{ env.CCSH_VERSION }}
+          go install github.com/jandelgado/gcov2lcov@${{ env.GCOV2LCOV_VERSION }}
+          # Put the go install dir on PATH so later steps call gcov2lcov by name
+          # (go install honours GOBIN when set, else the first GOPATH/bin).
+          gobin="$(go env GOBIN)"; [ -n "$gobin" ] || gobin="$(go env GOPATH)/bin"
+          echo "$gobin" >> "$GITHUB_PATH"
+
+      - name: Structure + complexity (unifiedparser)
+        run: ccsh unifiedparser . -fe=go -e='_test\.go,third_party' -nc -o base.cc.json
+
+      - name: Test coverage -> cc.json (best-effort)
+        run: |
+          # Best-effort: a build/test failure (caught by the CI workflow) must not
+          # sink the map. Only import coverage if a non-empty profile was produced.
+          # Paths are repo-relative, matching the unifiedparser nodes so the merge
+          # lands coverage on the code files.
+          go test -coverprofile=coverage.out ./... || true
+          if [ -s coverage.out ]; then
+            gcov2lcov -infile=coverage.out -outfile=coverage.info
+            ccsh coverageimport coverage.info -f lcov -nc -o coverage.cc.json
+          else
+            echo "::warning::no coverage profile produced; the map will omit coverage"
+          fi
+
+      - name: Git history (churn / authors)
+        run: ccsh gitlogparser repo-scan --repo-path=. --add-author --silent -nc -o git.cc.json
+
+      - name: Merge into situs.cc.json.gz
+        run: |
+          # base + git always exist; coverage only when the step above produced it.
+          inputs="base.cc.json git.cc.json"
+          [ -f coverage.cc.json ] && inputs="$inputs coverage.cc.json"
+          ccsh merge $inputs -o situs.cc.json.gz
+
+      - name: Ratchet gate (complexity caps + hotspots)
+        run: python3 scripts/codecharta-ratchet.py situs.cc.json.gz .codecharta-ratchet.json
+
+      - name: Upload map
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codecharta-map
+          path: situs.cc.json.gz
+          if-no-files-found: warn

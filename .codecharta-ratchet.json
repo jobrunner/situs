@@ -1,0 +1,31 @@
+{
+  "_comment": "Ratchet config for scripts/codecharta-ratchet.py, run against the CodeCharta map (situs.cc.json.gz). Three gates: (1) per-file aggregate complexity, (2) per-FUNCTION complexity (not gameable by moving code between files), (3) hotspot (complex AND under-tested). Coverage has its own floors in .coverage-floors and mutation its own thresholds in .mutation-thresholds; this gate covers what neither does. Ratchet by LOWERING the numbers as the code improves; RAISING a baseline entry needs a written justification, same rule as the other two ratchets.",
+  "_provenance": "Baselined 2026-08-21 on feature/codecharta with ccsh 1.143.0, measured — not estimated. Caps and hotspot thresholds are deliberately the same numbers as ortus so the sibling services and the new-go-service template stay uniform; only the baselines are situs' own.",
+  "complexity": {
+    "metric": "complexity",
+    "default_cap": 50,
+    "_default_cap_note": "Per-file SUM of function complexity. Every file not listed below must stay <= this. Stops a file becoming a monolith, but can be satisfied by splitting a file (the sum moves with the code) — see function_complexity for the non-gameable ceiling. Highest non-baseline file today is 33 (internal/application/localize.go), so there is real headroom before this bites.",
+    "baseline": {
+      "_query_note": "query.go is the read side's whole use-case layer: five endpoint methods plus IndexInfo and the area/backbone helpers. It is at 100% coverage and 100% mutation efficacy, so the complexity is watched, not unguarded. Split it before letting this number grow.",
+      "internal/application/query.go": 78,
+      "_ingest_note": "ingest.go carries one reader per CSV source; each new source adds a block. Also 100% coverage and 100% mutation efficacy.",
+      "internal/application/ingest.go": 64,
+      "internal/adapters/sqlite/read.go": 64
+    }
+  },
+  "function_complexity": {
+    "metric": "max_complexity_per_function",
+    "default_cap": 10,
+    "_default_cap_note": "The single most complex FUNCTION in a file (McCabe). This is the real overall-complexity control: a function keeps its complexity wherever it lives, so moving it between files cannot game this gate — passing requires actually simplifying the function (or extracting cohesive sub-functions). Note that query.go, ingest.go and localize.go all sit at exactly 10, so any growth in their worst function fails the gate immediately. Repo max today is 12.",
+    "baseline": {
+      "_ingest_cmd_note": "cmd/situs/ingest.go's runIngest wires the CSV ingest, the localization overlay and the paced distribution source, and reports each phase. The distribution phase must not abort the run on a source outage, which is where the branching comes from.",
+      "cmd/situs/ingest.go": 12
+    }
+  },
+  "hotspot": {
+    "_note": "A file is a hotspot when it is complex AND under-tested; new hotspots fail the build. The allowlist is EMPTY on purpose — situs has no file that needs grandfathering, and it should stay that way. The three files above min_complexity (query.go 100%, ingest.go 100%, sqlite/read.go 96.1%) are all far above min_coverage.",
+    "min_complexity": 40,
+    "min_coverage": 70,
+    "allow": []
+  }
+}
