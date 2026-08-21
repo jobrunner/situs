@@ -76,9 +76,12 @@ print-gremlins-version: ## Echo the pinned gremlins version (used by CI)
 	@echo $(GREMLINS_VERSION)
 
 mutation: ## Per-package mutation thresholds (runs locally, macOS included)
-	@command -v gremlins >/dev/null 2>&1 || \
-		$(GO) install github.com/go-gremlins/gremlins/cmd/gremlins@$(GREMLINS_VERSION)
-	@./scripts/mutation-gate.sh
+	# Installed unconditionally and invoked by absolute path: skipping the install
+	# when any gremlins is on PATH would silently run a different engine than CI,
+	# and the binary self-reports its version as "dev", so it cannot be checked.
+	@$(GO) install github.com/go-gremlins/gremlins/cmd/gremlins@$(GREMLINS_VERSION)
+	@gobin=$$($(GO) env GOBIN); [ -n "$$gobin" ] || gobin=$$($(GO) env GOPATH)/bin; \
+	 GREMLINS="$$gobin/gremlins" ./scripts/mutation-gate.sh
 
 ## Canonical, non-mutating "is it green?" — mirrored in CI.
 verify: fmt-check vet lint test pipeline-test arch debt ## Authoritative green check
