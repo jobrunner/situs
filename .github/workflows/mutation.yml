@@ -30,5 +30,9 @@ jobs:
           version=$(make -s print-gremlins-version)
           echo "gremlins $version"
           go install "github.com/go-gremlins/gremlins/cmd/gremlins@${version}"
+          # Put the go install dir on PATH so the gate runs the version just
+          # installed (go install honours GOBIN when set, else the first GOPATH/bin).
+          gobin="$(go env GOBIN)"; [ -n "$gobin" ] || gobin="$(go env GOPATH)/bin"
+          echo "$gobin" >> "$GITHUB_PATH"
       - name: Run the mutation gate
         run: ./scripts/mutation-gate.sh

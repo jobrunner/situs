@@ -20,11 +20,17 @@ MODULE="$(go list -m)"
 [ -f "$THRESHOLDS" ] || { echo "mutation-gate: thresholds not found: $THRESHOLDS" >&2; exit 2; }
 command -v "$GREMLINS" >/dev/null 2>&1 || { echo "mutation-gate: $GREMLINS not on PATH" >&2; exit 2; }
 
-# Package list: the arguments, or every package in the module.
+# Package list: the arguments, or every package in the module. Read with a plain
+# `while read` loop, not mapfile: mapfile is a bash 4 builtin and the bash macOS
+# ships is 3.2, so it would abort this script on the very platform the local run
+# advertises.
 if [ "$#" -gt 0 ]; then
   PACKAGES=("$@")
 else
-  mapfile -t PACKAGES < <(go list ./... | sed "s|^${MODULE}/||;s|^${MODULE}\$|.|")
+  PACKAGES=()
+  while IFS= read -r p; do
+    [ -n "$p" ] && PACKAGES+=("$p")
+  done < <(go list ./... | sed "s|^${MODULE}/||;s|^${MODULE}\$|.|")
 fi
 
 OUT="$(mktemp)"
