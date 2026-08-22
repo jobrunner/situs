@@ -171,14 +171,21 @@ func TestClient_ResolveReturnsErrorOnUnparseableResultID(t *testing.T) {
 }
 
 func TestClient_ResolveReturnsErrorOnOutOfRangeResultID(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"results":[{"id":"5","concept_id":"wcvp:concept:1"}]}`))
-	}))
-	defer srv.Close()
+	// The ids are zero-based, so len(batch) is the first invalid one: the check
+	// is `idx >= len(batch)`, and only an id exactly at the bound proves the
+	// boundary is not off by one.
+	for _, id := range []string{"1", "5"} {
+		t.Run("id "+id, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprintf(w, `{"results":[{"id":%q,"concept_id":"wcvp:concept:1"}]}`, id)
+			}))
+			defer srv.Close()
 
-	if _, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize, DefaultEntryBackbone).Resolve(context.Background(), []string{"X"}); err == nil {
-		t.Error("Resolve returned nil error on an out-of-range result id, want an error")
+			if _, err := NewClient(srv.URL, srv.Client(), DefaultBatchSize, DefaultEntryBackbone).Resolve(context.Background(), []string{"X"}); err == nil {
+				t.Error("Resolve returned nil error on an out-of-range result id, want an error")
+			}
+		})
 	}
 }
 
@@ -477,8 +484,51 @@ func TestClient_DownshiftStopsAtTheFloor(t *testing.T) {
 	if !errors.Is(err, output.ErrResolverUnavailable) {
 		t.Fatalf("error = %v, want it to wrap output.ErrResolverUnavailable", err)
 	}
-	if requests > 4 {
-		t.Errorf("requests = %d, want the halving to stop at the floor (%d), not to keep retrying",
+	// Exactly three: 20 fails, its first half of 10 fails, and that half's own
+	// first half of 5 sits at the floor and gives up. A looser bound would let
+	// the floor slip below minBatchSize unnoticed.
+	if requests != 3 {
+		t.Errorf("requests = %d, want exactly 3 — halving must stop at the floor (%d), not go below it",
 			requests, minBatchSize)
+	}
+}
+
+// A name count that divides evenly by the batch size must produce no trailing
+// empty batch: the loop bound is `start < len(names)`, and an off-by-one there
+// posts a pointless request to hostus for every ingest.
+func TestClient_ResolveSendsNoEmptyTrailingBatch(t *testing.T) {
+	const batchSize = 5
+	names := make([]string, 2*batchSize)
+	for i := range names {
+		names[i] = fmt.Sprintf("Species %d", i)
+	}
+
+	var batchSizes []int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Names []struct {
+				ID       string `json:"id"`
+				Verbatim string `json:"verbatim"`
+			} `json:"names"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decoding request: %v", err)
+		}
+		batchSizes = append(batchSizes, len(req.Names))
+
+		results := make([]map[string]string, len(req.Names))
+		for i, n := range req.Names {
+			results[i] = map[string]string{"id": n.ID, "concept_id": "concept:" + n.Verbatim}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"results": results})
+	}))
+	defer srv.Close()
+
+	if _, err := NewClient(srv.URL, srv.Client(), batchSize, DefaultEntryBackbone).Resolve(context.Background(), names); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if want := []int{batchSize, batchSize}; !slices.Equal(batchSizes, want) {
+		t.Errorf("batch sizes = %v, want %v — an empty trailing batch is a wasted request", batchSizes, want)
 	}
 }

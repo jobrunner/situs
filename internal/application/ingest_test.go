@@ -56,6 +56,9 @@ func TestIngestCSV_LoadsEverySource(t *testing.T) {
 	if rep.Crosswalks != 1 || rep.SyntaxonLinks != 1 {
 		t.Errorf("Crosswalks/SyntaxonLinks = %d/%d, want 1/1", rep.Crosswalks, rep.SyntaxonLinks)
 	}
+	if rep.Syntaxa != 1 {
+		t.Errorf("Syntaxa = %d, want 1", rep.Syntaxa)
+	}
 	if !repo.committed {
 		t.Error("ingest did not commit")
 	}
@@ -204,6 +207,39 @@ func TestIngestCSV_MissingRequiredColumnFails(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "qualifier") {
 		t.Errorf("error = %q, want it to name the missing column", err)
+	}
+}
+
+// Priority is a tri-state: an empty column means "not stated", and 0 and 1 are
+// both statements. Reading 0 as true would mark every ordinary Annex I type as
+// a priority habitat.
+func TestIngestCSV_ReadsThePriorityColumnAsAThreeStateFlag(t *testing.T) {
+	dir := seedDir(t)
+	writeCSV(t, dir, "habitat_types.csv",
+		"typology_id,code,level,name_en,parent_code,priority\n"+
+			"annex1,6510,,Lowland hay meadows,,0\n"+
+			"annex1,6210,,Semi-natural dry grasslands,,1\n"+
+			"annex1,6520,,Mountain hay meadows,,\n")
+
+	repo := newFakeRepo()
+	if _, err := IngestCSV(context.Background(), repo, dir); err != nil {
+		t.Fatalf("IngestCSV: %v", err)
+	}
+
+	got := make(map[string]*bool, len(repo.types))
+	for _, h := range repo.types {
+		got[h.Key.Code] = h.Priority
+	}
+	yes, no := true, false
+	for code, want := range map[string]*bool{"6510": &no, "6210": &yes, "6520": nil} {
+		switch {
+		case want == nil && got[code] != nil:
+			t.Errorf("priority of %s = %t, want unstated (nil)", code, *got[code])
+		case want != nil && got[code] == nil:
+			t.Errorf("priority of %s = nil, want %t", code, *want)
+		case want != nil && *got[code] != *want:
+			t.Errorf("priority of %s = %t, want %t", code, *got[code], *want)
+		}
 	}
 }
 

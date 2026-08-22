@@ -1,6 +1,6 @@
 # situs Makefile — every standard task for development and CI.
 .PHONY: all build run test test-coverage pipeline-test lint vet fmt fmt-check arch debt \
-        debt-guard debt-coverage mutation verify docs docs-serve \
+        debt-guard debt-coverage mutation print-gremlins-version verify docs docs-serve \
         hooks security vuln licenses release-dry help
 
 BINARY_NAME := situs
@@ -11,6 +11,8 @@ LDFLAGS     := -ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TI
 
 GO       := go
 GOLINT   := golangci-lint
+# Pinned in one place; the Mutation workflow reads this same value.
+GREMLINS_VERSION := v0.6.0
 COVERAGE_DIR := coverage
 MKDOCS   := uvx --with mkdocs-material mkdocs
 
@@ -70,9 +72,16 @@ debt-coverage: ## Per-package coverage floors (own test run)
 	@$(GO) test -coverprofile=$(COVERAGE_DIR)/coverage.out -covermode=atomic ./... >/dev/null
 	@./scripts/coverage-gate.sh $(COVERAGE_DIR)/coverage.out
 
-mutation: ## Mutation testing (ubuntu only — gremlins panics on macOS)
-	$(GO) install github.com/go-gremlins/gremlins/cmd/gremlins@v0.5.1
-	gremlins unleash --threshold-efficacy 0 --threshold-mcover 0 ./internal/...
+print-gremlins-version: ## Echo the pinned gremlins version (used by CI)
+	@echo $(GREMLINS_VERSION)
+
+mutation: ## Per-package mutation thresholds (runs locally, macOS included)
+	# Installed unconditionally and invoked by absolute path: skipping the install
+	# when any gremlins is on PATH would silently run a different engine than CI,
+	# and the binary self-reports its version as "dev", so it cannot be checked.
+	@$(GO) install github.com/go-gremlins/gremlins/cmd/gremlins@$(GREMLINS_VERSION)
+	@gobin=$$($(GO) env GOBIN); [ -n "$$gobin" ] || gobin=$$($(GO) env GOPATH)/bin; \
+	 GREMLINS="$$gobin/gremlins" ./scripts/mutation-gate.sh
 
 ## Canonical, non-mutating "is it green?" — mirrored in CI.
 verify: fmt-check vet lint test pipeline-test arch debt ## Authoritative green check

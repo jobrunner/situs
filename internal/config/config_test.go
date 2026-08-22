@@ -18,6 +18,9 @@ func TestLoadUsesTheDefaultsWithoutFileOrEnvironment(t *testing.T) {
 	if cfg.Server.Port != 8070 {
 		t.Errorf("server.port = %d, want 8070", cfg.Server.Port)
 	}
+	if cfg.Server.ReadTimeout != 30*time.Second {
+		t.Errorf("server.read_timeout = %v, want 30s", cfg.Server.ReadTimeout)
+	}
 	if cfg.Server.ShutdownTimeout != 15*time.Second {
 		t.Errorf("server.shutdown_timeout = %v, want 15s", cfg.Server.ShutdownTimeout)
 	}

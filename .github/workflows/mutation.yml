@@ -1,5 +1,11 @@
-# Mutation testing (gremlins). Ubuntu only — gremlins panics on macOS.
-# The thresholds are a RATCHET: raise them as the tests of Tasks 2-8 land.
+# Mutation testing (gremlins). The thresholds are a RATCHET and live in
+# .mutation-thresholds; scripts/mutation-gate.sh enforces them per package and is
+# the same entrypoint as `make mutation`, so a local run and CI cannot diverge.
+#
+# The gate runs one gremlins invocation per package, never `./internal/...`:
+# gremlins does not expand the `...` wildcard and reported success while
+# generating zero mutants for the whole foundation. The script fails on a package
+# that produces no mutants unless .mutation-thresholds declares NONE for it.
 name: Mutation
 
 on:
@@ -20,18 +26,13 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Install gremlins
-        run: go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.5.1
-      - name: Run the mutation gate
         run: |
-          fail=0
-          run_pkg() {
-            local pkg="$1" eff="$2" mcov="$3"
-            echo "===== gremlins: $pkg (min efficacy ${eff}%, min mutator-coverage ${mcov}%) ====="
-            if ! gremlins unleash --threshold-efficacy "$eff" --threshold-mcover "$mcov" "$pkg"; then
-              fail=1
-            fi
-          }
-          # Baselined on the Task 1 scaffold, which has no domain logic yet.
-          # Ratchet UP with every task that adds behavior.
-          run_pkg ./internal/... 0 0
-          exit $fail
+          version=$(make -s print-gremlins-version)
+          echo "gremlins $version"
+          go install "github.com/go-gremlins/gremlins/cmd/gremlins@${version}"
+          # Put the go install dir on PATH so the gate runs the version just
+          # installed (go install honours GOBIN when set, else the first GOPATH/bin).
+          gobin="$(go env GOBIN)"; [ -n "$gobin" ] || gobin="$(go env GOPATH)/bin"
+          echo "$gobin" >> "$GITHUB_PATH"
+      - name: Run the mutation gate
+        run: ./scripts/mutation-gate.sh
