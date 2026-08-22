@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.2.0](https://github.com/jobrunner/situs/compare/v0.1.1...v0.2.0) (2026-08-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* **api:** batch habitat types by concept id, drop the runtime hostus dependency
+
+### Features
+
+* **api:** batch habitat types by concept id, drop the runtime hostus dependency ([011f3da](https://github.com/jobrunner/situs/commit/011f3da9484623c0270c8ad91f841479ed89a099))
+* **api:** index self-description on /v1/info, and the docs sweep ([6bfbfa2](https://github.com/jobrunner/situs/commit/6bfbfa2ed690c222980803623a5d47f1f7092dde))
+* **api:** mark and optionally filter species by area ([3befd7a](https://github.com/jobrunner/situs/commit/3befd7a07f52ecc5a7a9edff74308cec2f37fa4d))
+* **api:** serve an offline Swagger UI at GET /docs ([532be46](https://github.com/jobrunner/situs/commit/532be4621ddf06075eb37b7019e938bbc344dfb9))
+* **api:** serve an offline Swagger UI at GET /docs ([210085f](https://github.com/jobrunner/situs/commit/210085fe85c7ffa8102544e8faada83f229d709e))
+* **domain:** area value object and the distribution ports ([5dd9101](https://github.com/jobrunner/situs/commit/5dd91018912f017e10aad4e5692b341ac65ea190))
+* **hostus:** read species distribution per concept ([a09c730](https://github.com/jobrunner/situs/commit/a09c730a8b299b0b53da7d8284c83c739156c3d3))
+* **ingest:** copy species distribution into the index ([3393d80](https://github.com/jobrunner/situs/commit/3393d80a0ee6b8e757ce36c2a595891356b8747a))
+* **quality:** CodeCharta map as a third ratchet ([24d3623](https://github.com/jobrunner/situs/commit/24d362330cecd41dc346b9e875540ef88ac75be2))
+* **quality:** CodeCharta-Map als dritter Ratchet ([17244bc](https://github.com/jobrunner/situs/commit/17244bc9f98c6ed73416ce03ce88e2ed5f3650fa))
+* **sqlite:** species distribution table with idempotent writes and area reads ([32f8172](https://github.com/jobrunner/situs/commit/32f8172a77b25911d2d1fffca663a63b846c995b))
+
+
+### Bug Fixes
+
+* **api:** assert in_area on the batch route and reject blank concept ids ([eaa0b7c](https://github.com/jobrunner/situs/commit/eaa0b7cf3a60bf91a96fa73d96df6c6f219dd8ba))
+* **api:** reject unparseable only_in_area, cover the filter wire-through, split area.go ([106ed08](https://github.com/jobrunner/situs/commit/106ed088e373cf9c49ef7c27c1a2f91239e55bde))
+* **application:** fakeRepo.UpsertDistribution uses failIfNamed ([54d1f26](https://github.com/jobrunner/situs/commit/54d1f260c0f948e8312b9d80ce6abb7816b6ada7))
+* **ci:** close the deferred harness minors from the branch review ([6d03d74](https://github.com/jobrunner/situs/commit/6d03d743c9e5af2637641609caa3f713cd6f2406))
+* **ci:** close the deferred harness minors from the branch review ([75cfa39](https://github.com/jobrunner/situs/commit/75cfa392f81f97f2ae09aeaa322c14c79fadebda))
+* **config:** default to port 8070 and make the spec server relative ([5063a39](https://github.com/jobrunner/situs/commit/5063a391f741bb2c9b5ccb2fd5f520f0a446d76f))
+* **config:** default to port 8070 and make the spec server relative ([e9f802f](https://github.com/jobrunner/situs/commit/e9f802f3488c28e4229df78701b71bcdbd3d918c))
+* **ingest:** move Failed to the command's report, warn on backbone drift ([334f55c](https://github.com/jobrunner/situs/commit/334f55c96780299d550b3ca0c52152ced9b2b1a7))
+* **ingest:** review fixes for distribution ingest ([b1d1137](https://github.com/jobrunner/situs/commit/b1d1137a018aa1b4f8d8284eaaeefe17efd91c97))
+* make the mutation gate actually generate mutants ([ee49359](https://github.com/jobrunner/situs/commit/ee4935936c1e8dac1c4debc73487b070ecae835e))
+* Mutation-Gate erzeugt endlich Mutanten ([b0a838c](https://github.com/jobrunner/situs/commit/b0a838cfde63ea5f57ae61d9afa64d16b09d9e18))
+* review fixes for the mutation gate ([8428288](https://github.com/jobrunner/situs/commit/84282882fe23936536240b29ba22bbfcd5d00de5))
+
 ## [0.1.1](https://github.com/jobrunner/situs/compare/v0.1.0...v0.1.1) (2026-08-19)
 
 
