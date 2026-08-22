@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/jobrunner/situs/internal/domain"
 	"github.com/jobrunner/situs/internal/ports/output"
@@ -184,6 +186,111 @@ func (d *DB) HabitatTypeKeysForSyntaxon(ctx context.Context, syntaxonID string) 
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("sqlite: reading habitat types of syntaxon %q: %w", syntaxonID, err)
+	}
+	return out, nil
+}
+
+// areaChunkSize bounds how many concept ids go into one IN (...) list. SQLite
+// caps bound parameters per statement (SQLITE_LIMIT_VARIABLE_NUMBER — measured
+// at 32766 with this driver, but only 999 in builds predating SQLite 3.32), and
+// the batch read route accepts hundreds of ids. 500 stays under even the legacy
+// ceiling with room for the scheme parameter, so no caller can hit the limit at
+// runtime whatever the driver was built with.
+const areaChunkSize = 500
+
+// AreasForConcepts maps each concept id to the area codes it occurs in. A
+// concept without rows is absent from the map, never present with an empty
+// slice — the caller distinguishes "unknown" from "known to occur nowhere".
+func (d *DB) AreasForConcepts(ctx context.Context, conceptIDs []string, scheme string) (map[string][]string, error) {
+	out := map[string][]string{}
+	for chunk := range slices.Chunk(conceptIDs, areaChunkSize) {
+		if err := d.appendAreasForChunk(ctx, out, chunk, scheme); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// appendAreasForChunk reads one bounded chunk into out.
+func (d *DB) appendAreasForChunk(ctx context.Context, out map[string][]string, conceptIDs []string, scheme string) error {
+	// Only placeholders are generated here, never values — the ids stay
+	// arguments, so this is not SQL construction from input (gosec G201/G202).
+	placeholders := strings.Repeat(",?", len(conceptIDs))[1:]
+	args := make([]any, 0, len(conceptIDs)+1)
+	for _, id := range conceptIDs {
+		args = append(args, id)
+	}
+	args = append(args, scheme)
+
+	rows, err := d.QueryContext(ctx,
+		`SELECT concept_id, area_code FROM species_distribution
+		 WHERE concept_id IN (`+placeholders+`) AND area_scheme = ?
+		 ORDER BY concept_id, area_code`, args...)
+	if err != nil {
+		return fmt.Errorf("sqlite: reading distribution for %d concepts: %w", len(conceptIDs), err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var id, code string
+		if err := rows.Scan(&id, &code); err != nil {
+			return fmt.Errorf("sqlite: scanning distribution: %w", err)
+		}
+		out[id] = append(out[id], code)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("sqlite: iterating distribution: %w", err)
+	}
+	return nil
+}
+
+// KnownAreaCodes lists the distinct area codes the index has data for, in a
+// given scheme. The read side validates an area filter against this: an
+// unknown code becomes an error, not a silent "does not occur" answer.
+func (d *DB) KnownAreaCodes(ctx context.Context, scheme string) ([]string, error) {
+	rows, err := d.QueryContext(ctx,
+		`SELECT DISTINCT area_code FROM species_distribution
+		 WHERE area_scheme = ? ORDER BY area_code`, scheme)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: reading area codes: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := []string{}
+	for rows.Next() {
+		var code string
+		if err := rows.Scan(&code); err != nil {
+			return nil, fmt.Errorf("sqlite: scanning area code: %w", err)
+		}
+		out = append(out, code)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite: iterating area codes: %w", err)
+	}
+	return out, nil
+}
+
+// ConceptIDs lists the distinct concept ids the index holds, so the
+// distribution step knows what to ask hostus for.
+func (d *DB) ConceptIDs(ctx context.Context) ([]string, error) {
+	rows, err := d.QueryContext(ctx,
+		`SELECT DISTINCT concept_id FROM species_role
+		 WHERE concept_id IS NOT NULL ORDER BY concept_id`)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: reading concept ids: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("sqlite: scanning concept id: %w", err)
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite: iterating concept ids: %w", err)
 	}
 	return out, nil
 }

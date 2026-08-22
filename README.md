@@ -35,13 +35,23 @@ nennt situs die weiteren Kennarten, nach denen sich gezielt suchen lässt.
 
 [hostus](https://github.com/jobrunner/hostus) löst **Namen** auf
 (`verbatim → Konzept`). situs hält das **Habitat-/Vegetationswissen**. Beim
-Ingest ruft situs hostus, um die Artnamen der Quellen auf stabile Konzept-IDs
-zu normalisieren; zur Laufzeit ist situs für Abfragen per Konzept-ID autark.
+Ingest ruft situs hostus — für die Artnamen der Quellen (→ stabile Konzept-IDs)
+und für die Verbreitung dieser Konzepte.
+
+**Die Leseseite ist autark:** `situs serve` braucht hostus nicht. Jede Route
+antwortet allein aus dem lokalen SQLite-Index, und die Batch-Route nimmt darum
+Konzept-IDs statt verbatim Namen — wer Namen auflösen will, ruft hostus selbst.
+Ein Architekturtest hält das fest: die Kompositionswurzel des Serve-Pfads darf
+den hostus-Adapter nicht einmal importieren.
 
 ## Stand
 
 Im Aufbau. Das Gerüst steht (Go 1.26, hexagonal, Qualitäts-Gates, CI); Ingest
-und Lese-API des Fundaments sind implementiert.
+und Lese-API des Fundaments sind implementiert. Darüber hinaus fertig: die
+**autarke Leseseite** (Batch über Konzept-IDs, kein hostus zur Laufzeit), der
+**Gebietsfilter** (`?area=`, `?only_in_area=`) samt Verbreitungs-Ingest, und die
+**Selbstauskunft** `GET /v1/info`. Noch nicht gebaut: Scoring/Ranking, die
+ESy-Regel-Engine, der EUNIS-2012-Schlüssel und deutsche Labels (siehe oben).
 
 `make verify` braucht neben der Go-Toolchain ein **`python3`** im Pfad: die
 Tests der XLSX→CSV-Pipeline gehören zum kanonischen Grün-Check. Zusätzliche
@@ -63,11 +73,32 @@ ohne Netz), `GET /v1/info` und die Lese-Endpunkte:
 ./situs ingest --csv-dir pipelines/eunis/out
 ./situs serve
 
+curl -s 'localhost:8070/v1/info'                        # worauf der Index gebaut ist
 curl -s 'localhost:8070/v1/habitat-type/eunis@2021/R22?lang=de'
 curl -s 'localhost:8070/v1/habitat-type/annex1/6510'
 curl -s 'localhost:8070/v1/species/<conceptId>/habitat-types'
 curl -s 'localhost:8070/v1/syntaxon/<syntaxonId>/habitat-types'
+
+# Eine ganze Geländeaufnahme in einem Aufruf — Konzept-IDs, keine Namen.
+curl -s -X POST localhost:8070/v1/species/habitat-types \
+  -H 'Content-Type: application/json' \
+  -d '{"concept_ids":["wcvp:concept:2457314","wcvp:concept:2606633"]}'
+
+# Nur was im Gebiet vorkommt (WGSRPD-Level-3-Code, aus GPS abgeleitet).
+# Setzt einen abgeschlossenen Verbreitungs-Ingest voraus — siehe unten.
+curl -s 'localhost:8070/v1/habitat-type/eunis@2021/R15/species?area=GER&only_in_area=true'
 ```
+
+Mit `?area=` trägt jeder Arteneintrag ein dreiwertiges `in_area`: `true`,
+`false`, oder das Feld fehlt, wenn es nicht entscheidbar ist (keine Konzept-ID
+oder keine Verbreitungsdaten). `only_in_area=true` entfernt nur die
+`false`-Einträge — die unentscheidbaren bleiben.
+
+**`?area=` braucht Verbreitungsdaten im Index.** Die holt der Ingest von hostus
+(ein Request je Konzept, gedrosselt); war hostus dabei nicht erreichbar, läuft
+der Ingest trotzdem durch — der Index ist dann nur nicht filterbar, und **jeder**
+Gebietscode ergibt `INVALID_QUERY` (400). Ob Daten da sind, sagt
+`areas_with_data` in `GET /v1/info`: `0` heißt nein.
 
 ### Fertige Artefakte
 

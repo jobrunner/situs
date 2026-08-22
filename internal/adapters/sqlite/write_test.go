@@ -547,6 +547,9 @@ func TestIngestTx_MethodsWrapErrorsOnAClosedTransaction(t *testing.T) {
 		"UpsertLocalization": func() error {
 			return tx.UpsertLocalization(domain.Localization{EntityType: "habitat_type", EntityKey: "x", Lang: "de", Field: "name", Value: "x", Source: "x", Provenance: "official"})
 		},
+		"UpsertDistribution": func() error {
+			return tx.UpsertDistribution("wcvp:concept:1", domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"})
+		},
 		"Commit":   func() error { return tx.Commit() },
 		"Rollback": func() error { return tx.Rollback() },
 	}
@@ -564,5 +567,32 @@ func TestIngestTx_MethodsWrapErrorsOnAClosedTransaction(t *testing.T) {
 		if !strings.HasPrefix(err.Error(), "sqlite: ") {
 			t.Errorf("%s error = %q, want the adapter's own context prefixed", name, err)
 		}
+	}
+}
+
+func TestIngestTx_UpsertDistributionIsIdempotent(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	a := domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}
+
+	for i := range 2 {
+		tx, err := db.Begin(ctx)
+		if err != nil {
+			t.Fatalf("Begin %d: %v", i, err)
+		}
+		if err := tx.UpsertDistribution("wcvp:concept:1", a); err != nil {
+			t.Fatalf("UpsertDistribution %d: %v", i, err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("Commit %d: %v", i, err)
+		}
+	}
+
+	got, err := db.AreasForConcepts(ctx, []string{"wcvp:concept:1"}, domain.SchemeWGSRPDL3)
+	if err != nil {
+		t.Fatalf("AreasForConcepts: %v", err)
+	}
+	if len(got["wcvp:concept:1"]) != 1 {
+		t.Errorf("areas = %v, want exactly one (upsert, not insert)", got["wcvp:concept:1"])
 	}
 }

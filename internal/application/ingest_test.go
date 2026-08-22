@@ -405,6 +405,7 @@ type fakeRepo struct {
 	}
 	speciesRoles  []domain.SpeciesRole
 	localizations []domain.Localization
+	distribution  []fakeDistribution
 	committed     bool
 	rolledBack    bool
 
@@ -431,9 +432,34 @@ type fakeRepo struct {
 	// failOn names an Upsert*/LinkSyntaxon method that should fail once
 	// called, to exercise the rollback path.
 	failOn string
+	// areasErr fails AreasForConcepts and KnownAreaCodes.
+	areasErr error
+	// conceptIDsErr fails ConceptIDs, exercising IngestDistribution's error path.
+	conceptIDsErr error
+}
+
+// fakeDistribution is one recorded UpsertDistribution call.
+type fakeDistribution struct {
+	ConceptID string
+	Area      domain.Area
 }
 
 func newFakeRepo() *fakeRepo { return &fakeRepo{} }
+
+func (r *fakeRepo) ConceptIDs(_ context.Context) ([]string, error) {
+	if r.conceptIDsErr != nil {
+		return nil, r.conceptIDsErr
+	}
+	seen := map[string]bool{}
+	out := []string{}
+	for _, s := range r.speciesRoles {
+		if s.ConceptID != nil && !seen[*s.ConceptID] {
+			seen[*s.ConceptID] = true
+			out = append(out, *s.ConceptID)
+		}
+	}
+	return out, nil
+}
 
 func (r *fakeRepo) Begin(context.Context) (output.IngestTx, error) {
 	if r.beginErr != nil {
@@ -518,6 +544,44 @@ func (r *fakeRepo) UpsertLocalization(l domain.Localization) error {
 	}
 	r.localizations = append(r.localizations, l)
 	return nil
+}
+
+func (r *fakeRepo) UpsertDistribution(conceptID string, a domain.Area) error {
+	if err := r.failIfNamed("UpsertDistribution"); err != nil {
+		return err
+	}
+	r.distribution = append(r.distribution, fakeDistribution{ConceptID: conceptID, Area: a})
+	return nil
+}
+
+func (r *fakeRepo) AreasForConcepts(_ context.Context, conceptIDs []string, scheme string) (map[string][]string, error) {
+	if r.areasErr != nil {
+		return nil, r.areasErr
+	}
+	out := map[string][]string{}
+	for _, id := range conceptIDs {
+		for _, d := range r.distribution {
+			if d.ConceptID == id && d.Area.Scheme == scheme {
+				out[id] = append(out[id], d.Area.Code)
+			}
+		}
+	}
+	return out, nil
+}
+
+func (r *fakeRepo) KnownAreaCodes(_ context.Context, scheme string) ([]string, error) {
+	if r.areasErr != nil {
+		return nil, r.areasErr
+	}
+	seen := map[string]bool{}
+	out := []string{}
+	for _, d := range r.distribution {
+		if d.Area.Scheme == scheme && !seen[d.Area.Code] {
+			seen[d.Area.Code] = true
+			out = append(out, d.Area.Code)
+		}
+	}
+	return out, nil
 }
 
 func (r *fakeRepo) CrosswalksTo(_ context.Context, typology domain.TypologyID) ([]domain.Crosswalk, error) {

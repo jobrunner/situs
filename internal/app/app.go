@@ -7,9 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/http"
 
-	"github.com/jobrunner/situs/internal/adapters/hostus"
 	httpapi "github.com/jobrunner/situs/internal/adapters/http"
 	"github.com/jobrunner/situs/internal/adapters/sqlite"
 	"github.com/jobrunner/situs/internal/application"
@@ -52,15 +50,12 @@ func New(ctx context.Context, cfg *config.Config, logger *slog.Logger, version s
 	// The index was opened and its schema applied, so the read paths are usable.
 	a.Health = application.NewHealthService(true)
 
-	query := application.NewQueryService(a.Index)
-	// hostus is needed for the verbatim-name path only; concept-ID queries are
-	// autark and keep working while hostus is down.
-	resolver := hostus.NewClient(cfg.Hostus.BaseURL, &http.Client{Timeout: cfg.Hostus.Timeout}, cfg.Hostus.BatchSize, cfg.Hostus.EntryBackbone)
-
+	// No name resolver is wired here on purpose: serving is autark. hostus is an
+	// ingest-time dependency only (see cmd/situs/ingest.go), and arch_test.go
+	// keeps this package free of its adapter.
 	a.HTTPServer = httpapi.NewServer(cfg.Server.Addr(), httpapi.Deps{
 		Health: a.Health,
-		Query:  query,
-		Names:  application.NewNameQueryService(query, resolver),
+		Query:  application.NewQueryService(a.Index),
 	}, logger, httpapi.Options{
 		ServiceName: "situs",
 		Version:     version,

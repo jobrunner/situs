@@ -109,3 +109,38 @@ Grundgesamtheit: **87,59 %** liegen deutlich über der dort abgeschätzten
 
 Nicht aufgelöste Namen werden **behalten**, nicht verworfen: `verbatim_name` ist
 immer gesetzt, `concept_id` bleibt NULL.
+
+## Verbreitung (`species_distribution`)
+
+Gemessen am selben Lauf, gegen denselben hostus-Index. Der Schritt fragt hostus
+einmal pro Konzept, gedrosselt auf 70 ms. Gemessen ist die Dauer des **ganzen**
+`situs ingest`: **5:59,98**. Wie viel davon auf diesen Schritt entfällt, wurde
+nicht einzeln gemessen; rechnerisch sind allein die Drosselpausen
+3135 × 70 ms ≈ 3:40.
+
+| Kennzahl | Gemessen |
+|---|---|
+| Konzepte im Index (`Concepts`) | 3135 |
+| davon mit Verbreitungsdaten (`WithAreas`) | 3135 (100 %) |
+| geschriebene Zeilen (`Rows`) | 104581 |
+| unvollständige Gebiete (`Incomplete`) | 0 |
+| übersprungene Konzepte (`DistributionFailed`) | 0 |
+| verschiedene Gebietscodes (`areas_with_data` in `/v1/info`) | 366 |
+
+Woher die **3135** kommen, weil die Zahl auf den ersten Blick niedrig aussieht:
+`species_roles.csv` trägt **3587** verschiedene Artnamen, davon löste hostus
+**3142** auf (siehe oben) — die restlichen **445** haben keine Konzept-ID und
+zählen hier deshalb nicht mit. Von den 3142 aufgelösten Namen fallen nur **7**
+paarweise auf dasselbe Konzept zusammen (3142 − 3135). Der Abstand zur Zahl der
+Namen ist also fast ausschließlich die Auflösungslücke, nicht Synonymie.
+
+Warum das den Aufwand wert war, an `eunis@2021/R15` mit `?area=GER` gemessen:
+
+| Abfrage | Einträge |
+|---|---|
+| ohne Filter / `?area=GER` | 170 (`in_area: true` 78, `false` 83, Feld fehlt 9) |
+| `?area=GER&only_in_area=true` | 87 (die 83 `false` entfernt, alle 9 unentscheidbaren behalten) |
+
+**49 % der Arten dieses Habitattyps kommen in Deutschland nicht vor.** Eine
+Artenliste ohne Gebietsfilter schickt einen Nutzer im Gelände also in etwa jedem
+zweiten Fall hinter eine Pflanze, die dort nicht wachsen kann.

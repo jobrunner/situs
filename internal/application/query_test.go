@@ -1,9 +1,14 @@
 package application
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/jobrunner/situs/internal/domain"
@@ -62,7 +67,7 @@ func seedQueryRepo() *fakeRepo {
 func TestQueryService_HabitatTypeCarriesSpeciesSyntaxaAndCrosswalks(t *testing.T) {
 	q := NewQueryService(seedQueryRepo())
 
-	got, err := q.HabitatType(context.Background(), queryR22, "en")
+	got, err := q.HabitatType(context.Background(), queryR22, "en", input.AreaFilter{})
 	if err != nil {
 		t.Fatalf("HabitatType: %v", err)
 	}
@@ -94,7 +99,7 @@ func TestQueryService_HabitatTypeCarriesSpeciesSyntaxaAndCrosswalks(t *testing.T
 func TestQueryService_IncomingCrosswalkIsInverted(t *testing.T) {
 	q := NewQueryService(seedQueryRepo())
 
-	got, err := q.HabitatType(context.Background(), queryR22, "en")
+	got, err := q.HabitatType(context.Background(), queryR22, "en", input.AreaFilter{})
 	if err != nil {
 		t.Fatalf("HabitatType: %v", err)
 	}
@@ -115,7 +120,7 @@ func TestQueryService_IncomingCrosswalkIsInverted(t *testing.T) {
 func TestQueryService_GermanLabelIsAdditiveAndCarriesProvenance(t *testing.T) {
 	q := NewQueryService(seedQueryRepo())
 
-	got, err := q.HabitatType(context.Background(), queryR22, "de")
+	got, err := q.HabitatType(context.Background(), queryR22, "de", input.AreaFilter{})
 	if err != nil {
 		t.Fatalf("HabitatType: %v", err)
 	}
@@ -148,7 +153,7 @@ func TestQueryService_PreferredLabelOrdersOfficialCuratedDerived(t *testing.T) {
 				})
 			}
 
-			got, err := NewQueryService(repo).HabitatType(context.Background(), queryR22, "de")
+			got, err := NewQueryService(repo).HabitatType(context.Background(), queryR22, "de", input.AreaFilter{})
 			if err != nil {
 				t.Fatalf("HabitatType: %v", err)
 			}
@@ -162,7 +167,7 @@ func TestQueryService_PreferredLabelOrdersOfficialCuratedDerived(t *testing.T) {
 func TestQueryService_NoGermanLabelLeavesTheOverlayEmpty(t *testing.T) {
 	q := NewQueryService(seedQueryRepo())
 
-	got, err := q.HabitatType(context.Background(), queryR99, "de")
+	got, err := q.HabitatType(context.Background(), queryR99, "de", input.AreaFilter{})
 	if err != nil {
 		t.Fatalf("HabitatType: %v", err)
 	}
@@ -177,7 +182,7 @@ func TestQueryService_NoGermanLabelLeavesTheOverlayEmpty(t *testing.T) {
 func TestQueryService_EmptyListsAreEmptyNotNil(t *testing.T) {
 	q := NewQueryService(seedQueryRepo())
 
-	got, err := q.HabitatType(context.Background(), queryR99, "en")
+	got, err := q.HabitatType(context.Background(), queryR99, "en", input.AreaFilter{})
 	if err != nil {
 		t.Fatalf("HabitatType: %v", err)
 	}
@@ -197,7 +202,7 @@ func TestQueryService_EmptyListsAreEmptyNotNil(t *testing.T) {
 func TestQueryService_UnknownTypologyIsDistinctFromUnknownCode(t *testing.T) {
 	q := NewQueryService(seedQueryRepo())
 
-	_, err := q.HabitatType(context.Background(), domain.HabitatTypeKey{Typology: "bogus@1", Code: "R22"}, "en")
+	_, err := q.HabitatType(context.Background(), domain.HabitatTypeKey{Typology: "bogus@1", Code: "R22"}, "en", input.AreaFilter{})
 	if !errors.Is(err, input.ErrUnknownTypology) {
 		t.Errorf("unknown typology error = %v, want input.ErrUnknownTypology", err)
 	}
@@ -205,7 +210,7 @@ func TestQueryService_UnknownTypologyIsDistinctFromUnknownCode(t *testing.T) {
 		t.Error("an unknown typology must not also report ErrNotFound — the status codes differ")
 	}
 
-	_, err = q.HabitatType(context.Background(), domain.HabitatTypeKey{Typology: "eunis@2021", Code: "NOPE"}, "en")
+	_, err = q.HabitatType(context.Background(), domain.HabitatTypeKey{Typology: "eunis@2021", Code: "NOPE"}, "en", input.AreaFilter{})
 	if !errors.Is(err, input.ErrNotFound) {
 		t.Errorf("unknown code error = %v, want input.ErrNotFound", err)
 	}
@@ -214,7 +219,7 @@ func TestQueryService_UnknownTypologyIsDistinctFromUnknownCode(t *testing.T) {
 func TestQueryService_SpeciesHabitatTypes(t *testing.T) {
 	q := NewQueryService(seedQueryRepo())
 
-	got, err := q.SpeciesHabitatTypes(context.Background(), "wcvp-1", "de")
+	got, err := q.SpeciesHabitatTypes(context.Background(), "wcvp-1", "de", input.AreaFilter{})
 	if err != nil {
 		t.Fatalf("SpeciesHabitatTypes: %v", err)
 	}
@@ -238,7 +243,7 @@ func TestQueryService_SpeciesHabitatTypes(t *testing.T) {
 func TestQueryService_UnknownConceptIsNotFound(t *testing.T) {
 	q := NewQueryService(seedQueryRepo())
 
-	if _, err := q.SpeciesHabitatTypes(context.Background(), "wcvp-nope", "en"); !errors.Is(err, input.ErrNotFound) {
+	if _, err := q.SpeciesHabitatTypes(context.Background(), "wcvp-nope", "en", input.AreaFilter{}); !errors.Is(err, input.ErrNotFound) {
 		t.Errorf("error = %v, want input.ErrNotFound", err)
 	}
 }
@@ -254,7 +259,7 @@ func TestQueryService_DanglingSpeciesRoleIsReportedAsInconsistency(t *testing.T)
 		VerbatimName: "Dangling reference", Role: "diagnostic",
 	})
 
-	_, err := NewQueryService(repo).SpeciesHabitatTypes(context.Background(), concept, "en")
+	_, err := NewQueryService(repo).SpeciesHabitatTypes(context.Background(), concept, "en", input.AreaFilter{})
 	if err == nil {
 		t.Fatal("SpeciesHabitatTypes = nil error, want the inconsistency reported")
 	}
@@ -266,7 +271,7 @@ func TestQueryService_DanglingSpeciesRoleIsReportedAsInconsistency(t *testing.T)
 func TestQueryService_HabitatTypeSpeciesFiltersByRole(t *testing.T) {
 	q := NewQueryService(seedQueryRepo())
 
-	all, err := q.HabitatTypeSpecies(context.Background(), queryR22, "")
+	all, err := q.HabitatTypeSpecies(context.Background(), queryR22, "", input.AreaFilter{})
 	if err != nil {
 		t.Fatalf("HabitatTypeSpecies(all): %v", err)
 	}
@@ -274,7 +279,7 @@ func TestQueryService_HabitatTypeSpeciesFiltersByRole(t *testing.T) {
 		t.Errorf("got %+v, want every species when no role is given", all)
 	}
 
-	diagnostic, err := q.HabitatTypeSpecies(context.Background(), queryR22, "diagnostic")
+	diagnostic, err := q.HabitatTypeSpecies(context.Background(), queryR22, "diagnostic", input.AreaFilter{})
 	if err != nil {
 		t.Fatalf("HabitatTypeSpecies(diagnostic): %v", err)
 	}
@@ -282,7 +287,7 @@ func TestQueryService_HabitatTypeSpeciesFiltersByRole(t *testing.T) {
 		t.Errorf("got %+v, want only the diagnostic species", diagnostic)
 	}
 
-	none, err := q.HabitatTypeSpecies(context.Background(), queryR99, "")
+	none, err := q.HabitatTypeSpecies(context.Background(), queryR99, "", input.AreaFilter{})
 	if err != nil {
 		t.Fatalf("HabitatTypeSpecies(R99): %v", err)
 	}
@@ -294,11 +299,11 @@ func TestQueryService_HabitatTypeSpeciesFiltersByRole(t *testing.T) {
 func TestQueryService_HabitatTypeSpeciesRejectsUnknownTypologyAndCode(t *testing.T) {
 	q := NewQueryService(seedQueryRepo())
 
-	_, err := q.HabitatTypeSpecies(context.Background(), domain.HabitatTypeKey{Typology: "bogus@1", Code: "R22"}, "")
+	_, err := q.HabitatTypeSpecies(context.Background(), domain.HabitatTypeKey{Typology: "bogus@1", Code: "R22"}, "", input.AreaFilter{})
 	if !errors.Is(err, input.ErrUnknownTypology) {
 		t.Errorf("error = %v, want input.ErrUnknownTypology", err)
 	}
-	_, err = q.HabitatTypeSpecies(context.Background(), domain.HabitatTypeKey{Typology: "eunis@2021", Code: "NOPE"}, "")
+	_, err = q.HabitatTypeSpecies(context.Background(), domain.HabitatTypeKey{Typology: "eunis@2021", Code: "NOPE"}, "", input.AreaFilter{})
 	if !errors.Is(err, input.ErrNotFound) {
 		t.Errorf("error = %v, want input.ErrNotFound", err)
 	}
@@ -365,39 +370,90 @@ func TestQueryService_RepositoryFailuresSurface(t *testing.T) {
 	}{
 		"Typology fails": {
 			arrange: func(r *fakeRepo) { r.typologyErr = boom },
-			call:    func(q *QueryService) error { _, err := q.HabitatType(ctx, queryR22, "en"); return err },
+			call: func(q *QueryService) error {
+				_, err := q.HabitatType(ctx, queryR22, "en", input.AreaFilter{})
+				return err
+			},
 		},
 		"HabitatType fails": {
 			arrange: func(r *fakeRepo) { r.habitatTypeErr = boom },
-			call:    func(q *QueryService) error { _, err := q.HabitatType(ctx, queryR22, "en"); return err },
+			call: func(q *QueryService) error {
+				_, err := q.HabitatType(ctx, queryR22, "en", input.AreaFilter{})
+				return err
+			},
 		},
 		"SpeciesRoles fails": {
 			arrange: func(r *fakeRepo) { r.speciesRolesErr = boom },
-			call:    func(q *QueryService) error { _, err := q.HabitatType(ctx, queryR22, "en"); return err },
+			call: func(q *QueryService) error {
+				_, err := q.HabitatType(ctx, queryR22, "en", input.AreaFilter{})
+				return err
+			},
 		},
 		"Syntaxa fails": {
 			arrange: func(r *fakeRepo) { r.syntaxaErr = boom },
-			call:    func(q *QueryService) error { _, err := q.HabitatType(ctx, queryR22, "en"); return err },
+			call: func(q *QueryService) error {
+				_, err := q.HabitatType(ctx, queryR22, "en", input.AreaFilter{})
+				return err
+			},
 		},
 		"Crosswalks fails": {
 			arrange: func(r *fakeRepo) { r.crosswalksErr = boom },
-			call:    func(q *QueryService) error { _, err := q.HabitatType(ctx, queryR22, "en"); return err },
+			call: func(q *QueryService) error {
+				_, err := q.HabitatType(ctx, queryR22, "en", input.AreaFilter{})
+				return err
+			},
 		},
 		"Localization fails": {
 			arrange: func(r *fakeRepo) { r.localizationErr = boom },
-			call:    func(q *QueryService) error { _, err := q.HabitatType(ctx, queryR22, "de"); return err },
+			call: func(q *QueryService) error {
+				_, err := q.HabitatType(ctx, queryR22, "de", input.AreaFilter{})
+				return err
+			},
 		},
 		"SpeciesRolesByConcept fails": {
 			arrange: func(r *fakeRepo) { r.speciesRolesErr = boom },
-			call:    func(q *QueryService) error { _, err := q.SpeciesHabitatTypes(ctx, "wcvp-1", "en"); return err },
+			call: func(q *QueryService) error {
+				_, err := q.SpeciesHabitatTypes(ctx, "wcvp-1", "en", input.AreaFilter{})
+				return err
+			},
+		},
+		"KnownAreaCodes fails when an area filter is active": {
+			arrange: func(r *fakeRepo) { r.areasErr = boom },
+			call: func(q *QueryService) error {
+				_, err := q.HabitatTypeSpecies(ctx, queryR22, "", input.AreaFilter{Code: "GER"})
+				return err
+			},
+		},
+		"KnownAreaCodes fails on the batch path": {
+			arrange: func(r *fakeRepo) { r.areasErr = boom },
+			call: func(q *QueryService) error {
+				_, err := q.SpeciesSetHabitatTypes(ctx, []string{"wcvp:concept:1"}, "en",
+					input.AreaFilter{Code: "GER"})
+				return err
+			},
+		},
+		// An index failure must fail the batch, not quietly become "no facts for
+		// this concept" — that would report a real outage as a normal answer.
+		"the index fails on the batch path": {
+			arrange: func(r *fakeRepo) { r.speciesRolesErr = boom },
+			call: func(q *QueryService) error {
+				_, err := q.SpeciesSetHabitatTypes(ctx, []string{"wcvp:concept:1"}, "en", input.AreaFilter{})
+				return err
+			},
 		},
 		"Syntaxa fails on the species path": {
 			arrange: func(r *fakeRepo) { r.syntaxaErr = boom },
-			call:    func(q *QueryService) error { _, err := q.SpeciesHabitatTypes(ctx, "wcvp-1", "en"); return err },
+			call: func(q *QueryService) error {
+				_, err := q.SpeciesHabitatTypes(ctx, "wcvp-1", "en", input.AreaFilter{})
+				return err
+			},
 		},
 		"Localization fails on the species path": {
 			arrange: func(r *fakeRepo) { r.localizationErr = boom },
-			call:    func(q *QueryService) error { _, err := q.SpeciesHabitatTypes(ctx, "wcvp-1", "de"); return err },
+			call: func(q *QueryService) error {
+				_, err := q.SpeciesHabitatTypes(ctx, "wcvp-1", "de", input.AreaFilter{})
+				return err
+			},
 		},
 		"Localization fails on the syntaxon path": {
 			arrange: func(r *fakeRepo) { r.localizationErr = boom },
@@ -413,11 +469,17 @@ func TestQueryService_RepositoryFailuresSurface(t *testing.T) {
 		},
 		"HabitatType fails on the species-list path": {
 			arrange: func(r *fakeRepo) { r.habitatTypeErr = boom },
-			call:    func(q *QueryService) error { _, err := q.HabitatTypeSpecies(ctx, queryR22, ""); return err },
+			call: func(q *QueryService) error {
+				_, err := q.HabitatTypeSpecies(ctx, queryR22, "", input.AreaFilter{})
+				return err
+			},
 		},
 		"SpeciesRoles fails on the species-list path": {
 			arrange: func(r *fakeRepo) { r.speciesRolesErr = boom },
-			call:    func(q *QueryService) error { _, err := q.HabitatTypeSpecies(ctx, queryR22, ""); return err },
+			call: func(q *QueryService) error {
+				_, err := q.HabitatTypeSpecies(ctx, queryR22, "", input.AreaFilter{})
+				return err
+			},
 		},
 	}
 	for name, tc := range cases {
@@ -431,102 +493,6 @@ func TestQueryService_RepositoryFailuresSurface(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestNameQueryService_KeepsUnresolvableNames(t *testing.T) {
-	repo := seedQueryRepo()
-	resolver := fakeResolver{"Bromus erectus": "wcvp-1"}
-	svc := NewNameQueryService(NewQueryService(repo), resolver)
-
-	got, err := svc.SpeciesHabitatTypesByName(context.Background(),
-		[]string{"Bromus erectus", "Nonexistens dubia"}, "en")
-	if err != nil {
-		t.Fatalf("SpeciesHabitatTypesByName: %v", err)
-	}
-	if len(got) != 2 {
-		t.Fatalf("got %d entries, want one per input name", len(got))
-	}
-	if !got[0].Resolved || got[0].ConceptID != "wcvp-1" || len(got[0].HabitatTypes) != 1 {
-		t.Errorf("got[0] = %+v, want the resolved name with its habitat types", got[0])
-	}
-	if got[1].Resolved || got[1].Verbatim != "Nonexistens dubia" {
-		t.Errorf("got[1] = %+v, want the unresolved name kept and marked", got[1])
-	}
-	if got[1].HabitatTypes == nil || len(got[1].HabitatTypes) != 0 {
-		t.Errorf("got[1].HabitatTypes = %+v, want an empty, non-nil list", got[1].HabitatTypes)
-	}
-}
-
-// A name hostus resolves but the index has no facts about is a normal answer:
-// resolved, no habitat types — not a 404 and not a failed batch.
-func TestNameQueryService_ResolvedButUnknownConceptIsAnEmptyList(t *testing.T) {
-	svc := NewNameQueryService(NewQueryService(seedQueryRepo()),
-		fakeResolver{"Ginkgo biloba": "wcvp-ginkgo"})
-
-	got, err := svc.SpeciesHabitatTypesByName(context.Background(), []string{"Ginkgo biloba"}, "en")
-	if err != nil {
-		t.Fatalf("SpeciesHabitatTypesByName: %v", err)
-	}
-	if len(got) != 1 || !got[0].Resolved || len(got[0].HabitatTypes) != 0 {
-		t.Errorf("got %+v, want the resolved name with an empty habitat-type list", got)
-	}
-}
-
-func TestNameQueryService_UpstreamFailureIsMarkedAsSuch(t *testing.T) {
-	cause := fmt.Errorf("connection refused: %w", output.ErrResolverUnavailable)
-	svc := NewNameQueryService(NewQueryService(seedQueryRepo()), failingResolver{err: cause})
-
-	_, err := svc.SpeciesHabitatTypesByName(context.Background(), []string{"Bromus erectus"}, "en")
-	if !errors.Is(err, input.ErrUpstreamUnavailable) {
-		t.Errorf("error = %v, want input.ErrUpstreamUnavailable", err)
-	}
-	// The classification must not swallow the cause — an operator needs to see
-	// what actually failed.
-	if !errors.Is(err, cause) {
-		t.Errorf("error = %v, want the resolver's cause still reachable", err)
-	}
-}
-
-// A resolver that answered and refused the request is a fault on this side. If
-// that surfaced as UPSTREAM_UNAVAILABLE, an operator would go looking at hostus
-// for a bug that lives here.
-func TestNameQueryService_AResolverRejectionIsNotAnUpstreamOutage(t *testing.T) {
-	cause := fmt.Errorf("status 400: unknown entry_backbone: %w", output.ErrResolverRejected)
-	svc := NewNameQueryService(NewQueryService(seedQueryRepo()), failingResolver{err: cause})
-
-	_, err := svc.SpeciesHabitatTypesByName(context.Background(), []string{"Bromus erectus"}, "en")
-	if err == nil {
-		t.Fatal("SpeciesHabitatTypesByName = nil error, want the rejection reported")
-	}
-	if errors.Is(err, input.ErrUpstreamUnavailable) {
-		t.Errorf("error = %v, must not be classified as hostus being unavailable", err)
-	}
-	if !errors.Is(err, output.ErrResolverRejected) {
-		t.Errorf("error = %v, want the rejection still reachable", err)
-	}
-}
-
-func TestNameQueryService_IndexFailureIsNotMistakenForAnUpstreamFailure(t *testing.T) {
-	repo := seedQueryRepo()
-	boom := errors.New("boom")
-	repo.speciesRolesErr = boom
-	svc := NewNameQueryService(NewQueryService(repo), fakeResolver{"Bromus erectus": "wcvp-1"})
-
-	_, err := svc.SpeciesHabitatTypesByName(context.Background(), []string{"Bromus erectus"}, "en")
-	if !errors.Is(err, boom) {
-		t.Errorf("error = %v, want the index failure", err)
-	}
-	if errors.Is(err, input.ErrUpstreamUnavailable) {
-		t.Error("an index failure must not be reported as hostus being unavailable")
-	}
-}
-
-// failingResolver fails with a caller-supplied cause, so a test can assert the
-// cause stays reachable through the classification.
-type failingResolver struct{ err error }
-
-func (f failingResolver) Resolve(context.Context, []string) (map[string]string, error) {
-	return nil, f.err
 }
 
 // The read side of fakeRepo. It is deliberately a naive scan over the seeded
@@ -625,4 +591,490 @@ func (r *fakeRepo) HabitatTypeKeysForSyntaxon(_ context.Context, syntaxonID stri
 		}
 	}
 	return out, nil
+}
+
+func TestHabitatTypeSpecies_MarksAreaInThreeStates(t *testing.T) {
+	repo := newFakeRepo()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	repo.types = []domain.HabitatType{{Key: key, NameEN: "Hay meadow"}}
+	here, elsewhere := "wcvp:concept:here", "wcvp:concept:elsewhere"
+	repo.speciesRoles = []domain.SpeciesRole{
+		{Key: key, ConceptID: &here, VerbatimName: "Here", Role: "diagnostic"},
+		{Key: key, ConceptID: &elsewhere, VerbatimName: "Elsewhere", Role: "diagnostic"},
+		{Key: key, ConceptID: nil, VerbatimName: "Moss", Role: "diagnostic"},
+	}
+	repo.distribution = []fakeDistribution{
+		{ConceptID: here, Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}},
+		{ConceptID: elsewhere, Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "FRA"}},
+	}
+
+	got, err := NewQueryService(repo).HabitatTypeSpecies(context.Background(), key, "",
+		input.AreaFilter{Code: "GER"})
+	if err != nil {
+		t.Fatalf("HabitatTypeSpecies: %v", err)
+	}
+	byName := map[string]*bool{}
+	for _, s := range got {
+		byName[s.VerbatimName] = s.InArea
+	}
+	if byName["Here"] == nil || !*byName["Here"] {
+		t.Errorf("Here: in_area = %v, want true", byName["Here"])
+	}
+	if byName["Elsewhere"] == nil || *byName["Elsewhere"] {
+		t.Errorf("Elsewhere: in_area = %v, want false", byName["Elsewhere"])
+	}
+	if byName["Moss"] != nil {
+		t.Errorf("Moss: in_area = %v, want nil (no concept, so not knowable)", byName["Moss"])
+	}
+}
+
+// only_in_area removes the definite absences and keeps the unknowns: a list
+// that silently loses what it cannot judge is dishonestly clean.
+func TestHabitatTypeSpecies_OnlyInAreaKeepsTheUnknowns(t *testing.T) {
+	repo := newFakeRepo()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	repo.types = []domain.HabitatType{{Key: key, NameEN: "Hay meadow"}}
+	here, elsewhere := "wcvp:concept:here", "wcvp:concept:elsewhere"
+	repo.speciesRoles = []domain.SpeciesRole{
+		{Key: key, ConceptID: &here, VerbatimName: "Here", Role: "diagnostic"},
+		{Key: key, ConceptID: &elsewhere, VerbatimName: "Elsewhere", Role: "diagnostic"},
+		{Key: key, ConceptID: nil, VerbatimName: "Moss", Role: "diagnostic"},
+	}
+	repo.distribution = []fakeDistribution{
+		{ConceptID: here, Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}},
+		{ConceptID: elsewhere, Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "FRA"}},
+	}
+
+	got, err := NewQueryService(repo).HabitatTypeSpecies(context.Background(), key, "",
+		input.AreaFilter{Code: "GER", OnlyInArea: true})
+	if err != nil {
+		t.Fatalf("HabitatTypeSpecies: %v", err)
+	}
+	names := map[string]bool{}
+	for _, s := range got {
+		names[s.VerbatimName] = true
+	}
+	if !names["Here"] || !names["Moss"] {
+		t.Errorf("names = %v, want Here and Moss (unknown stays)", names)
+	}
+	if names["Elsewhere"] {
+		t.Error("Elsewhere survived only_in_area=true")
+	}
+}
+
+func TestHabitatTypeSpecies_UnknownAreaIsAnError(t *testing.T) {
+	repo := newFakeRepo()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	repo.types = []domain.HabitatType{{Key: key, NameEN: "Hay meadow"}}
+	repo.distribution = []fakeDistribution{
+		{ConceptID: "wcvp:concept:1", Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}},
+	}
+
+	_, err := NewQueryService(repo).HabitatTypeSpecies(context.Background(), key, "",
+		input.AreaFilter{Code: "NOPE"})
+	if !errors.Is(err, input.ErrUnknownArea) {
+		t.Errorf("err = %v, want ErrUnknownArea — a list of false would hide the typo", err)
+	}
+}
+
+func TestHabitatTypeSpecies_WithoutAreaThereIsNoField(t *testing.T) {
+	repo := newFakeRepo()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	repo.types = []domain.HabitatType{{Key: key, NameEN: "Hay meadow"}}
+	id := "wcvp:concept:1"
+	repo.speciesRoles = []domain.SpeciesRole{
+		{Key: key, ConceptID: &id, VerbatimName: "A", Role: "diagnostic"},
+	}
+
+	got, err := NewQueryService(repo).HabitatTypeSpecies(context.Background(), key, "",
+		input.AreaFilter{})
+	if err != nil {
+		t.Fatalf("HabitatTypeSpecies: %v", err)
+	}
+	if len(got) != 1 || got[0].InArea != nil {
+		t.Errorf("in_area = %v, want nil without an area filter", got[0].InArea)
+	}
+
+	// The requirement is on the wire, not on the Go zero value: omitempty on a
+	// nil *bool must drop the key entirely, not serve a literal null.
+	raw, err := json.Marshal(got[0])
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if bytes.Contains(raw, []byte(`"in_area"`)) {
+		t.Errorf("body = %s, want no in_area key at all without an area filter", raw)
+	}
+}
+
+// HabitatType must carry the same three-state marking as HabitatTypeSpecies —
+// across every role bucket, not just the flat species list.
+func TestHabitatType_MarksAreaAcrossRoleBuckets(t *testing.T) {
+	repo := newFakeRepo()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	repo.types = []domain.HabitatType{{Key: key, NameEN: "Hay meadow"}}
+	here := "wcvp:concept:here"
+	repo.speciesRoles = []domain.SpeciesRole{
+		{Key: key, ConceptID: &here, VerbatimName: "Here", Role: "diagnostic"},
+	}
+	repo.distribution = []fakeDistribution{
+		{ConceptID: here, Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}},
+	}
+
+	got, err := NewQueryService(repo).HabitatType(context.Background(), key, "en", input.AreaFilter{Code: "GER"})
+	if err != nil {
+		t.Fatalf("HabitatType: %v", err)
+	}
+	entries := got.Species["diagnostic"]
+	if len(entries) != 1 || entries[0].InArea == nil || !*entries[0].InArea {
+		t.Errorf("species[diagnostic] = %+v, want the entry marked in_area=true", entries)
+	}
+}
+
+func TestHabitatType_UnknownAreaIsAnError(t *testing.T) {
+	repo := newFakeRepo()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	repo.types = []domain.HabitatType{{Key: key, NameEN: "Hay meadow"}}
+	repo.distribution = []fakeDistribution{
+		{ConceptID: "wcvp:concept:1", Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}},
+	}
+
+	_, err := NewQueryService(repo).HabitatType(context.Background(), key, "en", input.AreaFilter{Code: "NOPE"})
+	if !errors.Is(err, input.ErrUnknownArea) {
+		t.Errorf("err = %v, want ErrUnknownArea", err)
+	}
+}
+
+// SpeciesHabitatTypes marks the single queried concept's own area membership,
+// and only_in_area empties the answer outright when it is definitely absent —
+// but a definite absence without only_in_area stays visible.
+func TestSpeciesHabitatTypes_MarksAndFiltersByArea(t *testing.T) {
+	repo := newFakeRepo()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	repo.types = []domain.HabitatType{{Key: key, NameEN: "Hay meadow"}}
+	concept := "wcvp:concept:1"
+	repo.speciesRoles = []domain.SpeciesRole{
+		{Key: key, ConceptID: &concept, VerbatimName: "Here", Role: "diagnostic"},
+	}
+	repo.distribution = []fakeDistribution{
+		{ConceptID: concept, Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}},
+		// A row for a different concept, so FRA is a known area code the
+		// queried concept simply has no row for — a definite absence.
+		{ConceptID: "wcvp:concept:other", Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "FRA"}},
+	}
+	q := NewQueryService(repo)
+
+	got, err := q.SpeciesHabitatTypes(context.Background(), concept, "en", input.AreaFilter{Code: "GER"})
+	if err != nil {
+		t.Fatalf("SpeciesHabitatTypes: %v", err)
+	}
+	if len(got) != 1 || got[0].InArea == nil || !*got[0].InArea {
+		t.Errorf("got %+v, want in_area=true", got)
+	}
+
+	got, err = q.SpeciesHabitatTypes(context.Background(), concept, "en",
+		input.AreaFilter{Code: "FRA", OnlyInArea: true})
+	if err != nil {
+		t.Fatalf("SpeciesHabitatTypes: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("got %+v, want an empty list — the concept is definitely absent from FRA", got)
+	}
+
+	got, err = q.SpeciesHabitatTypes(context.Background(), concept, "en", input.AreaFilter{Code: "FRA"})
+	if err != nil {
+		t.Fatalf("SpeciesHabitatTypes: %v", err)
+	}
+	if len(got) != 1 || got[0].InArea == nil || *got[0].InArea {
+		t.Errorf("got %+v, want in_area=false kept without only_in_area", got)
+	}
+}
+
+func TestSpeciesHabitatTypes_UnknownAreaIsAnError(t *testing.T) {
+	repo := newFakeRepo()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	repo.types = []domain.HabitatType{{Key: key, NameEN: "Hay meadow"}}
+	concept := "wcvp:concept:1"
+	repo.speciesRoles = []domain.SpeciesRole{
+		{Key: key, ConceptID: &concept, VerbatimName: "Here", Role: "diagnostic"},
+	}
+	repo.distribution = []fakeDistribution{
+		{ConceptID: concept, Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}},
+	}
+
+	_, err := NewQueryService(repo).SpeciesHabitatTypes(context.Background(), concept, "en", input.AreaFilter{Code: "NOPE"})
+	if !errors.Is(err, input.ErrUnknownArea) {
+		t.Errorf("err = %v, want ErrUnknownArea", err)
+	}
+}
+
+// A typo'd area code and an unknown concept in one request: the malformed
+// question wins. Otherwise the caller gets a 404 and fixes the concept id,
+// only to hit the 400 on the area code afterwards.
+func TestSpeciesHabitatTypes_UnknownAreaOutranksAnUnknownConcept(t *testing.T) {
+	repo := newFakeRepo()
+	repo.distribution = []fakeDistribution{
+		{ConceptID: "wcvp:concept:1", Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}},
+	}
+
+	_, err := NewQueryService(repo).SpeciesHabitatTypes(context.Background(), "wcvp:concept:nope", "en",
+		input.AreaFilter{Code: "NOPE"})
+	if !errors.Is(err, input.ErrUnknownArea) {
+		t.Errorf("err = %v, want ErrUnknownArea, not ErrNotFound", err)
+	}
+	if errors.Is(err, input.ErrNotFound) {
+		t.Errorf("err = %v, want the malformed area code to be reported, not the missing concept", err)
+	}
+}
+
+// inArea's four cases as a direct unit test, including the one no end-to-end
+// test reaches: a concept present in the request but absent from the areas
+// map entirely (distribution rows for other concepts, none for this one).
+func TestInArea_ThreeStatesDirectly(t *testing.T) {
+	areas := map[string][]string{"wcvp-1": {"GER"}}
+
+	if got := inArea(nil, "wcvp-1", "GER"); got != nil {
+		t.Errorf("no filter active (areas nil): got %v, want nil", got)
+	}
+	if got := inArea(areas, "", "GER"); got != nil {
+		t.Errorf("no concept id: got %v, want nil", got)
+	}
+	if got := inArea(areas, "wcvp-2", "GER"); got != nil {
+		t.Errorf("concept absent from the areas map: got %v, want nil", got)
+	}
+	if got := inArea(areas, "wcvp-1", "GER"); got == nil || !*got {
+		t.Errorf("concept present, area matches: got %v, want true", got)
+	}
+	if got := inArea(areas, "wcvp-1", "FRA"); got == nil || *got {
+		t.Errorf("concept present, area does not match: got %v, want false", got)
+	}
+}
+
+func TestSpeciesSetHabitatTypes_OneEntryPerInputInOrder(t *testing.T) {
+	repo := newFakeRepo()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	repo.types = []domain.HabitatType{{Key: key, NameEN: "Hay meadow"}}
+	known := "wcvp:concept:known"
+	repo.speciesRoles = []domain.SpeciesRole{
+		{Key: key, ConceptID: &known, VerbatimName: "A", Role: "diagnostic"},
+	}
+
+	in := []string{known, "wcvp:concept:nofacts", "cdm:concept:other", known}
+	got, err := NewQueryService(repo).SpeciesSetHabitatTypes(context.Background(), in, "", input.AreaFilter{})
+	if err != nil {
+		t.Fatalf("SpeciesSetHabitatTypes: %v", err)
+	}
+	if len(got) != len(in) {
+		t.Fatalf("got %d entries, want %d — one per input, duplicates included", len(got), len(in))
+	}
+	for i, want := range in {
+		if got[i].ConceptID != want {
+			t.Errorf("entry %d = %q, want %q (input order)", i, got[i].ConceptID, want)
+		}
+	}
+	if !got[0].Known || len(got[0].HabitatTypes) != 1 {
+		t.Errorf("entry 0 = %+v, want known with one habitat type", got[0])
+	}
+	if got[3].ConceptID != known || !got[3].Known {
+		t.Errorf("entry 3 = %+v, want the duplicate answered too", got[3])
+	}
+}
+
+// The two reasons are different diagnoses: a wrong backbone is the caller's
+// mistake, a concept without facts is the data's limit. One label for both
+// sends people looking in the wrong place.
+func TestSpeciesSetHabitatTypes_DistinguishesTheTwoReasons(t *testing.T) {
+	repo := newFakeRepo()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	repo.types = []domain.HabitatType{{Key: key, NameEN: "Hay meadow"}}
+	known := "wcvp:concept:known"
+	repo.speciesRoles = []domain.SpeciesRole{
+		{Key: key, ConceptID: &known, VerbatimName: "A", Role: "diagnostic"},
+	}
+
+	got, err := NewQueryService(repo).SpeciesSetHabitatTypes(context.Background(),
+		[]string{"cdm:concept:x", "wcvp:concept:nofacts"}, "", input.AreaFilter{})
+	if err != nil {
+		t.Fatalf("SpeciesSetHabitatTypes: %v", err)
+	}
+	if got[0].Known || got[0].Reason != "unknown_backbone" {
+		t.Errorf("entry 0 = %+v, want unknown_backbone", got[0])
+	}
+	if got[1].Known || got[1].Reason != "unknown_concept" {
+		t.Errorf("entry 1 = %+v, want unknown_concept", got[1])
+	}
+}
+
+// seedBatchAreaRepo seeds three concepts that differ in exactly what the area
+// filter has to say about them: one inside the asked area, one only outside it,
+// and one the index has no distribution rows for at all.
+func seedBatchAreaRepo() (*fakeRepo, string, string, string) {
+	repo := newFakeRepo()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	repo.types = []domain.HabitatType{{Key: key, NameEN: "Hay meadow"}}
+
+	inside, outside, undistributed := "wcvp:concept:in", "wcvp:concept:out", "wcvp:concept:nodist"
+	for _, id := range []string{inside, outside, undistributed} {
+		concept := id
+		repo.speciesRoles = append(repo.speciesRoles,
+			domain.SpeciesRole{Key: key, ConceptID: &concept, VerbatimName: id, Role: "diagnostic"})
+	}
+	repo.distribution = []fakeDistribution{
+		{ConceptID: inside, Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}},
+		{ConceptID: outside, Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "FRA"}},
+	}
+	return repo, inside, outside, undistributed
+}
+
+// The batch answer marks each entry with in_area, three-valued. Without this the
+// marking could silently become a constant: replacing the lookup with nil, or
+// leaking a false where the truth is "not knowable", would leave every other
+// test in this package green.
+func TestSpeciesSetHabitatTypes_MarksInAreaThreeValued(t *testing.T) {
+	repo, inside, outside, undistributed := seedBatchAreaRepo()
+
+	got, err := NewQueryService(repo).SpeciesSetHabitatTypes(context.Background(),
+		[]string{inside, outside, undistributed}, "", input.AreaFilter{Code: "GER"})
+	if err != nil {
+		t.Fatalf("SpeciesSetHabitatTypes: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d entries, want 3", len(got))
+	}
+	if got[0].InArea == nil || !*got[0].InArea {
+		t.Errorf("entry for %s: in_area = %v, want true — the concept occurs in GER", inside, got[0].InArea)
+	}
+	if got[1].InArea == nil || *got[1].InArea {
+		t.Errorf("entry for %s: in_area = %v, want false — it has distribution, just not GER",
+			outside, got[1].InArea)
+	}
+	// Not false: "no distribution rows" is unknown, and answering false would
+	// state an absence the index cannot vouch for.
+	if got[2].InArea != nil {
+		t.Errorf("entry for %s: in_area = %v, want absent — the index has no distribution for it",
+			undistributed, *got[2].InArea)
+	}
+}
+
+// Without ?area= the field must be absent on every entry. A leaked false would
+// read as "does not occur here" to a caller that never asked about a place.
+func TestSpeciesSetHabitatTypes_WithoutAnAreaFilterInAreaIsAbsentEverywhere(t *testing.T) {
+	repo, inside, outside, undistributed := seedBatchAreaRepo()
+
+	got, err := NewQueryService(repo).SpeciesSetHabitatTypes(context.Background(),
+		[]string{inside, outside, undistributed, "cdm:concept:x"}, "", input.AreaFilter{})
+	if err != nil {
+		t.Fatalf("SpeciesSetHabitatTypes: %v", err)
+	}
+	for i, entry := range got {
+		if entry.InArea != nil {
+			t.Errorf("entry %d (%s): in_area = %v, want absent without an area filter",
+				i, entry.ConceptID, *entry.InArea)
+		}
+	}
+}
+
+// A client has to be able to check up front whether its concept ids can match
+// this index at all, instead of discovering a backbone mismatch through empty
+// answers. Every figure is derived from the index, never configured.
+func TestIndexInfo_ReportsTheBackboneTheIndexWasBuiltFrom(t *testing.T) {
+	repo := newFakeRepo()
+	id := "wcvp:concept:1"
+	repo.speciesRoles = []domain.SpeciesRole{
+		{Key: domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}, ConceptID: &id, VerbatimName: "A", Role: "diagnostic"},
+	}
+	repo.distribution = []fakeDistribution{
+		{ConceptID: id, Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}},
+	}
+
+	got, err := NewQueryService(repo).IndexInfo(context.Background())
+	if err != nil {
+		t.Fatalf("IndexInfo: %v", err)
+	}
+	if len(got.ConceptBackbones) != 1 || got.ConceptBackbones[0] != "wcvp" {
+		t.Errorf("ConceptBackbones = %v, want [wcvp]", got.ConceptBackbones)
+	}
+	if got.SpeciesWithConcept != 1 || got.AreasWithData != 1 {
+		t.Errorf("info = %+v, want one concept and one area", got)
+	}
+	if got.AreaScheme != domain.SchemeWGSRPDL3 {
+		t.Errorf("AreaScheme = %q, want %q", got.AreaScheme, domain.SchemeWGSRPDL3)
+	}
+}
+
+// Both index reads must surface. A self-description that quietly reports zeros
+// after a failed read would be worse than no answer: a client would conclude
+// "wrong backbone" from a broken database.
+func TestIndexInfo_SurfacesEitherFailingRead(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		fail func(*fakeRepo, error)
+	}{
+		{"concept ids", func(r *fakeRepo, err error) { r.conceptIDsErr = err }},
+		{"known area codes", func(r *fakeRepo, err error) { r.areasErr = err }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wantErr := errors.New("index unreadable")
+			repo := newFakeRepo()
+			tc.fail(repo, wantErr)
+
+			if _, err := NewQueryService(repo).IndexInfo(context.Background()); !errors.Is(err, wantErr) {
+				t.Errorf("IndexInfo error = %v, want it to wrap %v", err, wantErr)
+			}
+		})
+	}
+}
+
+// The batch route's backbone prefix is compiled in while the ingest's is
+// configured (SITUS_HOSTUS_ENTRY_BACKBONE). A mismatch makes every batch answer
+// unknown_backbone, so it must be named — in the warning and in the return
+// value, and never as a failure.
+func TestWarnOnForeignBackbones(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		backbones   []string
+		wantForeign []string
+		wantWarning bool
+	}{
+		{"the index the batch route was built for", []string{indexBackbone}, []string{}, false},
+		{"an empty index", []string{}, []string{}, false},
+		{"a re-pointed backbone", []string{"gbif"}, []string{"gbif"}, true},
+		{"a mixed index", []string{"cdm", indexBackbone}, []string{"cdm"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var log bytes.Buffer
+			previous := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&log, &slog.HandlerOptions{Level: slog.LevelWarn})))
+			t.Cleanup(func() { slog.SetDefault(previous) })
+
+			got := WarnOnForeignBackbones(context.Background(), tc.backbones)
+
+			if !slices.Equal(got, tc.wantForeign) {
+				t.Errorf("foreign backbones = %v, want %v", got, tc.wantForeign)
+			}
+			if warned := strings.Contains(log.String(), "batch route cannot answer"); warned != tc.wantWarning {
+				t.Errorf("warned = %v, want %v (log: %q)", warned, tc.wantWarning, log.String())
+			}
+			if !tc.wantWarning {
+				return
+			}
+			// Both values, so the operator can see what to change without
+			// guessing which side is which.
+			for _, want := range append([]string{indexBackbone}, tc.wantForeign...) {
+				if !strings.Contains(log.String(), want) {
+					t.Errorf("log = %q, want it to name %q", log.String(), want)
+				}
+			}
+		})
+	}
 }

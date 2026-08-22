@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"slices"
+	"strings"
 
 	"github.com/jobrunner/situs/internal/domain"
 	"github.com/jobrunner/situs/internal/ports/input"
@@ -22,7 +25,8 @@ func NewQueryService(repo output.Repository) *QueryService {
 }
 
 // HabitatType returns one type with its species, syntaxa and crosswalks.
-func (q *QueryService) HabitatType(ctx context.Context, key domain.HabitatTypeKey, lang string) (input.HabitatTypeDetail, error) {
+// filter marks (and, if OnlyInArea, prunes) the species by area.
+func (q *QueryService) HabitatType(ctx context.Context, key domain.HabitatTypeKey, lang string, filter input.AreaFilter) (input.HabitatTypeDetail, error) {
 	if err := q.requireTypology(ctx, key.Typology); err != nil {
 		return input.HabitatTypeDetail{}, err
 	}
@@ -35,6 +39,14 @@ func (q *QueryService) HabitatType(ctx context.Context, key domain.HabitatTypeKe
 	if err != nil {
 		return input.HabitatTypeDetail{}, fmt.Errorf("fetching species of %s: %w", key, err)
 	}
+	var ids []string
+	if filter.Active() {
+		ids = conceptIDsOf(roles)
+	}
+	areas, err := q.areaLookup(ctx, filter, ids)
+	if err != nil {
+		return input.HabitatTypeDetail{}, err
+	}
 	syntaxa, err := q.syntaxaOf(ctx, key)
 	if err != nil {
 		return input.HabitatTypeDetail{}, err
@@ -44,9 +56,14 @@ func (q *QueryService) HabitatType(ctx context.Context, key domain.HabitatTypeKe
 		return input.HabitatTypeDetail{}, err
 	}
 
+	species := groupByRole(roles)
+	for role, entries := range species {
+		species[role] = markAndFilter(entries, areas, filter)
+	}
+
 	return input.HabitatTypeDetail{
 		HabitatTypeSummary: summary,
-		Species:            groupByRole(roles),
+		Species:            species,
 		Syntaxa:            syntaxa,
 		Crosswalks:         crosswalks,
 	}, nil
@@ -54,13 +71,24 @@ func (q *QueryService) HabitatType(ctx context.Context, key domain.HabitatTypeKe
 
 // SpeciesHabitatTypes answers the excursion app's main question: given a
 // recorded plant (already a concept), which habitat types does it characterize?
-func (q *QueryService) SpeciesHabitatTypes(ctx context.Context, conceptID, lang string) ([]input.HabitatTypeRole, error) {
+func (q *QueryService) SpeciesHabitatTypes(ctx context.Context, conceptID, lang string, filter input.AreaFilter) ([]input.HabitatTypeRole, error) {
+	// The area is validated before the concept is looked up: a malformed
+	// question outranks a missing answer, so a typo'd area code stays
+	// INVALID_QUERY even for an unknown concept. Same order as requireTypology.
+	areas, err := q.areaLookup(ctx, filter, []string{conceptID})
+	if err != nil {
+		return nil, err
+	}
 	roles, err := q.repo.SpeciesRolesByConcept(ctx, conceptID)
 	if err != nil {
 		return nil, fmt.Errorf("fetching habitat types of concept %q: %w", conceptID, err)
 	}
 	if len(roles) == 0 {
 		return nil, fmt.Errorf("concept %q: %w", conceptID, input.ErrNotFound)
+	}
+	inA := inArea(areas, conceptID, filter.Code)
+	if filter.OnlyInArea && inA != nil && !*inA {
+		return []input.HabitatTypeRole{}, nil
 	}
 
 	out := make([]input.HabitatTypeRole, 0, len(roles))
@@ -86,14 +114,15 @@ func (q *QueryService) SpeciesHabitatTypes(ctx context.Context, conceptID, lang 
 			Fidelity:           r.Fidelity,
 			Constancy:          r.Constancy,
 			Syntaxa:            syntaxa,
+			InArea:             inA,
 		})
 	}
 	return out, nil
 }
 
 // HabitatTypeSpecies returns a type's species list, filtered by role when role
-// is non-empty.
-func (q *QueryService) HabitatTypeSpecies(ctx context.Context, key domain.HabitatTypeKey, role string) ([]input.SpeciesEntry, error) {
+// is non-empty, and marked (or pruned) by area per filter.
+func (q *QueryService) HabitatTypeSpecies(ctx context.Context, key domain.HabitatTypeKey, role string, filter input.AreaFilter) ([]input.SpeciesEntry, error) {
 	if err := q.requireTypology(ctx, key.Typology); err != nil {
 		return nil, err
 	}
@@ -104,11 +133,19 @@ func (q *QueryService) HabitatTypeSpecies(ctx context.Context, key domain.Habita
 	if err != nil {
 		return nil, fmt.Errorf("fetching species of %s: %w", key, err)
 	}
+	var ids []string
+	if filter.Active() {
+		ids = conceptIDsOf(roles)
+	}
+	areas, err := q.areaLookup(ctx, filter, ids)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]input.SpeciesEntry, 0, len(roles))
 	for _, r := range roles {
 		out = append(out, speciesEntry(r))
 	}
-	return out, nil
+	return markAndFilter(out, areas, filter), nil
 }
 
 // SyntaxonHabitatTypes shows the m:n side: the same vegetation unit can belong
@@ -259,52 +296,121 @@ func translateNotFound(err error, what string) error {
 	return fmt.Errorf("fetching %s: %w", what, err)
 }
 
-// NameQueryService is the one read path that is not autark: it resolves
-// verbatim names through hostus first, then answers from the local index.
-type NameQueryService struct {
-	query    *QueryService
-	resolver output.NameResolver
-}
+// indexBackbone is the concept-id prefix the index was built from. Anything
+// else cannot match and is reported as such instead of answering empty. It is a
+// constant, not something derived per request: deriving it would cost a query on
+// every batch call, and an index mixing backbones is not a state this design
+// supports. GET /v1/info reports what the index actually holds, so a mismatch
+// stays observable.
+const indexBackbone = "wcvp"
 
-func NewNameQueryService(query *QueryService, resolver output.NameResolver) *NameQueryService {
-	return &NameQueryService{query: query, resolver: resolver}
-}
-
-// SpeciesHabitatTypesByName answers per input name. An unresolvable name is
-// reported back with Resolved false and an empty list — it is never dropped,
-// and it never fails the whole batch.
-func (n *NameQueryService) SpeciesHabitatTypesByName(ctx context.Context, names []string, lang string) ([]input.NameResolution, error) {
-	resolved, err := n.resolver.Resolve(ctx, names)
-	if err != nil {
-		// Only the resolver not answering is an upstream outage. A resolver that
-		// answered and refused the request (its 4xx) is a fault on this side and
-		// must not send an operator looking at hostus.
-		if errors.Is(err, output.ErrResolverUnavailable) {
-			return nil, fmt.Errorf("resolving %d names: %w: %w", len(names), input.ErrUpstreamUnavailable, err)
+// WarnOnForeignBackbones compares the backbones an index actually holds against
+// the one prefix the batch route accepts. It warns instead of failing: pointing
+// SITUS_HOSTUS_ENTRY_BACKBONE at another backbone is a supported, deliberate
+// act. What it must not be is silent — with a foreign backbone every id on
+// POST /v1/species/habitat-types answers unknown_backbone while
+// GET /v1/species/{conceptId}/habitat-types keeps working, and a half-broken
+// service is the kind of failure nobody goes looking for. Returns the foreign
+// backbones so the check is assertable without reading the log.
+func WarnOnForeignBackbones(ctx context.Context, backbones []string) []string {
+	foreign := []string{}
+	for _, b := range backbones {
+		if b != indexBackbone {
+			foreign = append(foreign, b)
 		}
-		return nil, fmt.Errorf("resolving %d names: %w", len(names), err)
+	}
+	if len(foreign) > 0 {
+		slog.WarnContext(ctx, "the index holds concept ids the batch route cannot answer",
+			"index_backbones", backbones, "batch_route_backbone", indexBackbone)
+	}
+	return foreign
+}
+
+// IndexInfo measures what the index holds. Nothing here is configured: a
+// client's whole reason to ask is to find out whether *this* index can answer
+// its concept ids, and a configured claim could not tell it that.
+func (q *QueryService) IndexInfo(ctx context.Context) (input.IndexInfo, error) {
+	ids, err := q.repo.ConceptIDs(ctx)
+	if err != nil {
+		return input.IndexInfo{}, fmt.Errorf("listing concept ids: %w", err)
+	}
+	areas, err := q.repo.KnownAreaCodes(ctx, domain.SchemeWGSRPDL3)
+	if err != nil {
+		return input.IndexInfo{}, fmt.Errorf("listing known area codes: %w", err)
+	}
+	return input.IndexInfo{
+		ConceptBackbones:   backbonesOf(ids),
+		SpeciesWithConcept: len(ids),
+		AreaScheme:         domain.SchemeWGSRPDL3,
+		AreasWithData:      len(areas),
+	}, nil
+}
+
+// backbonesOf reduces concept ids to their distinct prefixes, sorted so the
+// answer does not depend on row order. An id without a prefix is reported as
+// the empty-string backbone rather than hidden — a malformed id in the index is
+// something the operator should see.
+func backbonesOf(conceptIDs []string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, id := range conceptIDs {
+		prefix, _, _ := strings.Cut(id, ":")
+		if !seen[prefix] {
+			seen[prefix] = true
+			out = append(out, prefix)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// SpeciesSetHabitatTypes answers a whole field record at once — one entry per
+// input concept id, in input order, duplicates included. It is autark: no
+// verbatim name is resolved anywhere on this path.
+//
+// The area filter marks each entry with InArea but never drops one: the caller
+// pairs response[i] with conceptIDs[i], so an entry must not go missing.
+func (q *QueryService) SpeciesSetHabitatTypes(ctx context.Context, conceptIDs []string, lang string, filter input.AreaFilter) ([]input.ConceptResolution, error) {
+	areas, err := q.areaLookup(ctx, filter, conceptIDs)
+	if err != nil {
+		return nil, err
 	}
 
-	out := make([]input.NameResolution, 0, len(names))
-	for _, name := range names {
-		res := input.NameResolution{Verbatim: name, HabitatTypes: []input.HabitatTypeRole{}}
-		// A present key is enough: output.NameResolver guarantees no
-		// empty-string concept id ever reaches this map.
-		conceptID, ok := resolved[name]
-		if ok {
-			res.ConceptID, res.Resolved = conceptID, true
-			types, err := n.query.SpeciesHabitatTypes(ctx, conceptID, lang)
-			switch {
-			// A concept hostus knows but the index has no facts about is a
-			// normal answer: resolved, no habitat types.
-			case errors.Is(err, input.ErrNotFound):
-			case err != nil:
-				return nil, err
-			default:
-				res.HabitatTypes = types
-			}
+	// Deduplicated index work, one answer per input: the caller pairs
+	// response[i] with conceptIDs[i], so duplicates must keep their positions.
+	cache := map[string][]input.HabitatTypeRole{}
+	out := make([]input.ConceptResolution, 0, len(conceptIDs))
+	for _, id := range conceptIDs {
+		entry := input.ConceptResolution{
+			ConceptID:    id,
+			HabitatTypes: []input.HabitatTypeRole{},
+			InArea:       inArea(areas, id, filter.Code),
 		}
-		out = append(out, res)
+		if !strings.HasPrefix(id, indexBackbone+":") {
+			entry.Reason = input.ReasonUnknownBackbone
+			out = append(out, entry)
+			continue
+		}
+		types, ok := cache[id]
+		if !ok {
+			types, err = q.SpeciesHabitatTypes(ctx, id, lang, input.AreaFilter{})
+			// The right backbone but no facts is a normal answer, not a failure.
+			if err != nil && !errors.Is(err, input.ErrNotFound) {
+				return nil, err
+			}
+			if types == nil {
+				types = []input.HabitatTypeRole{}
+			}
+			cache[id] = types
+		}
+		if len(types) == 0 {
+			entry.Reason = input.ReasonUnknownConcept
+			out = append(out, entry)
+			continue
+		}
+		entry.Known = true
+		entry.HabitatTypes = types
+		out = append(out, entry)
 	}
 	return out, nil
 }

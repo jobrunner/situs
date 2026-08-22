@@ -39,10 +39,10 @@ var (
 	// The query names a classification system that does not exist, which is a
 	// malformed question, not a missing answer (see the spec's Fehlerbehandlung).
 	ErrUnknownTypology = errors.New("unknown typology")
-	// ErrUpstreamUnavailable is hostus being unreachable on the verbatim-name
-	// path -> UPSTREAM_UNAVAILABLE. Only that path can raise it; concept-ID
-	// queries are autark.
-	ErrUpstreamUnavailable = errors.New("upstream unavailable")
+	// ErrUnknownArea is an area code the index has no data for. It must not be
+	// answered with a list of "does not occur": a typo and a genuine absence
+	// would look the same -> INVALID_QUERY.
+	ErrUnknownArea = errors.New("unknown area")
 )
 
 // The role vocabulary of species_role, closed for this foundation.
@@ -94,7 +94,22 @@ type SpeciesEntry struct {
 	Role         string   `json:"role"`
 	Fidelity     *float64 `json:"fidelity,omitempty"`
 	Constancy    *float64 `json:"constancy,omitempty"`
+	// InArea is nil when unknowable: no concept id, or a concept without
+	// distribution rows. It is absent from the wire without an area filter.
+	InArea *bool `json:"in_area,omitempty"`
 }
+
+// AreaFilter is the caller's view on a species list. Code is a WGSRPD level 3
+// code — the frontend derives it from GPS, so situs needs no ISO mapping (and
+// the "CZE = Czechia-Slovakia" ambiguity never arises). OnlyInArea drops the
+// definite absences; the unknowns always stay.
+type AreaFilter struct {
+	Code       string
+	OnlyInArea bool
+}
+
+// Active reports whether a filter was asked for at all.
+func (f AreaFilter) Active() bool { return f.Code != "" }
 
 // HabitatTypeDetail answers GET /v1/habitat-type/{typology}/{code}. Species is
 // keyed by role and always carries the three known roles, empty where there is
@@ -114,36 +129,68 @@ type HabitatTypeRole struct {
 	Fidelity  *float64      `json:"fidelity,omitempty"`
 	Constancy *float64      `json:"constancy,omitempty"`
 	Syntaxa   []SyntaxonRef `json:"syntaxa"`
+	// InArea is nil when unknowable: no concept id, or a concept without
+	// distribution rows. It is absent from the wire without an area filter.
+	InArea *bool `json:"in_area,omitempty"`
 }
 
-// NameResolution is one entry of the batch answer for verbatim names: the
-// resolution itself plus the facts it unlocked. Resolved is false and
-// HabitatTypes empty when hostus knows no concept for the name — the input is
-// reported back either way, never dropped.
-type NameResolution struct {
-	Verbatim     string            `json:"verbatim"`
-	ConceptID    string            `json:"concept_id,omitempty"`
-	Resolved     bool              `json:"resolved"`
+// ConceptResolution is one entry of the batch answer. Known is false and
+// HabitatTypes empty when the index cannot answer — the input is reported back
+// either way, never dropped.
+type ConceptResolution struct {
+	ConceptID    string            `json:"concept_id"`
+	Known        bool              `json:"known"`
+	Reason       string            `json:"reason,omitempty"`
+	InArea       *bool             `json:"in_area,omitempty"`
 	HabitatTypes []HabitatTypeRole `json:"habitat_types"`
+}
+
+// The two diagnoses an unanswerable concept id can have. They are different
+// faults: a wrong backbone is the caller's, a concept without facts is the
+// data's limit — one label for both sends people looking in the wrong place.
+const (
+	ReasonUnknownBackbone = "unknown_backbone"
+	ReasonUnknownConcept  = "unknown_concept"
+)
+
+// IndexInfo is the index's self-description, so a client can check up front
+// whether its concept ids can match at all instead of discovering a backbone
+// mismatch through empty answers. Every field is measured from the index, never
+// configured — a figure nobody can trust is worse than no figure.
+//
+// It deliberately does not carry the backbone's *fassung* (e.g. "wcvp
+// 2026-06-15"): the ingest does not record it today, and inventing one here
+// would be exactly the untrustworthy figure. That gap is noted in the spec.
+type IndexInfo struct {
+	// ConceptBackbones are the distinct id prefixes present, sorted. Normally
+	// one; more than one means the index was built from mixed sources.
+	ConceptBackbones []string `json:"concept_backbones"`
+	// SpeciesWithConcept is the number of distinct concept ids the index holds.
+	SpeciesWithConcept int `json:"species_with_concept"`
+	// AreaScheme names the vocabulary ?area= codes come from.
+	AreaScheme string `json:"area_scheme"`
+	// AreasWithData is the number of distinct area codes with distribution
+	// rows. It is zero until a distribution ingest has run — which is a true
+	// statement about the index, not a placeholder.
+	AreasWithData int `json:"areas_with_data"`
 }
 
 // QueryService is the read API's use cases over the local index. Every method
 // is autark: it needs no upstream service.
 type QueryService interface {
+	// IndexInfo describes what the index holds, measured from the index itself.
+	IndexInfo(ctx context.Context) (IndexInfo, error)
 	// HabitatType returns one type with its species, syntaxa and crosswalks.
-	HabitatType(ctx context.Context, key domain.HabitatTypeKey, lang string) (HabitatTypeDetail, error)
+	// filter marks (and, if OnlyInArea, prunes) the species by area.
+	HabitatType(ctx context.Context, key domain.HabitatTypeKey, lang string, filter AreaFilter) (HabitatTypeDetail, error)
 	// SpeciesHabitatTypes returns the habitat types a concept has a role in.
-	SpeciesHabitatTypes(ctx context.Context, conceptID, lang string) ([]HabitatTypeRole, error)
+	SpeciesHabitatTypes(ctx context.Context, conceptID, lang string, filter AreaFilter) ([]HabitatTypeRole, error)
 	// HabitatTypeSpecies returns a type's species, filtered by role when role
-	// is non-empty.
-	HabitatTypeSpecies(ctx context.Context, key domain.HabitatTypeKey, role string) ([]SpeciesEntry, error)
+	// is non-empty, and marked (or pruned) by area per filter.
+	HabitatTypeSpecies(ctx context.Context, key domain.HabitatTypeKey, role string, filter AreaFilter) ([]SpeciesEntry, error)
 	// SyntaxonHabitatTypes returns the habitat types a syntaxon is linked to.
 	SyntaxonHabitatTypes(ctx context.Context, syntaxonID, lang string) ([]HabitatTypeSummary, error)
-}
-
-// SpeciesNameQueryService is the one read path that is not autark: it resolves
-// verbatim names through hostus before answering from the local index, so it
-// can fail with ErrUpstreamUnavailable.
-type SpeciesNameQueryService interface {
-	SpeciesHabitatTypesByName(ctx context.Context, names []string, lang string) ([]NameResolution, error)
+	// SpeciesSetHabitatTypes answers a whole field record at once: one entry per
+	// input concept id, in input order, duplicates included.
+	SpeciesSetHabitatTypes(ctx context.Context, conceptIDs []string, lang string, filter AreaFilter) ([]ConceptResolution, error)
 }

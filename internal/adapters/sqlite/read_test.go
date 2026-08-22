@@ -3,6 +3,8 @@ package sqlite
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -273,6 +275,11 @@ func TestReads_QueryErrorsAreReturned(t *testing.T) {
 		"Syntaxon":                   func() error { _, err := db.Syntaxon(ctx, "BRO-01A"); return err },
 		"Syntaxa":                    func() error { _, err := db.Syntaxa(ctx, r22); return err },
 		"HabitatTypeKeysForSyntaxon": func() error { _, err := db.HabitatTypeKeysForSyntaxon(ctx, "BRO-01A"); return err },
+		"AreasForConcepts": func() error {
+			_, err := db.AreasForConcepts(ctx, []string{"wcvp:concept:1"}, domain.SchemeWGSRPDL3)
+			return err
+		},
+		"KnownAreaCodes": func() error { _, err := db.KnownAreaCodes(ctx, domain.SchemeWGSRPDL3); return err },
 	}
 	for name, call := range cases {
 		if err := call(); err == nil {
@@ -304,6 +311,17 @@ func TestReads_RowsIterationAndScanErrorsAreReturned(t *testing.T) {
 			call: func(db *DB) error { _, err := db.SpeciesRolesByConcept(ctx, "wcvp-1"); return err },
 			rows: "reading habitat types of concept", scan: "scanning habitat types of concept",
 		},
+		"AreasForConcepts": {
+			call: func(db *DB) error {
+				_, err := db.AreasForConcepts(ctx, []string{"wcvp:concept:1"}, domain.SchemeWGSRPDL3)
+				return err
+			},
+			rows: "iterating distribution", scan: "scanning distribution",
+		},
+		"KnownAreaCodes": {
+			call: func(db *DB) error { _, err := db.KnownAreaCodes(ctx, domain.SchemeWGSRPDL3); return err },
+			rows: "iterating area codes", scan: "scanning area code",
+		},
 		"Syntaxa": {
 			call: func(db *DB) error { _, err := db.Syntaxa(ctx, r22); return err },
 			rows: "reading syntaxa", scan: "scanning syntaxa",
@@ -325,5 +343,145 @@ func TestReads_RowsIterationAndScanErrorsAreReturned(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A concept with no rows must be ABSENT from the map, not present-and-empty:
+// the read side turns absence into "unknown" and an empty list would become
+// "does not occur here", which is a different and wrong statement.
+func TestAreasForConcepts_ConceptWithoutDataIsAbsent(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertDistribution("wcvp:concept:1", domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}); err != nil {
+		t.Fatalf("UpsertDistribution: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.AreasForConcepts(ctx, []string{"wcvp:concept:1", "wcvp:concept:2"}, domain.SchemeWGSRPDL3)
+	if err != nil {
+		t.Fatalf("AreasForConcepts: %v", err)
+	}
+	if _, ok := got["wcvp:concept:2"]; ok {
+		t.Error("a concept without distribution rows must be absent from the map, not empty-valued")
+	}
+}
+
+func TestAreasForConcepts_EmptyInputNeedsNoQuery(t *testing.T) {
+	db := openTestDB(t)
+	got, err := db.AreasForConcepts(context.Background(), nil, domain.SchemeWGSRPDL3)
+	if err != nil {
+		t.Fatalf("AreasForConcepts: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("got %v, want an empty map", got)
+	}
+}
+
+// SQLite caps bound parameters (SQLITE_LIMIT_VARIABLE_NUMBER, measured at 32766
+// with this driver), and the query builds one placeholder per concept id. A
+// caller with more ids than that must still get an answer instead of a "too many
+// SQL variables" error, so the call is chunked — and this asserts it across more
+// than one chunk boundary as well as past the driver's own ceiling.
+func TestAreasForConcepts_ChunksPastTheBoundParameterLimit(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	// One seeded concept in the first chunk and one far past the driver's limit,
+	// so a chunking bug that drops all but the first chunk cannot pass.
+	seeded := map[string]string{"wcvp:concept:1": "GER", "wcvp:concept:33000": "FRA"}
+	for id, code := range seeded {
+		if err := tx.UpsertDistribution(id, domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: code}); err != nil {
+			t.Fatalf("UpsertDistribution(%s): %v", id, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	ids := make([]string, 0, 33001)
+	for i := range 33001 {
+		ids = append(ids, fmt.Sprintf("wcvp:concept:%d", i))
+	}
+
+	got, err := db.AreasForConcepts(ctx, ids, domain.SchemeWGSRPDL3)
+	if err != nil {
+		t.Fatalf("AreasForConcepts with %d ids: %v", len(ids), err)
+	}
+	for id, code := range seeded {
+		if !slices.Equal(got[id], []string{code}) {
+			t.Errorf("areas[%s] = %v, want %v — a chunk was lost", id, got[id], []string{code})
+		}
+	}
+	if len(got) != len(seeded) {
+		t.Errorf("got %d concepts with data, want %d", len(got), len(seeded))
+	}
+}
+
+func TestKnownAreaCodes_ListsWhatTheIndexHas(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	for _, code := range []string{"GER", "FRA", "GER"} {
+		if err := tx.UpsertDistribution("wcvp:concept:1", domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: code}); err != nil {
+			t.Fatalf("UpsertDistribution %s: %v", code, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.KnownAreaCodes(ctx, domain.SchemeWGSRPDL3)
+	if err != nil {
+		t.Fatalf("KnownAreaCodes: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("codes = %v, want two distinct codes", got)
+	}
+}
+
+func TestConceptIDs_DistinctAndWithoutNulls(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	id := "wcvp:concept:1"
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	for _, r := range []domain.SpeciesRole{
+		{Key: key, ConceptID: &id, VerbatimName: "A", Role: "diagnostic"},
+		{Key: key, ConceptID: &id, VerbatimName: "A2", Role: "constant"},
+		{Key: key, ConceptID: nil, VerbatimName: "Moss", Role: "diagnostic"},
+	} {
+		if err := tx.UpsertSpeciesRole(r); err != nil {
+			t.Fatalf("UpsertSpeciesRole: %v", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.ConceptIDs(ctx)
+	if err != nil {
+		t.Fatalf("ConceptIDs: %v", err)
+	}
+	if len(got) != 1 || got[0] != id {
+		t.Errorf("ConceptIDs() = %v, want exactly [%s]", got, id)
 	}
 }

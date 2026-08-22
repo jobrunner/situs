@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -13,7 +17,94 @@ import (
 	"github.com/jobrunner/situs/internal/adapters/sqlite"
 	"github.com/jobrunner/situs/internal/application"
 	"github.com/jobrunner/situs/internal/config"
+	"github.com/jobrunner/situs/internal/domain"
+	"github.com/jobrunner/situs/internal/ports/output"
 )
+
+// hostusDistributionPause is the gap between two hostus concept requests
+// during ingest. hostus rate-limits at 20 req/s and answers 429 above that;
+// the adapter deliberately has no pacing of its own, because how fast to call
+// is the caller's decision, and ingest is the only caller. Measured against the
+// real service: 0.07s works, and the index's 3135 concepts take about four
+// minutes — an ingest run is offline maintenance, not latency-critical.
+const hostusDistributionPause = 70 * time.Millisecond
+
+// maxLoggedConceptFailures caps how many individual per-concept failures get
+// their own log line. Beyond that, the run-end aggregate line (which always
+// fires once len(failed) > 0) says how many there were — a real outage on
+// this call must not put thousands of nearly identical lines in the log.
+const maxLoggedConceptFailures = 3
+
+// pacedDistributionSource wraps a DistributionSource that has no pacing of
+// its own (Areas issues one hostus request per concept) and spaces those
+// requests out, one concept at a time, so a full ingest run does not fail in
+// a wall of 429s.
+//
+// It also tolerates individual concept requests failing instead of
+// discarding the whole batch: a timeout on the last few hundred concepts must
+// not throw away minutes of work and leave the index unfiltered.
+// FailedConcepts reports how many of the last Areas call's requests were
+// tolerated this way.
+// A canceled/expired context is the one failure that is not tolerated —
+// that is the run being told to stop, not a data problem, and it must fail
+// here, not resurface as an unrelated error two ingest steps later. If every
+// single request fails, Areas reports that as a whole-batch failure (nil
+// map, error) so IngestDistribution treats it exactly like the previous
+// all-or-nothing behavior: zeros in the report, plus the warning — and
+// FailedConcepts resets to 0 for that call, since the count only means
+// something for a call that otherwise returned a usable partial result.
+type pacedDistributionSource struct {
+	src    output.DistributionSource
+	pause  time.Duration
+	failed int
+}
+
+func (p *pacedDistributionSource) Areas(ctx context.Context, conceptIDs []string) (map[string][]domain.Area, error) {
+	out := map[string][]domain.Area{}
+	p.failed = 0
+	var lastErr error
+	for i, id := range conceptIDs {
+		if i > 0 {
+			select {
+			case <-ctx.Done():
+				return out, ctx.Err()
+			case <-time.After(p.pause):
+			}
+		}
+		areas, err := p.src.Areas(ctx, []string{id})
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return out, err
+			}
+			p.failed++
+			lastErr = err
+			if p.failed <= maxLoggedConceptFailures {
+				slog.WarnContext(ctx, "distribution request for one concept failed, continuing with the rest",
+					"concept_id", id, "error", err)
+			}
+			continue
+		}
+		for k, v := range areas {
+			out[k] = v
+		}
+	}
+	if p.failed > 0 {
+		slog.WarnContext(ctx, "some distribution requests failed, the index will be partially filtered",
+			"failed", p.failed, "requested", len(conceptIDs))
+	}
+	if len(conceptIDs) > 0 && p.failed == len(conceptIDs) {
+		err := fmt.Errorf("all %d distribution requests failed, last error: %w", p.failed, lastErr)
+		p.failed = 0
+		return nil, err
+	}
+	return out, nil
+}
+
+// FailedConcepts reports how many concept requests the last Areas call
+// tolerated instead of aborting on. 0 both when nothing failed and when
+// everything failed (see the type doc comment) — it answers "how many were
+// skipped in an otherwise-successful run", not "was there any failure".
+func (p *pacedDistributionSource) FailedConcepts() int { return p.failed }
 
 func newIngestCmd() *cobra.Command {
 	var csvDir, dbPath string
@@ -49,12 +140,19 @@ func newIngestCmd() *cobra.Command {
 
 // ingestOutput bundles both reports plus the measured hostus resolution rate
 // (spec open point 3) into the one JSON object the command prints.
+//
+// DistributionFailed lives here rather than in application.DistributionReport
+// because it is a property of pacedDistributionSource, which lives here too:
+// how many per-concept requests were tolerated is not something
+// IngestDistribution can know through the DistributionSource port.
 type ingestOutput struct {
 	application.IngestReport
-	Species        application.SpeciesReport
-	ResolutionRate float64
-	Localizations  int
-	DerivedLabels  int
+	Species            application.SpeciesReport
+	ResolutionRate     float64
+	Distribution       application.DistributionReport
+	DistributionFailed int
+	Localizations      int
+	DerivedLabels      int
 }
 
 func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath string) error {
@@ -81,6 +179,14 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath string) er
 		return fmt.Errorf("ingesting species roles from %q: %w", csvDir, err)
 	}
 
+	// Runs after IngestSpeciesRoles (it needs the indexed concept ids) and
+	// before the localization/derivation steps, which do not depend on it.
+	distSrc := &pacedDistributionSource{src: resolver, pause: hostusDistributionPause}
+	distributionReport, err := application.IngestDistribution(ctx, db, distSrc)
+	if err != nil {
+		return fmt.Errorf("ingesting species distribution: %w", err)
+	}
+
 	localizations, err := application.IngestLocalizations(ctx, db, filepath.Join(csvDir, "localizations.csv"))
 	if err != nil {
 		return fmt.Errorf("ingesting localizations from %q: %w", csvDir, err)
@@ -93,12 +199,24 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath string) er
 		return fmt.Errorf("deriving German labels: %w", err)
 	}
 
+	// Last, against the finished index: hostus.entry_backbone is configurable,
+	// the prefix the batch route accepts is compiled in. Point the first at
+	// another backbone and the batch route stops answering anything — worth a
+	// warning at the one moment the mismatch is created.
+	info, err := application.NewQueryService(db).IndexInfo(ctx)
+	if err != nil {
+		return fmt.Errorf("measuring the finished index: %w", err)
+	}
+	application.WarnOnForeignBackbones(ctx, info.ConceptBackbones)
+
 	out := ingestOutput{
-		IngestReport:   report,
-		Species:        speciesReport,
-		ResolutionRate: speciesReport.ResolutionRate(),
-		Localizations:  localizations,
-		DerivedLabels:  derivedLabels,
+		IngestReport:       report,
+		Species:            speciesReport,
+		ResolutionRate:     speciesReport.ResolutionRate(),
+		Distribution:       distributionReport,
+		DistributionFailed: distSrc.FailedConcepts(),
+		Localizations:      localizations,
+		DerivedLabels:      derivedLabels,
 	}
 	enc := json.NewEncoder(cmd.OutOrStdout())
 	enc.SetIndent("", "  ")

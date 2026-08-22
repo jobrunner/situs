@@ -21,6 +21,9 @@ type IngestTx interface {
 	LinkSyntaxon(key domain.HabitatTypeKey, syntaxonID string) error
 	UpsertSpeciesRole(r domain.SpeciesRole) error
 	UpsertLocalization(l domain.Localization) error
+	// UpsertDistribution records that a concept occurs in an area. Idempotent:
+	// a repinned artifact is simply re-ingested.
+	UpsertDistribution(conceptID string, a domain.Area) error
 	Commit() error
 	Rollback() error
 }
@@ -52,6 +55,17 @@ type Repository interface {
 	// Localization returns every localization matching entityType, entityKey,
 	// lang and field — there can be more than one, one per source.
 	Localization(ctx context.Context, entityType, entityKey, lang, field string) ([]domain.Localization, error)
+	// AreasForConcepts maps each concept id to the area codes it occurs in,
+	// within one scheme. A concept absent from the result has no distribution
+	// data at all — that is "unknown", not "does not occur".
+	AreasForConcepts(ctx context.Context, conceptIDs []string, scheme string) (map[string][]string, error)
+	// KnownAreaCodes lists the area codes the index has data for. An area
+	// filter must be validated against this: an unknown code has to be an
+	// error, not a list of "does not occur".
+	KnownAreaCodes(ctx context.Context, scheme string) ([]string, error)
+	// ConceptIDs lists the distinct concept ids the index holds, so the
+	// distribution step knows what to ask for.
+	ConceptIDs(ctx context.Context) ([]string, error)
 }
 
 // A NameResolver can fail in two ways that must not be confused, because they
@@ -71,4 +85,12 @@ var (
 // an implementation batches and posts whatever it is given.
 type NameResolver interface {
 	Resolve(ctx context.Context, names []string) (map[string]string, error)
+}
+
+// DistributionSource yields the areas a concept occurs in. Separate from
+// NameResolver on purpose: different question (concept -> areas, not name ->
+// concept) and different failure semantics — a distribution outage must not
+// abort an ingest, an unresolvable name path must.
+type DistributionSource interface {
+	Areas(ctx context.Context, conceptIDs []string) (map[string][]domain.Area, error)
 }

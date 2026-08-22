@@ -1,18 +1,20 @@
 # Per-package statement-coverage floors — a RATCHET (raise only, never lower
 # without justification). Enforced by scripts/coverage-gate.sh.
 #
-# Baselined on the Task 1 scaffold: these are the numbers measured today, not
-# targets. Raise them as the real logic (Tasks 2-8) lands with its tests.
+# Baselined on the Task 1 scaffold, then raised as the real logic landed. These
+# are measured numbers, not targets, and each one sits at the truncated integer
+# of what the package actually covers — so a regression of a single point fails
+# the gate instead of hiding under generous slack.
 #
 # package                                floor(%)
-cmd/situs                                  63
+cmd/situs                                  74
 internal/adapters/hostus                  98
-internal/adapters/http                    87
+internal/adapters/http                    88
 internal/adapters/sqlite                  96
 internal/adapters/telemetry              100
-internal/app                              81
+internal/app                              92
 internal/application                     100
-internal/config                           95
+internal/config                           96
 internal/domain                          100
 internal/ports/output                     66
 TOTAL                                      94

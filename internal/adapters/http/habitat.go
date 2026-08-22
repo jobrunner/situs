@@ -2,7 +2,9 @@ package httpapi
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gorilla/mux"
@@ -19,7 +21,12 @@ func (s *Server) handleHabitatType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	detail, err := s.deps.Query.HabitatType(r.Context(), key, language(r))
+	filter, ferr := areaFilter(r)
+	if ferr != nil {
+		s.writeError(w, http.StatusBadRequest, CodeInvalidQuery, ferr.Error())
+		return
+	}
+	detail, err := s.deps.Query.HabitatType(r.Context(), key, language(r), filter)
 	if err != nil {
 		s.writeQueryError(w, r, err)
 		return
@@ -43,7 +50,12 @@ func (s *Server) handleHabitatTypeSpecies(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	species, err := s.deps.Query.HabitatTypeSpecies(r.Context(), key, role)
+	filter, ferr := areaFilter(r)
+	if ferr != nil {
+		s.writeError(w, http.StatusBadRequest, CodeInvalidQuery, ferr.Error())
+		return
+	}
+	species, err := s.deps.Query.HabitatTypeSpecies(r.Context(), key, role, filter)
 	if err != nil {
 		s.writeQueryError(w, r, err)
 		return
@@ -84,6 +96,28 @@ func (s *Server) habitatTypeKey(w http.ResponseWriter, r *http.Request) (domain.
 		return domain.HabitatTypeKey{}, false
 	}
 	return domain.HabitatTypeKey{Typology: typology, Code: code}, true
+}
+
+// areaFilter parses ?area= and ?only_in_area= into the use case's filter
+// value object. area is a WGSRPD level 3 code — the frontend derives it from
+// GPS, so there is no ISO mapping to build here.
+//
+// An only_in_area value that fails to parse as a boolean is rejected, the same
+// as an unknown area code: a typo must not silently be read as a valid value.
+// only_in_area=true without an area is not rejected, though — a client that
+// always sends the flag and only sometimes has a fix on the area is a
+// plausible caller, and the flag is then simply a no-op.
+func areaFilter(r *http.Request) (input.AreaFilter, error) {
+	q := r.URL.Query()
+	filter := input.AreaFilter{Code: strings.TrimSpace(q.Get("area"))}
+	if raw := strings.TrimSpace(q.Get("only_in_area")); raw != "" {
+		only, err := strconv.ParseBool(raw)
+		if err != nil {
+			return input.AreaFilter{}, fmt.Errorf("only_in_area must be a boolean, got %q", raw)
+		}
+		filter.OnlyInArea = only
+	}
+	return filter, nil
 }
 
 // language picks the response language: ?lang= wins over Accept-Language, and
@@ -133,14 +167,10 @@ func supportedLanguage(raw string) (string, bool) {
 // cause; the client only ever sees the envelope.
 func (s *Server) writeQueryError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
-	case errors.Is(err, input.ErrUnknownTypology):
+	case errors.Is(err, input.ErrUnknownTypology), errors.Is(err, input.ErrUnknownArea):
 		s.writeError(w, http.StatusBadRequest, CodeInvalidQuery, err.Error())
 	case errors.Is(err, input.ErrNotFound):
 		s.writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
-	case errors.Is(err, input.ErrUpstreamUnavailable):
-		s.writeError(w, http.StatusBadGateway, CodeUpstreamUnavailable,
-			"the name-resolution service is unavailable")
-		s.logger.ErrorContext(r.Context(), "upstream unavailable", "error", err, "path", r.URL.Path)
 	default:
 		s.writeError(w, http.StatusInternalServerError, CodeInternalError, "internal error")
 		s.logger.ErrorContext(r.Context(), "query failed", "error", err, "path", r.URL.Path)

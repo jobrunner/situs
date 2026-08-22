@@ -31,17 +31,17 @@ const (
 	CodeInternalError = "INTERNAL_ERROR"
 	CodeInvalidQuery  = "INVALID_QUERY"
 	CodeNotFound      = "NOT_FOUND"
-	// CodeUpstreamUnavailable is reserved for the verbatim-name path, the only
-	// read path that talks to hostus at runtime.
-	CodeUpstreamUnavailable = "UPSTREAM_UNAVAILABLE"
 )
 
 // Deps are the driving ports the server serves its routes from. The composition
 // root injects them; the adapter never constructs an application service.
+//
+// There is deliberately no name-resolution port here: serving is autark, and a
+// nil-able resolver field would be an invitation to reintroduce the runtime
+// dependency on hostus.
 type Deps struct {
 	Health input.HealthChecker
 	Query  input.QueryService
-	Names  input.SpeciesNameQueryService
 }
 
 // Server wraps the HTTP server and its router. It holds only driving ports.
@@ -137,10 +137,19 @@ func (s *Server) Shutdown(ctx context.Context) error { return s.server.Shutdown(
 
 // --- handlers ----------------------------------------------------------------
 
-func (s *Server) handleInfo(w http.ResponseWriter, _ *http.Request) {
-	s.writeJSON(w, http.StatusOK, map[string]string{
+// handleInfo answers what this process is and what its index holds, so a client
+// can check the backbone before it sends concept ids that could never match.
+func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
+	index, err := s.deps.Query.IndexInfo(r.Context())
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), "describing the index", "error", err)
+		s.writeError(w, http.StatusInternalServerError, CodeInternalError, "internal error")
+		return
+	}
+	s.writeJSON(w, http.StatusOK, map[string]any{
 		"service": s.serviceName,
 		"version": s.version,
+		"index":   index,
 	})
 }
 

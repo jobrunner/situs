@@ -155,14 +155,13 @@ func newTestServer(t *testing.T, query input.QueryService) *httpapi.Server {
 	return httpapi.NewServer(":0", httpapi.Deps{
 		Health: stubHealth{ready: true},
 		Query:  query,
-		Names:  seededNameQueryService(),
 	}, logger, httpapi.Options{})
 }
 
 // testDeps keeps the health-probe tests focused on the probe while still
 // wiring a complete set of ports.
 func testDeps(health input.HealthChecker) httpapi.Deps {
-	return httpapi.Deps{Health: health, Query: seededQueryService(), Names: seededNameQueryService()}
+	return httpapi.Deps{Health: health, Query: seededQueryService()}
 }
 
 type stubHealth struct{ ready bool }

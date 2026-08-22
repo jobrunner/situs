@@ -37,3 +37,11 @@ __pycache__/
 
 # Browser-Automation-Artefakte (Playwright-MCP), nie Teil des Repos
 /.playwright-mcp/
+
+# Agenten-Arbeitsverzeichnis: bisher nur global ausgeschlossen, damit hätte ein
+# `git add -A` auf einer anderen Maschine oder in CI alles davon eingecheckt
+/.superpowers/
+
+# Dieser Spike bleibt bewusst unversioniert; die beiden älteren Spikes unter
+# docs/research/ sind und bleiben getrackt
+/docs/research/2026-08-20-verbreitungsfilter-spike.md
