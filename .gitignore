@@ -45,3 +45,10 @@ __pycache__/
 # Dieser Spike bleibt bewusst unversioniert; die beiden älteren Spikes unter
 # docs/research/ sind und bleiben getrackt
 /docs/research/2026-08-20-verbreitungsfilter-spike.md
+
+# CodeCharta-Analyse-Ausgaben (make codecharta) — die Map wird bei jedem Lauf
+# neu erzeugt; versioniert ist nur der Ratchet (.codecharta-ratchet.json)
+*.cc.json
+*.cc.json.gz
+coverage.info
+coverage.out

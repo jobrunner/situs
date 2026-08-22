@@ -208,6 +208,16 @@ and region data), and full plot classification.
   gate stayed vacuous through the whole foundation. The script runs one package
   per invocation and fails on a package that yields no mutants unless
   `.mutation-thresholds` declares `NONE` for it.
+  The vacuity was **not** a version problem: v0.5.1 and v0.6.0 produce identical
+  mutant sets on a concrete package under Go 1.26 (measured). Don't chase the pin.
+- CodeCharta is the third ratchet (`make codecharta`, wired as in ortus; needs
+  node + java). `.codecharta-ratchet.json` holds three caps enforced by
+  `scripts/codecharta-ratchet.py`: per-file complexity, per-**function**
+  complexity, and the hotspot intersection (complex AND under-tested). The
+  per-function cap is the one that matters — the per-file sum can be satisfied by
+  splitting a file, since the sum moves with the code. Lower the baselines as code
+  improves; raising one needs a written justification, same rule as the other two
+  ratchets. The hotspot allowlist is empty and should stay that way.
 - TDD: write the failing test, watch it fail, then implement.
 - `golangci-lint` must be built with a Go ≥ the `go` directive in `go.mod`,
   otherwise it refuses to load the config. Install a matching one with

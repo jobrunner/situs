@@ -12,7 +12,9 @@ LDFLAGS     := -ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TI
 GO       := go
 GOLINT   := golangci-lint
 # Pinned in one place; the Mutation workflow reads this same value.
-GREMLINS_VERSION := v0.6.0
+GREMLINS_VERSION  := v0.6.0
+CCSH_VERSION      := 1.143.0
+GCOV2LCOV_VERSION := v1.1.1
 COVERAGE_DIR := coverage
 MKDOCS   := uvx --with mkdocs-material mkdocs
 
@@ -71,6 +73,23 @@ debt-coverage: ## Per-package coverage floors (own test run)
 	@mkdir -p $(COVERAGE_DIR)
 	@$(GO) test -coverprofile=$(COVERAGE_DIR)/coverage.out -covermode=atomic ./... >/dev/null
 	@./scripts/coverage-gate.sh $(COVERAGE_DIR)/coverage.out
+
+codecharta: ## CodeCharta map (structure+complexity+coverage+git) -> situs.cc.json.gz, then the ratchet (needs node+java)
+	@command -v ccsh >/dev/null 2>&1 || npm install -g codecharta-analysis@$(CCSH_VERSION)
+	$(GO) install github.com/jandelgado/gcov2lcov@$(GCOV2LCOV_VERSION)
+	ccsh unifiedparser . -fe=go -e='_test\.go,third_party' -nc -o base.cc.json
+	ccsh gitlogparser repo-scan --repo-path=. --add-author --silent -nc -o git.cc.json
+	@$(GO) test -coverprofile=coverage.out ./... >/dev/null || true; \
+	 gobin=$$($(GO) env GOBIN); [ -n "$$gobin" ] || gobin=$$($(GO) env GOPATH)/bin; \
+	 inputs="base.cc.json git.cc.json"; \
+	 if [ -s coverage.out ]; then \
+	   "$$gobin"/gcov2lcov -infile=coverage.out -outfile=coverage.info; \
+	   ccsh coverageimport coverage.info -f lcov -nc -o coverage.cc.json; \
+	   inputs="$$inputs coverage.cc.json"; \
+	 else echo "WARN: no coverage.out — map without coverage"; fi; \
+	 ccsh merge $$inputs -o situs.cc.json.gz
+	python3 scripts/codecharta-ratchet.py situs.cc.json.gz .codecharta-ratchet.json
+	@echo "-> situs.cc.json.gz  (load in https://maibornwolff.github.io/codecharta/visualization/)"
 
 print-gremlins-version: ## Echo the pinned gremlins version (used by CI)
 	@echo $(GREMLINS_VERSION)
