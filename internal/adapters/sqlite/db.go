@@ -131,12 +131,12 @@ func (d *DB) CrosswalksTo(ctx context.Context, typology domain.TypologyID) ([]do
 // sqlite_autoindex_localization_1 already yields and an ORDER BY source would be
 // unobservable — correct, but impossible to regression-test and therefore
 // silently removable.
-func (d *DB) Localization(ctx context.Context, entityType, entityKey, lang, field string) ([]domain.Localization, error) {
+func (d *DB) Localization(ctx context.Context, entityType, entityKey, lang string) ([]domain.Localization, error) {
 	rows, err := d.QueryContext(ctx,
-		`SELECT value, source, provenance, derived_from FROM localization
-		 WHERE entity_type = ? AND entity_key = ? AND lang = ? AND field = ?
+		`SELECT field, value, source, provenance, derived_from FROM localization
+		 WHERE entity_type = ? AND entity_key = ? AND lang = ?
 		 ORDER BY provenance, source`,
-		entityType, entityKey, lang, field)
+		entityType, entityKey, lang)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: querying localization %s/%s: %w", entityType, entityKey, err)
 	}
@@ -144,8 +144,8 @@ func (d *DB) Localization(ctx context.Context, entityType, entityKey, lang, fiel
 
 	var out []domain.Localization
 	for rows.Next() {
-		l := domain.Localization{EntityType: entityType, EntityKey: entityKey, Lang: lang, Field: field}
-		if err := rows.Scan(&l.Value, &l.Source, &l.Provenance, &l.DerivedFrom); err != nil {
+		l := domain.Localization{EntityType: entityType, EntityKey: entityKey, Lang: lang}
+		if err := rows.Scan(&l.Field, &l.Value, &l.Source, &l.Provenance, &l.DerivedFrom); err != nil {
 			return nil, fmt.Errorf("sqlite: scanning localization %s/%s: %w", entityType, entityKey, err)
 		}
 		out = append(out, l)

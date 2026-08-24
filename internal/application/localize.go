@@ -142,24 +142,37 @@ func DeriveGermanLabels(ctx context.Context, repo output.Repository) (int, error
 // an existing official/curated de/name for the source is never overwritten,
 // and there must be an official/curated de/name on the Annex I target to
 // copy. It reports whether a row was upserted.
+// namesOnly keeps the rows the derivation cares about. Repository.Localization
+// hands back every field of the entity, and a vernacular term must never be
+// mistaken for a name — neither as a reason to skip deriving nor as a seed.
+func namesOnly(ls []domain.Localization) []domain.Localization {
+	out := make([]domain.Localization, 0, len(ls))
+	for _, l := range ls {
+		if l.Field == nameField {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
 func deriveOne(ctx context.Context, repo output.Repository, tx output.IngestTx, c domain.Crosswalk) (bool, error) {
 	if !c.Qualifier.IsSame() {
 		return false, nil
 	}
 
-	existing, err := repo.Localization(ctx, "habitat_type", c.From.String(), deLang, nameField)
+	existing, err := repo.Localization(ctx, "habitat_type", c.From.String(), deLang)
 	if err != nil {
 		return false, fmt.Errorf("checking existing localization for %s: %w", c.From, err)
 	}
-	if hasOfficialOrCurated(existing) {
+	if hasOfficialOrCurated(namesOnly(existing)) {
 		return false, nil
 	}
 
-	target, err := repo.Localization(ctx, "habitat_type", c.To.String(), deLang, nameField)
+	target, err := repo.Localization(ctx, "habitat_type", c.To.String(), deLang)
 	if err != nil {
 		return false, fmt.Errorf("fetching Annex I name for %s: %w", c.To, err)
 	}
-	name, ok := officialOrCuratedName(target)
+	name, ok := officialOrCuratedName(namesOnly(target))
 	if !ok {
 		return false, nil
 	}

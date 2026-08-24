@@ -313,7 +313,7 @@ func TestLocalization_OrdersRowsByProvenanceThenSource(t *testing.T) {
 		t.Fatalf("Commit: %v", err)
 	}
 
-	got, err := db.Localization(ctx, "habitat_type", "annex1:6510", "de", "name")
+	got, err := db.Localization(ctx, "habitat_type", "annex1:6510", "de")
 	if err != nil {
 		t.Fatalf("Localization: %v", err)
 	}
@@ -386,7 +386,7 @@ func TestLocalization_QueryErrorIsReturned(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if _, err := db.Localization(t.Context(), "habitat_type", "annex1:6510", "de", "name"); err == nil {
+	if _, err := db.Localization(t.Context(), "habitat_type", "annex1:6510", "de"); err == nil {
 		t.Fatal("Localization on a closed database = nil error, want an error")
 	}
 }
@@ -414,7 +414,7 @@ func TestCrosswalksTo_ScanErrorIsReturned(t *testing.T) {
 
 func TestLocalization_RowsIterationErrorIsReturned(t *testing.T) {
 	db := &DB{DB: newStubDB(t, stubModeRowsErr)}
-	if _, err := db.Localization(context.Background(), "habitat_type", "annex1:6510", "de", "name"); err == nil {
+	if _, err := db.Localization(context.Background(), "habitat_type", "annex1:6510", "de"); err == nil {
 		t.Fatal("Localization with a rows-iteration error = nil error, want an error")
 	} else if !strings.Contains(err.Error(), "reading localization") {
 		t.Errorf("error = %q, want it to name the rows.Err() failure", err)
@@ -423,7 +423,7 @@ func TestLocalization_RowsIterationErrorIsReturned(t *testing.T) {
 
 func TestLocalization_ScanErrorIsReturned(t *testing.T) {
 	db := &DB{DB: newStubDB(t, stubModeScanErr)}
-	if _, err := db.Localization(context.Background(), "habitat_type", "annex1:6510", "de", "name"); err == nil {
+	if _, err := db.Localization(context.Background(), "habitat_type", "annex1:6510", "de"); err == nil {
 		t.Fatal("Localization with a scan error = nil error, want an error")
 	} else if !strings.Contains(err.Error(), "scanning localization") {
 		t.Errorf("error = %q, want it to name the Scan failure", err)
@@ -446,23 +446,42 @@ func TestLocalization_ReturnsEveryRowForTheKeyAndOmitsOthers(t *testing.T) {
 	if err := tx.UpsertLocalization(official); err != nil {
 		t.Fatalf("UpsertLocalization(official): %v", err)
 	}
-	// A different field on the same entity must not be returned.
-	if err := tx.UpsertLocalization(domain.Localization{
-		EntityType: "habitat_type", EntityKey: key.String(), Lang: "de", Field: "description",
-		Value: "irrelevant", Source: "other", Provenance: "curated",
-	}); err != nil {
-		t.Fatalf("UpsertLocalization(other field): %v", err)
+	// Another field of the SAME entity now belongs to the answer: selecting a
+	// field is the caller's policy since name and vernacular travel together.
+	vernacular := domain.Localization{
+		EntityType: "habitat_type", EntityKey: key.String(), Lang: "de", Field: "vernacular",
+		Value: "Glatthaferwiese", Source: "ffh-richtlinie-de", Provenance: "official",
+	}
+	if err := tx.UpsertLocalization(vernacular); err != nil {
+		t.Fatalf("UpsertLocalization(vernacular): %v", err)
+	}
+	// A different entity and a different language must stay out.
+	for _, other := range []domain.Localization{
+		{EntityType: "habitat_type", EntityKey: "annex1:6520", Lang: "de", Field: "name",
+			Value: "andere Entitaet", Source: "x", Provenance: "official"},
+		{EntityType: "habitat_type", EntityKey: key.String(), Lang: "en", Field: "name",
+			Value: "other language", Source: "x", Provenance: "official"},
+	} {
+		if err := tx.UpsertLocalization(other); err != nil {
+			t.Fatalf("UpsertLocalization(other): %v", err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
 
-	got, err := db.Localization(ctx, "habitat_type", key.String(), "de", "name")
+	got, err := db.Localization(ctx, "habitat_type", key.String(), "de")
 	if err != nil {
 		t.Fatalf("Localization: %v", err)
 	}
-	if len(got) != 1 || got[0] != official {
-		t.Errorf("Localization(name) = %+v, want exactly [%+v]", got, official)
+	want := []domain.Localization{official, vernacular}
+	if len(got) != len(want) {
+		t.Fatalf("Localization = %+v, want the two de rows of %s", got, key)
+	}
+	for _, w := range want {
+		if !slices.Contains(got, w) {
+			t.Errorf("Localization = %+v, want it to contain %+v", got, w)
+		}
 	}
 }
 
@@ -594,5 +613,47 @@ func TestIngestTx_UpsertDistributionIsIdempotent(t *testing.T) {
 	}
 	if len(got["wcvp:concept:1"]) != 1 {
 		t.Errorf("areas = %v, want exactly one (upsert, not insert)", got["wcvp:concept:1"])
+	}
+}
+
+// One call returns every localized field of the entity: name and vernacular
+// belong to the same answer, and filtering by field in the port cost a second
+// query per habitat type — 60 extra queries on a 60-type list.
+func TestLocalization_ReturnsEveryFieldOfTheEntity(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	for _, l := range []domain.Localization{
+		{Field: "name", Value: "Tief- und mittelmontane Mähwiese"},
+		{Field: "vernacular", Value: "Glatthaferwiese"},
+	} {
+		if err := tx.UpsertLocalization(domain.Localization{
+			EntityType: "habitat_type", EntityKey: "eunis@2021:R22", Lang: "de",
+			Field: l.Field, Value: l.Value, Source: "situs@test", Provenance: "situs",
+		}); err != nil {
+			t.Fatalf("UpsertLocalization(%s): %v", l.Field, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.Localization(ctx, "habitat_type", "eunis@2021:R22", "de")
+	if err != nil {
+		t.Fatalf("Localization: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("rows = %d, want 2 (name + vernacular in one call)", len(got))
+	}
+	byField := map[string]string{}
+	for _, l := range got {
+		byField[l.Field] = l.Value
+	}
+	if byField["name"] == "" || byField["vernacular"] != "Glatthaferwiese" {
+		t.Errorf("fields = %v, want both name and vernacular populated", byField)
 	}
 }

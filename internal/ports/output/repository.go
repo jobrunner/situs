@@ -54,7 +54,11 @@ type Repository interface {
 	HabitatTypeKeysForSyntaxon(ctx context.Context, syntaxonID string) ([]domain.HabitatTypeKey, error)
 	// Localization returns every localization matching entityType, entityKey,
 	// lang and field — there can be more than one, one per source.
-	Localization(ctx context.Context, entityType, entityKey, lang, field string) ([]domain.Localization, error)
+	// Localization returns every localized field of one entity in one language.
+	// Selecting a field is the caller's policy, not the port's: name and
+	// vernacular belong to the same answer, and filtering here cost a second
+	// query per habitat type.
+	Localization(ctx context.Context, entityType, entityKey, lang string) ([]domain.Localization, error)
 	// AreasForConcepts maps each concept id to the area codes it occurs in,
 	// within one scheme. A concept absent from the result has no distribution
 	// data at all — that is "unknown", not "does not occur".
