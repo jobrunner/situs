@@ -1078,3 +1078,34 @@ func TestWarnOnForeignBackbones(t *testing.T) {
 		})
 	}
 }
+
+// situs is the weakest claim in the vocabulary: a label situs translated itself
+// must lose to every source that is vouched for from outside.
+func TestPreferredLabelRanksSitusLast(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		rows []domain.Localization
+		want string
+	}{
+		{"situs alone", []domain.Localization{
+			{Provenance: "situs", Value: "situs label"}}, "situs"},
+		{"derived beats situs", []domain.Localization{
+			{Provenance: "situs", Value: "s"},
+			{Provenance: "derived", Value: "d"}}, "derived"},
+		{"curated beats derived", []domain.Localization{
+			{Provenance: "situs", Value: "s"},
+			{Provenance: "derived", Value: "d"},
+			{Provenance: "curated", Value: "c"}}, "curated"},
+		{"official beats everything", []domain.Localization{
+			{Provenance: "situs", Value: "s"},
+			{Provenance: "curated", Value: "c"},
+			{Provenance: "official", Value: "o"}}, "official"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, got := preferredLabel(tc.rows)
+			if got != tc.want {
+				t.Errorf("provenance = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

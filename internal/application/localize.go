@@ -25,6 +25,10 @@ const (
 	provenanceOfficial = "official"
 	provenanceCurated  = "curated"
 	provenanceDerived  = "derived"
+	// situs is the weakest claim: situs itself translated this label and no
+	// external source stands behind it. It must stay distinguishable on the wire,
+	// and it may never seed a derivation — see officialOrCuratedName.
+	provenanceSitus = "situs"
 )
 
 // IngestLocalizations loads csvPath (localizations.csv:
@@ -52,8 +56,10 @@ func IngestLocalizations(ctx context.Context, repo output.Repository, csvPath st
 		[]string{"entity_type", "entity_key", "lang", "field", "value", "source", "provenance"}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			provenance := row[idx["provenance"]]
-			if provenance != provenanceOfficial && provenance != provenanceCurated && provenance != provenanceDerived {
-				skip(line, fmt.Errorf("provenance %q is none of official/curated/derived", provenance))
+			switch provenance {
+			case provenanceOfficial, provenanceCurated, provenanceDerived, provenanceSitus:
+			default:
+				skip(line, fmt.Errorf("provenance %q is none of official/curated/derived/situs", provenance))
 				return nil
 			}
 			l := domain.Localization{
