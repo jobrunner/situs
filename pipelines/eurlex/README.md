@@ -13,6 +13,28 @@ python3 pipelines/eurlex/extract.py eurlex-de.xhtml \
   --index-codes annex1-codes.txt -o localizations.csv -r report.json
 ```
 
+## Zusammenführung mit den verfassten Übersetzungen
+
+```bash
+sqlite3 situs.sqlite "SELECT h.code FROM habitat_type h
+  WHERE h.typology_id='eunis@2021' AND h.level=3
+  AND NOT EXISTS (SELECT 1 FROM habitat_type_crosswalk c
+    WHERE c.from_code=h.code AND c.to_typology='annex1' AND c.qualifier='=')" > expected.txt
+sqlite3 -separator '\t' situs.sqlite \
+  "SELECT code,name_en FROM habitat_type WHERE typology_id='eunis@2021' AND level=3" > index-names.tsv
+python3 pipelines/eurlex/merge.py data/localizations-de-situs.csv \
+  --version "$(cat VERSION)" --official localizations.csv \
+  --expected-codes expected.txt --index-names index-names.tsv -o localizations.csv
+```
+
+`merge.py` schreibt **nichts**, wenn die verfasste Datei ihre Zusagen bricht:
+eine fehlende oder überzählige Code-Menge, ein doppelter Code, ein
+`vernacular_de` ohne `name_de`, oder ein `name_en`, das vom Index abweicht. Die
+letzte Prüfung normalisiert geschützte Leerzeichen — die EEA-Quelldaten führen
+in mindestens einem `name_en` ein `U+00A0` (`V31`), und ein Byte-Vergleich würde
+dort einen Übersetzungsfehler melden, wo nur ein unsichtbares Zeichen von
+upstream steht.
+
 ## Gepinnte Quelle
 
 CELEX **`01992L0043-20130701`** — konsolidierte Fassung nach dem Beitritt

@@ -192,3 +192,27 @@ amtliche Anhang-I-Name wird an den EUNIS-Typ verliehen, markiert als
 
 Die verbleibenden **241** EUNIS-Level-3-Typen ohne `=`-Crosswalk haben keine
 amtliche Quelle und tragen `provenance = situs`.
+
+### Die 241 von situs verfassten Namen
+
+Gemessen am 2026-08-24 gegen `data/localizations-de-situs.csv`:
+
+| Kennzahl | Wert |
+|---|---|
+| Verfasste Typen (EUNIS L3 ohne `=`-Crosswalk) | **241** |
+| Erzeugte Localization-Zeilen | **334** |
+| davon `field = vernacular` | **93** (38 %) |
+| Überschneidung mit den 29 Ableitungen | **0** |
+| Localizations im Index gesamt | **567** (233 `official` + 334 `situs`) |
+
+Die 38 % Vernakular-Abdeckung ist keine Lücke, sondern das Ergebnis der Regel:
+ein etablierter deutscher Begriff existiert im Wesentlichen nur, wo der Typ in
+Deutschland vorkommt. Für mediterrane, makaronesische und Schwarzmeer-Varianten
+gibt es keinen — sie werden im Deutschen nie benannt, und ein konstruierter
+Begriff wäre eine Erfindung mit dem Anschein von Geläufigkeit.
+
+**Ein Fall, in dem die Regel gegen das Spec-Beispiel entschieden hat:** die Spec
+zeigt `R22 Low and medium altitude hay meadow` → `Glatthaferwiese` als
+Illustration. Streng angewandt entfällt das Vernakular dort: `R22` umfasst auch
+die montanen Goldhaferwiesen, „Glatthaferwiese" ist also **enger** als der Typ.
+Die Zeile trägt nur `name`.
