@@ -34,8 +34,9 @@ test: ## Run all tests
 # The pipeline produces every fact in the index, including the header-drift
 # guard that exists because silently dropping a whole sheet branch already
 # happened once. Stdlib-only python3, so there is nothing to install.
-pipeline-test: ## Run the XLSX->CSV pipeline's Python tests
+pipeline-test: ## Run every pipeline's Python tests
 	cd pipelines/eunis && python3 -m unittest discover
+	cd pipelines/eurlex && python3 -m unittest discover
 
 test-coverage: ## Tests with a coverage report
 	@mkdir -p $(COVERAGE_DIR)

@@ -1,0 +1,49 @@
+# `pipelines/eurlex` — amtliche deutsche Anhang-I-Namen
+
+Normalisiert die deutsche Fassung der FFH-Richtlinie zu der
+`localizations.csv`, die der Go-Ingest liest. Wie `pipelines/eunis` bleibt das
+Parsen außerhalb des Binaries: bash + `python3`, **stdlib only**.
+
+## Lauf
+
+```bash
+bash pipelines/eurlex/fetch.sh eurlex-de.xhtml
+sqlite3 situs.sqlite "SELECT code FROM habitat_type WHERE typology_id='annex1'" > annex1-codes.txt
+python3 pipelines/eurlex/extract.py eurlex-de.xhtml \
+  --index-codes annex1-codes.txt -o localizations.csv -r report.json
+```
+
+## Gepinnte Quelle
+
+CELEX **`01992L0043-20130701`** — konsolidierte Fassung nach dem Beitritt
+Kroatiens. Bezogen über das Cellar-Repository des Amts für Veröffentlichungen
+(`publications.europa.eu/resource/celex/…` mit Content Negotiation); das Web-UI
+von EUR-Lex antwortet einem einfachen `curl` mit HTTP 202 und leerem Rumpf.
+
+Nachnutzung nach **Beschluss 2011/833/EU** mit Quellenangabe. Jede erzeugte
+Zeile trägt `source = eur-lex:31992L0043`.
+
+## Gemessene Struktur
+
+```html
+<p class="dlist-term">9370</p>
+<p class="dlist-definition">* Palmhaine von <span class="italics">Phönix</span></p>
+```
+
+Drei Dinge, die gemessen und nicht angenommen sind:
+
+- **Codes sind vierstellig, aber nicht vierziffrig.** 44 der 233 Einträge sind
+  alphanumerisch (`21A0`, `40A0`, `62A0`). Ein `\d{4}`-Filter verwirft sie
+  stillschweigend.
+- **Nur ein führender Stern** markiert prioritäre Typen und entfällt; die
+  Priorität führt `habitat_type.priority` schon. Ein Stern im Text gehört zum
+  Namen (`Machair (* in Irland)`).
+- **Dieselbe `dlist`-Struktur tragen die späteren Anhänge** für Artenlisten. Die
+  Extraktion wird deshalb auf den Bereich `ANHANG I` … `ANHANG II` begrenzt —
+  sonst landet ein Wolf zwischen den Habitattypen.
+
+## Bericht
+
+`report.json` nennt beide Richtungen. Die zweite ist die wichtige: ein
+indexierter Typ **ohne** amtlichen Namen darf nicht dadurch auffallen, dass
+jemand in der App ein englisches Label sieht.

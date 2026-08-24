@@ -144,3 +144,51 @@ Warum das den Aufwand wert war, an `eunis@2021/R15` mit `?area=GER` gemessen:
 **49 % der Arten dieses Habitattyps kommen in Deutschland nicht vor.** Eine
 Artenliste ohne Gebietsfilter schickt einen Nutzer im Gelände also in etwa jedem
 zweiten Fall hinter eine Pflanze, die dort nicht wachsen kann.
+
+## Deutsche Labels (amtlich, aus EUR-Lex)
+
+Gemessen am 2026-08-24 gegen CELEX `01992L0043-20130701` (deutsche
+konsolidierte Fassung), bezogen über das Cellar-Repository des Amts für
+Veröffentlichungen. Nachnutzung nach Beschluss 2011/833/EU mit Quellenangabe;
+jede Zeile trägt `source = eur-lex:31992L0043`.
+
+| Kennzahl | Wert |
+|---|---|
+| Codes in Anhang I laut EUR-Lex | **233** |
+| Anhang-I-Typen im Index | **205** |
+| In EUR-Lex, aber nicht im Index | **28** |
+| Im Index, **ohne** amtlichen Namen | **0** |
+| Abgeleitete EUNIS-Labels (`=`-Crosswalk) | **29** |
+
+### Die Differenz 233 ↔ 205 ist geklärt
+
+Der offene Punkt aus der Design-Spec — das BfN nennt 231 Anhang-I-Typen, der
+Index führt 205 — löst sich in zwei Teile:
+
+1. **EUR-Lex liefert 233, nicht 231.** Zwei mehr als die BfN-Angabe; die
+   konsolidierte Fassung von 2013 ist neuer als die dort zitierte Zählung.
+2. **Die 28 fehlenden sind überwiegend marine und Küstentypen**: `1110`
+   (Sandbänke), `1120` (*Posidonia*-Bestände), `1130` (Estuarien), `1150`
+   (Lagunen), `1170` (Riffe), `1320`, `1330`, `1410`, `1420`, `1630`, `1650` …
+   Sie fehlen dem **Index**, nicht der Lokalisierung — eine Eigenschaft der
+   EEA-Quelldaten, die situs einliest.
+
+**Entscheidend ist die zweite Richtung: sie ist null.** Kein einziger Typ, den
+der Index führt, bleibt ohne amtlichen deutschen Namen. Der Fall, der stillschweigend
+schiefgehen könnte — jemandem fällt in der App ein englisches Label auf —
+tritt nicht ein.
+
+### Was die Ableitung erreicht
+
+Von 339 Crosswalks nach `annex1` sind 29 ein `=`, und alle 29 zünden: der
+amtliche Anhang-I-Name wird an den EUNIS-Typ verliehen, markiert als
+`derived`. Beispiele:
+
+| EUNIS | Abgeleiteter deutscher Name |
+|---|---|
+| `N18` | Entkalkte Dünen mit *Empetrum nigrum* |
+| `R61` | Mediterrane Salzwiesen (*Limonietalia*) |
+| `S65` | Iberische Gipssteppen (*Gypsophiletalia*) |
+
+Die verbleibenden **241** EUNIS-Level-3-Typen ohne `=`-Crosswalk haben keine
+amtliche Quelle und tragen `provenance = situs`.
