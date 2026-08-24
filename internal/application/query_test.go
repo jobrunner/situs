@@ -74,8 +74,8 @@ func TestQueryService_HabitatTypeCarriesSpeciesSyntaxaAndCrosswalks(t *testing.T
 	if got.NameEN != "Low and medium altitude hay meadow" || got.Level == nil || *got.Level != 3 {
 		t.Errorf("got %+v, want the seeded name and level", got.HabitatTypeSummary)
 	}
-	if got.NameDE != "" || got.NameDEProvenance != "" {
-		t.Errorf("name_de = %q — an English request must not carry the overlay", got.NameDE)
+	if got.NameDE != nil {
+		t.Errorf("name_de = %+v — an English request must not carry the overlay", got.NameDE)
 	}
 	if len(got.Species["diagnostic"]) != 1 || len(got.Species["constant"]) != 1 {
 		t.Errorf("species = %+v, want one diagnostic and one constant entry", got.Species)
@@ -127,8 +127,11 @@ func TestQueryService_GermanLabelIsAdditiveAndCarriesProvenance(t *testing.T) {
 	if got.NameEN != "Low and medium altitude hay meadow" {
 		t.Errorf("name_en = %q, want the English name kept", got.NameEN)
 	}
-	if got.NameDE != "Magere Flachland-Mähwiese" || got.NameDEProvenance != "derived" {
-		t.Errorf("name_de/provenance = %q/%q, want the derived overlay", got.NameDE, got.NameDEProvenance)
+	if got.NameDE == nil {
+		t.Fatal("name_de is absent, want the derived overlay")
+	}
+	if got.NameDE.Value != "Magere Flachland-Mähwiese" || got.NameDE.Provenance != "derived" {
+		t.Errorf("name_de = %+v, want the derived overlay", got.NameDE)
 	}
 }
 
@@ -157,8 +160,11 @@ func TestQueryService_PreferredLabelOrdersOfficialCuratedDerived(t *testing.T) {
 			if err != nil {
 				t.Fatalf("HabitatType: %v", err)
 			}
-			if got.NameDEProvenance != tc.want || got.NameDE != tc.want+" label" {
-				t.Errorf("name_de/provenance = %q/%q, want the %s label", got.NameDE, got.NameDEProvenance, tc.want)
+			if got.NameDE == nil {
+				t.Fatalf("name_de is absent, want the %s label", tc.want)
+			}
+			if got.NameDE.Provenance != tc.want || got.NameDE.Value != tc.want+" label" {
+				t.Errorf("name_de = %+v, want the %s label", got.NameDE, tc.want)
 			}
 		})
 	}
@@ -171,9 +177,8 @@ func TestQueryService_NoGermanLabelLeavesTheOverlayEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HabitatType: %v", err)
 	}
-	if got.NameDE != "" || got.NameDEProvenance != "" {
-		t.Errorf("name_de/provenance = %q/%q, want both empty when nothing is localized",
-			got.NameDE, got.NameDEProvenance)
+	if got.NameDE != nil {
+		t.Errorf("name_de = %+v, want it absent entirely when nothing is localized", got.NameDE)
 	}
 }
 
@@ -232,7 +237,7 @@ func TestQueryService_SpeciesHabitatTypes(t *testing.T) {
 	if got[0].Fidelity == nil || *got[0].Fidelity != 49.6 {
 		t.Errorf("fidelity = %v, want the seeded 49.6", got[0].Fidelity)
 	}
-	if got[0].NameDE == "" {
+	if got[0].NameDE == nil {
 		t.Error("name_de missing — lang must reach the species answer too")
 	}
 	if len(got[0].Syntaxa) != 1 {
@@ -319,7 +324,7 @@ func TestQueryService_SyntaxonHabitatTypes(t *testing.T) {
 	if len(got) != 1 || got[0].Code != "R22" {
 		t.Fatalf("got %+v, want the single linked type", got)
 	}
-	if got[0].NameEN == "" || got[0].NameDE == "" {
+	if got[0].NameEN == "" || got[0].NameDE == nil {
 		t.Errorf("got %+v, want both the English identity and the German overlay", got[0])
 	}
 
@@ -1088,24 +1093,79 @@ func TestPreferredLabelRanksSitusLast(t *testing.T) {
 		want string
 	}{
 		{"situs alone", []domain.Localization{
-			{Provenance: "situs", Value: "situs label"}}, "situs"},
+			{Field: "name", Provenance: "situs", Value: "situs label"}}, "situs"},
 		{"derived beats situs", []domain.Localization{
-			{Provenance: "situs", Value: "s"},
-			{Provenance: "derived", Value: "d"}}, "derived"},
+			{Field: "name", Provenance: "situs", Value: "s"},
+			{Field: "name", Provenance: "derived", Value: "d"}}, "derived"},
 		{"curated beats derived", []domain.Localization{
-			{Provenance: "situs", Value: "s"},
-			{Provenance: "derived", Value: "d"},
-			{Provenance: "curated", Value: "c"}}, "curated"},
+			{Field: "name", Provenance: "situs", Value: "s"},
+			{Field: "name", Provenance: "derived", Value: "d"},
+			{Field: "name", Provenance: "curated", Value: "c"}}, "curated"},
 		{"official beats everything", []domain.Localization{
-			{Provenance: "situs", Value: "s"},
-			{Provenance: "curated", Value: "c"},
-			{Provenance: "official", Value: "o"}}, "official"},
+			{Field: "name", Provenance: "situs", Value: "s"},
+			{Field: "name", Provenance: "curated", Value: "c"},
+			{Field: "name", Provenance: "official", Value: "o"}}, "official"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, got := preferredLabel(tc.rows)
-			if got != tc.want {
-				t.Errorf("provenance = %q, want %q", got, tc.want)
+			got := preferredLabel(tc.rows)
+			if got == nil {
+				t.Fatalf("preferredLabel = nil, want provenance %q", tc.want)
+			}
+			if got.Provenance != tc.want {
+				t.Errorf("provenance = %q, want %q", got.Provenance, tc.want)
 			}
 		})
+	}
+}
+
+// vernacular is optional: it is absent where no established German term carries
+// the same extent as the type. An empty string would be an assertion, not a gap.
+func TestPreferredLabelCarriesVernacularWhenPresent(t *testing.T) {
+	got := preferredLabel([]domain.Localization{
+		{Field: "name", Value: "Tief- und mittelmontane Mähwiese",
+			Provenance: "situs", Source: "situs@test"},
+		{Field: "vernacular", Value: "Glatthaferwiese",
+			Provenance: "situs", Source: "situs@test"},
+	})
+	if got == nil {
+		t.Fatal("preferredLabel = nil, want the situs label")
+	}
+	if got.Value != "Tief- und mittelmontane Mähwiese" || got.Vernacular != "Glatthaferwiese" {
+		t.Errorf("label = %+v, want the faithful name plus the established term", got)
+	}
+	if got.Provenance != "situs" || got.Source != "situs@test" {
+		t.Errorf("provenance/source = %q/%q, want situs@test", got.Provenance, got.Source)
+	}
+}
+
+func TestPreferredLabelWithoutVernacularLeavesItEmpty(t *testing.T) {
+	got := preferredLabel([]domain.Localization{
+		{Field: "name", Value: "Kryptogamen- und annuellenreiche Vegetation auf Silikatfels",
+			Provenance: "situs", Source: "situs@test"},
+	})
+	if got == nil {
+		t.Fatal("preferredLabel = nil, want the name-only label")
+	}
+	if got.Vernacular != "" {
+		t.Errorf("vernacular = %q, want empty — no established term fits this type", got.Vernacular)
+	}
+}
+
+// Mixing an official name with a situs vernacular would make the single
+// provenance field a lie about half the object.
+func TestPreferredLabelTakesVernacularOnlyFromTheWinningProvenance(t *testing.T) {
+	got := preferredLabel([]domain.Localization{
+		{Field: "name", Value: "Amtlicher Name", Provenance: "official", Source: "eur-lex"},
+		{Field: "vernacular", Value: "Von situs erfunden", Provenance: "situs", Source: "situs@test"},
+	})
+	if got == nil {
+		t.Fatal("preferredLabel = nil, want the official label")
+	}
+	if got.Provenance != "official" {
+		t.Fatalf("provenance = %q, want official", got.Provenance)
+	}
+	if got.Vernacular != "" {
+		t.Errorf("vernacular = %q, want empty — a situs term must not ride on an official name",
+			got.Vernacular)
 	}
 }

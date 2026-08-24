@@ -360,6 +360,29 @@ components:
     # Fehlende Angaben sind abwesende Felder, nie ein Platzhalter oder eine
     # substituierte Null: level fehlt bei Typologien ohne Hierarchie, priority
     # gibt es nur bei annex1, name_de nur wenn ein Label existiert.
+    # name_de ist ein Objekt, nicht ein String mit Geschwisterfeld: ein Client soll
+    # value nicht lesen koennen, ohne provenance daneben zu sehen. Manche Labels
+    # sind amtlich, andere hat situs selbst uebersetzt — das darf nicht abtrennbar
+    # sein.
+    GermanLabel:
+      type: object
+      required: [value, provenance, source]
+      properties:
+        value:
+          type: string
+        vernacular:
+          type: string
+          description: >-
+            Etablierter deutscher Begriff. Fehlt, wo keiner denselben Umfang
+            traegt wie der Typ — ein leerer Wert waere eine Behauptung.
+        provenance:
+          type: string
+          enum: [official, curated, derived, situs]
+          description: >-
+            situs bedeutet: situs hat uebersetzt, keine externe Quelle steht
+            dahinter.
+        source:
+          type: string
     HabitatTypeSummary:
       type: object
       required: [typology, code, name_en]
@@ -375,10 +398,7 @@ components:
         name_en:
           type: string
         name_de:
-          type: string
-        name_de_provenance:
-          type: string
-          enum: [official, curated, derived]
+          $ref: '#/components/schemas/GermanLabel'
         priority:
           type: boolean
     SyntaxonRef:

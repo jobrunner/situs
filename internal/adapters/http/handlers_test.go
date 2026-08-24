@@ -25,11 +25,15 @@ func TestHabitatType_ReturnsGermanNameAdditively(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	var got struct {
-		Typology         string `json:"typology"`
-		Code             string `json:"code"`
-		NameEN           string `json:"name_en"`
-		NameDE           string `json:"name_de"`
-		NameDEProvenance string `json:"name_de_provenance"`
+		Typology string `json:"typology"`
+		Code     string `json:"code"`
+		NameEN   string `json:"name_en"`
+		NameDE   *struct {
+			Value      string `json:"value"`
+			Vernacular string `json:"vernacular"`
+			Provenance string `json:"provenance"`
+			Source     string `json:"source"`
+		} `json:"name_de"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decoding body: %v", err)
@@ -37,8 +41,13 @@ func TestHabitatType_ReturnsGermanNameAdditively(t *testing.T) {
 	if got.NameEN == "" {
 		t.Error("name_en missing — the English name stays the identity even with lang=de")
 	}
-	if got.NameDE == "" || got.NameDEProvenance == "" {
-		t.Errorf("name_de/%s missing, want the German overlay with its provenance", "name_de_provenance")
+	if got.NameDE == nil {
+		t.Fatal("name_de missing, want the German overlay object")
+	}
+	// The point of the object: a client cannot read value without provenance
+	// sitting next to it, so an authored translation cannot pass as official.
+	if got.NameDE.Value == "" || got.NameDE.Provenance == "" || got.NameDE.Source == "" {
+		t.Errorf("name_de = %+v, want value, provenance and source all populated", got.NameDE)
 	}
 	if got.Typology != "eunis@2021" || got.Code != "R22" {
 		t.Errorf("typology/code = %q/%q, want the requested key", got.Typology, got.Code)
@@ -805,8 +814,12 @@ func seededQueryService() *fakeQueryService {
 // German label, it never replaces name_en.
 func germanOverlay(s input.HabitatTypeSummary, lang string) input.HabitatTypeSummary {
 	if lang == "de" {
-		s.NameDE = "Magere Flachland-Mähwiese"
-		s.NameDEProvenance = "derived"
+		s.NameDE = &input.GermanLabel{
+			Value:      "Magere Flachland-Mähwiese",
+			Vernacular: "Glatthaferwiese",
+			Provenance: "derived",
+			Source:     "derived-annex1",
+		}
 	}
 	return s
 }

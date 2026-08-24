@@ -204,7 +204,7 @@ func (q *QueryService) summary(ctx context.Context, key domain.HabitatTypeKey, l
 		if err != nil {
 			return input.HabitatTypeSummary{}, fmt.Errorf("fetching German label of %s: %w", key, err)
 		}
-		s.NameDE, s.NameDEProvenance = preferredLabel(namesOnly(labels))
+		s.NameDE = preferredLabel(labels)
 	}
 	return s, nil
 }
@@ -274,21 +274,39 @@ func speciesEntry(r domain.SpeciesRole) input.SpeciesEntry {
 // rows, but this holds regardless of whether an implementation does. curated
 // outranks derived because a human deliberately intervened there; situs is last
 // because nothing outside situs vouches for it.
-func preferredLabel(labels []domain.Localization) (string, string) {
-	best := map[string]domain.Localization{}
+// The vernacular is attached only from the SAME provenance as the winning name:
+// pairing an official name with a situs vernacular would make the single
+// provenance field a lie about half the object.
+func preferredLabel(labels []domain.Localization) *input.GermanLabel {
+	names := map[string]domain.Localization{}
+	vernaculars := map[string]domain.Localization{}
 	for _, l := range labels {
-		if _, seen := best[l.Provenance]; !seen {
-			best[l.Provenance] = l
+		switch l.Field {
+		case nameField:
+			if _, seen := names[l.Provenance]; !seen {
+				names[l.Provenance] = l
+			}
+		case vernacularField:
+			if _, seen := vernaculars[l.Provenance]; !seen {
+				vernaculars[l.Provenance] = l
+			}
 		}
 	}
 	for _, provenance := range []string{
 		provenanceOfficial, provenanceCurated, provenanceDerived, provenanceSitus,
 	} {
-		if l, ok := best[provenance]; ok {
-			return l.Value, l.Provenance
+		n, ok := names[provenance]
+		if !ok {
+			continue
+		}
+		return &input.GermanLabel{
+			Value:      n.Value,
+			Vernacular: vernaculars[provenance].Value,
+			Provenance: n.Provenance,
+			Source:     n.Source,
 		}
 	}
-	return "", ""
+	return nil
 }
 
 // translateNotFound maps the repository's ErrNotFound onto the driving port's

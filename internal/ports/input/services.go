@@ -58,15 +58,30 @@ const (
 // drift. Every slice/map is non-nil when returned, so JSON never shows null
 // where the contract promises a list.
 
+// GermanLabel is the additive German overlay of one entity. It is a struct, not
+// a flat set of sibling fields, so a client cannot read the value without seeing
+// the provenance that qualifies it — the whole point when some labels are
+// official and others are situs' own translation.
+type GermanLabel struct {
+	Value string `json:"value"`
+	// Vernacular is the established German term. It is present only where one
+	// exists AND carries the same extent as the type; absent is information, not
+	// an omission, so it is never an empty string.
+	Vernacular string `json:"vernacular,omitempty"`
+	// Provenance is official | curated | derived | situs. situs means situs
+	// translated it and no external source stands behind it.
+	Provenance string `json:"provenance"`
+	Source     string `json:"source"`
+}
+
 // HabitatTypeSummary is a habitat type plus its additive label overlay:
 // NameEN stays the identity, NameDE is added and carries its provenance.
 type HabitatTypeSummary struct {
-	Typology         domain.TypologyID `json:"typology"`
-	Code             string            `json:"code"`
-	Level            *int              `json:"level,omitempty"`
-	NameEN           string            `json:"name_en"`
-	NameDE           string            `json:"name_de,omitempty"`
-	NameDEProvenance string            `json:"name_de_provenance,omitempty"`
+	Typology domain.TypologyID `json:"typology"`
+	Code     string            `json:"code"`
+	Level    *int              `json:"level,omitempty"`
+	NameEN   string            `json:"name_en"`
+	NameDE   *GermanLabel      `json:"name_de,omitempty"`
 	// Priority is set only for annex1 types (priority habitat type).
 	Priority *bool `json:"priority,omitempty"`
 }

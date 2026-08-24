@@ -17,6 +17,8 @@ import (
 const (
 	deLang    = "de"
 	nameField = "name"
+	// vernacular carries the established German term next to the faithful name.
+	vernacularField = "vernacular"
 )
 
 // The provenance vocabulary of localization: an overlay is either the official
@@ -138,10 +140,6 @@ func DeriveGermanLabels(ctx context.Context, repo output.Repository) (int, error
 	return count, nil
 }
 
-// deriveOne applies the derivation rule to one crosswalk: only '=' qualifies,
-// an existing official/curated de/name for the source is never overwritten,
-// and there must be an official/curated de/name on the Annex I target to
-// copy. It reports whether a row was upserted.
 // namesOnly keeps the rows the derivation cares about. Repository.Localization
 // hands back every field of the entity, and a vernacular term must never be
 // mistaken for a name — neither as a reason to skip deriving nor as a seed.
@@ -155,6 +153,10 @@ func namesOnly(ls []domain.Localization) []domain.Localization {
 	return out
 }
 
+// deriveOne applies the derivation rule to one crosswalk: only '=' qualifies,
+// an existing official/curated de/name for the source is never overwritten,
+// and there must be an official/curated de/name on the Annex I target to
+// copy. It reports whether a row was upserted.
 func deriveOne(ctx context.Context, repo output.Repository, tx output.IngestTx, c domain.Crosswalk) (bool, error) {
 	if !c.Qualifier.IsSame() {
 		return false, nil
