@@ -192,6 +192,10 @@ func hasOfficialOrCurated(ls []domain.Localization) bool {
 // implementation of the port, not just the sqlite one. A derived entry
 // must never be treated as a source to derive from, nor as a reason to skip
 // deriving.
+// provenanceSitus is deliberately absent from the accepted set: a situs value is
+// an invention, and letting it seed a derivation would return it marked
+// "derived", which reads as traceable to an official source. Held by
+// TestDeriveGermanLabels_NeverSeedsFromSitus.
 func officialOrCuratedName(ls []domain.Localization) (string, bool) {
 	var curated string
 	var sawCurated bool
