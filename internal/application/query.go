@@ -268,52 +268,6 @@ func speciesEntry(r domain.SpeciesRole) input.SpeciesEntry {
 	return e
 }
 
-// preferredLabel picks the label to serve and reports its provenance, ordered
-// official > curated > derived > situs: the most authoritative wording wins, and
-// the answer never depends on row order. Repository.Localization does order its
-// rows, but this holds regardless of whether an implementation does. curated
-// outranks derived because a human deliberately intervened there; situs is last
-// because nothing outside situs vouches for it.
-// The vernacular is attached only from the same provenance AND the same source as
-// the winning name. Provenance alone is not enough: two sources can share a
-// provenance (an official EU wording and an official national one), and pairing
-// across them would attach a term from one source to a name from another while
-// the object reports only the name's source — the provenance field would stay
-// true and the source field would lie about half the object.
-func preferredLabel(labels []domain.Localization) *input.GermanLabel {
-	type origin struct{ provenance, source string }
-	names := map[string]domain.Localization{}
-	vernaculars := map[origin]domain.Localization{}
-	for _, l := range labels {
-		switch l.Field {
-		case nameField:
-			if _, seen := names[l.Provenance]; !seen {
-				names[l.Provenance] = l
-			}
-		case vernacularField:
-			key := origin{l.Provenance, l.Source}
-			if _, seen := vernaculars[key]; !seen {
-				vernaculars[key] = l
-			}
-		}
-	}
-	for _, provenance := range []string{
-		provenanceOfficial, provenanceCurated, provenanceDerived, provenanceSitus,
-	} {
-		n, ok := names[provenance]
-		if !ok {
-			continue
-		}
-		return &input.GermanLabel{
-			Value:      n.Value,
-			Vernacular: vernaculars[origin{n.Provenance, n.Source}].Value,
-			Provenance: n.Provenance,
-			Source:     n.Source,
-		}
-	}
-	return nil
-}
-
 // translateNotFound maps the repository's ErrNotFound onto the driving port's
 // sentinel, keeping the context of what was missing.
 func translateNotFound(err error, what string) error {
