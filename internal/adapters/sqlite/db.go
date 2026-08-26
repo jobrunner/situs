@@ -115,27 +115,30 @@ func (d *DB) CrosswalksTo(ctx context.Context, typology domain.TypologyID) ([]do
 	return out, nil
 }
 
-// Localization returns every localization row matching entityType, entityKey,
-// lang and field — there can be more than one, one per source (an official
-// row and a derived row for the same entity/field are both kept).
+// Localization returns every localization row matching entityType, entityKey and
+// lang — every field (name, vernacular, …) and, per field, every source. Which
+// field a caller wants is its own policy: name and vernacular belong to one
+// answer, and filtering here cost a second query per entity.
 //
-// The rows come back clustered by provenance and, within a provenance, by
-// source. Both consumers (application.officialOrCuratedName and
-// application.preferredLabel) rank on provenance and promise an answer that does
-// not depend on row order, and source is unique per matched key (it is the last
-// column of the primary key), so this is a total order — two official rows from
-// different sources can no longer resolve differently between two ingests.
+// The rows come back ordered by (provenance, field, source), which is a TOTAL
+// order: those three plus the pinned entity_type/entity_key/lang are exactly the
+// primary key, so no two rows can tie. Both consumers
+// (application.officialOrCuratedName and application.preferredLabel) promise an
+// answer that does not depend on row order, and this makes that promise
+// checkable rather than accidental.
 //
-// Ordering on the pair, not on source alone, is deliberate: the WHERE pins the
-// first four columns of the primary key, so source alone is what
-// sqlite_autoindex_localization_1 already yields and an ORDER BY source would be
-// unobservable — correct, but impossible to regression-test and therefore
-// silently removable.
+// field is in the ORDER BY because dropping the field filter made it necessary:
+// with several fields in one answer, (provenance, source) alone leaves the
+// relative order of a name row and a vernacular row undefined. Ordering on the
+// triple, not on source alone, is deliberate for the same reason as before — the
+// WHERE now pins only the first three primary-key columns, so an ORDER BY source
+// alone would be what sqlite_autoindex_localization_1 already yields and would be
+// unobservable, hence impossible to regression-test and silently removable.
 func (d *DB) Localization(ctx context.Context, entityType, entityKey, lang string) ([]domain.Localization, error) {
 	rows, err := d.QueryContext(ctx,
 		`SELECT field, value, source, provenance, derived_from FROM localization
 		 WHERE entity_type = ? AND entity_key = ? AND lang = ?
-		 ORDER BY provenance, source`,
+		 ORDER BY provenance, field, source`,
 		entityType, entityKey, lang)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: querying localization %s/%s: %w", entityType, entityKey, err)

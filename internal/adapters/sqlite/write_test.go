@@ -657,3 +657,46 @@ func TestLocalization_ReturnsEveryFieldOfTheEntity(t *testing.T) {
 		t.Errorf("fields = %v, want both name and vernacular populated", byField)
 	}
 }
+
+// (provenance, field, source) plus the pinned entity/lang is the whole primary
+// key, so the order is total and no two rows can tie. Dropping `field` from the
+// ORDER BY leaves a name row and a vernacular row of the same provenance and
+// source in undefined relative order, which is what this pins.
+func TestLocalization_OrdersTotallyAcrossFields(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	key := "eunis@2021:R22"
+	// Inserted vernacular-first so a missing ORDER BY field cannot pass by
+	// coincidence of insertion order.
+	for _, l := range []domain.Localization{
+		{Field: "vernacular", Value: "Glatthaferwiese"},
+		{Field: "name", Value: "Mähwiese"},
+	} {
+		if err := tx.UpsertLocalization(domain.Localization{
+			EntityType: "habitat_type", EntityKey: key, Lang: "de",
+			Field: l.Field, Value: l.Value, Source: "situs@test", Provenance: "situs",
+		}); err != nil {
+			t.Fatalf("UpsertLocalization(%s): %v", l.Field, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.Localization(ctx, "habitat_type", key, "de")
+	if err != nil {
+		t.Fatalf("Localization: %v", err)
+	}
+	fields := make([]string, 0, len(got))
+	for _, l := range got {
+		fields = append(fields, l.Field)
+	}
+	if want := []string{"name", "vernacular"}; !slices.Equal(fields, want) {
+		t.Errorf("fields = %v, want %v (ordered by field within a provenance)", fields, want)
+	}
+}

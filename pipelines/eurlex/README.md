@@ -45,6 +45,19 @@ von EUR-Lex antwortet einem einfachen `curl` mit HTTP 202 und leerem Rumpf.
 Nachnutzung nach **Beschluss 2011/833/EU** mit Quellenangabe. Jede erzeugte
 Zeile trägt `source = eur-lex:31992L0043`.
 
+### Transport und Integrität
+
+Das Schema auf `https` zu setzen genügt **nicht**: die CELEX-Ressource antwortet
+303, und ihr `Location` zeigt auf plain **http** — `curl -L` stuft also
+stillschweigend ab. `fetch.sh` löst die Umleitung deshalb in einem Schritt auf,
+erzwingt `https` auf dem Ziel (dieselbe URL liefert byte-identischen Inhalt über
+TLS, geprüft) und holt den Rumpf mit `--proto '=https'`.
+
+Transportsicherheit allein sagt aber nicht, dass wir das *gepinnte* Dokument
+haben. `EXPECT_SHA256` tut das: der Pin schlägt bei Manipulation **und** bei
+stiller Neuveröffentlichung durch die EU an — genau der Sinn des Pinnens. Eine
+Änderung soll ein sichtbares Ereignis sein, das jemand bewusst nachzieht.
+
 ## Gemessene Struktur
 
 ```html

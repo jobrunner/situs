@@ -1169,3 +1169,34 @@ func TestPreferredLabelTakesVernacularOnlyFromTheWinningProvenance(t *testing.T)
 			got.Vernacular)
 	}
 }
+
+// Two sources can carry the same provenance. Keying the vernacular by provenance
+// alone attaches a term from source B to a name from source A while the object
+// reports source A — the provenance field stays true and the source field lies.
+func TestPreferredLabelPairsVernacularBySourceNotOnlyByProvenance(t *testing.T) {
+	got := preferredLabel([]domain.Localization{
+		{Field: "name", Value: "Amtlicher Name", Provenance: "official", Source: "eur-lex"},
+		{Field: "vernacular", Value: "Aus anderer Quelle", Provenance: "official", Source: "bfn"},
+	})
+	if got == nil {
+		t.Fatal("preferredLabel = nil, want the official label")
+	}
+	if got.Source != "eur-lex" {
+		t.Fatalf("source = %q, want eur-lex", got.Source)
+	}
+	if got.Vernacular != "" {
+		t.Errorf("vernacular = %q, want empty — it belongs to source %q, not to the name's source %q",
+			got.Vernacular, "bfn", got.Source)
+	}
+}
+
+// The pairing must still work for the normal case: same provenance AND source.
+func TestPreferredLabelPairsVernacularFromTheSameSource(t *testing.T) {
+	got := preferredLabel([]domain.Localization{
+		{Field: "name", Value: "Name", Provenance: "situs", Source: "situs@0.3.0"},
+		{Field: "vernacular", Value: "Begriff", Provenance: "situs", Source: "situs@0.3.0"},
+	})
+	if got == nil || got.Vernacular != "Begriff" {
+		t.Errorf("label = %+v, want the vernacular of the same source attached", got)
+	}
+}

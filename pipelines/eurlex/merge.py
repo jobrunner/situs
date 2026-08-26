@@ -40,20 +40,35 @@ def normalise(s):
     return " ".join(s.replace("\xa0", " ").split())
 
 
+REQUIRED_COLUMNS = ("code", "name_en", "name_de")
+
+
+def cell(entry, column):
+    """Read one cell as a string, whatever the row looks like.
+
+    csv.DictReader yields None for a cell a short row never supplied, and omits
+    the key entirely when the header lacks the column. A guardrail that raises
+    KeyError or AttributeError on either is not a guardrail — the caller gets a
+    traceback where it asked for a list of what is wrong.
+    """
+    value = entry.get(column)
+    return value.strip() if isinstance(value, str) else ""
+
+
 def rows_for(entry, version):
     """Expand one authored entry into its localization rows."""
-    key = f"{TYPOLOGY}:{entry['code']}"
+    key = f"{TYPOLOGY}:{cell(entry, 'code')}"
     source = f"situs@{version}"
     yield {
         "entity_type": "habitat_type",
         "entity_key": key,
         "lang": "de",
         "field": "name",
-        "value": entry["name_de"].strip(),
+        "value": cell(entry, "name_de"),
         "source": source,
         "provenance": "situs",
     }
-    vernacular = entry.get("vernacular_de", "").strip()
+    vernacular = cell(entry, "vernacular_de")
     if vernacular:
         yield {
             "entity_type": "habitat_type",
@@ -69,16 +84,31 @@ def rows_for(entry, version):
 def validate(entries, expected_codes=None, index_names=None):
     """Return a list of problems. Empty means the file keeps its promises."""
     problems = []
+
+    # Schema first: without the columns, every per-row check below is noise.
+    for i, e in enumerate(entries):
+        missing = [c for c in REQUIRED_COLUMNS if c not in e]
+        if missing:
+            problems.append(
+                f"row {i + 1}: missing column(s) {', '.join(missing)} — "
+                f"header drifted from {', '.join(REQUIRED_COLUMNS)}"
+            )
+    if problems:
+        return problems
+
     seen = set()
-    for e in entries:
-        code = e["code"]
+    for i, e in enumerate(entries):
+        code = cell(e, "code")
+        if not code:
+            problems.append(f"row {i + 1}: empty code")
+            continue
         if code in seen:
             problems.append(f"{code}: duplicate row")
         seen.add(code)
-        if not e["name_de"].strip():
+        if not cell(e, "name_de"):
             problems.append(f"{code}: no name_de — a vernacular may never stand alone")
         if index_names is not None and code in index_names:
-            if normalise(index_names[code]) != normalise(e["name_en"]):
+            if normalise(index_names[code]) != normalise(cell(e, "name_en")):
                 problems.append(
                     f"{code}: name_en drifted from the index — the control column "
                     f"is worthless if it does not match what is being translated"

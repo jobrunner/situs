@@ -274,12 +274,16 @@ func speciesEntry(r domain.SpeciesRole) input.SpeciesEntry {
 // rows, but this holds regardless of whether an implementation does. curated
 // outranks derived because a human deliberately intervened there; situs is last
 // because nothing outside situs vouches for it.
-// The vernacular is attached only from the SAME provenance as the winning name:
-// pairing an official name with a situs vernacular would make the single
-// provenance field a lie about half the object.
+// The vernacular is attached only from the same provenance AND the same source as
+// the winning name. Provenance alone is not enough: two sources can share a
+// provenance (an official EU wording and an official national one), and pairing
+// across them would attach a term from one source to a name from another while
+// the object reports only the name's source — the provenance field would stay
+// true and the source field would lie about half the object.
 func preferredLabel(labels []domain.Localization) *input.GermanLabel {
+	type origin struct{ provenance, source string }
 	names := map[string]domain.Localization{}
-	vernaculars := map[string]domain.Localization{}
+	vernaculars := map[origin]domain.Localization{}
 	for _, l := range labels {
 		switch l.Field {
 		case nameField:
@@ -287,8 +291,9 @@ func preferredLabel(labels []domain.Localization) *input.GermanLabel {
 				names[l.Provenance] = l
 			}
 		case vernacularField:
-			if _, seen := vernaculars[l.Provenance]; !seen {
-				vernaculars[l.Provenance] = l
+			key := origin{l.Provenance, l.Source}
+			if _, seen := vernaculars[key]; !seen {
+				vernaculars[key] = l
 			}
 		}
 	}
@@ -301,7 +306,7 @@ func preferredLabel(labels []domain.Localization) *input.GermanLabel {
 		}
 		return &input.GermanLabel{
 			Value:      n.Value,
-			Vernacular: vernaculars[provenance].Value,
+			Vernacular: vernaculars[origin{n.Provenance, n.Source}].Value,
 			Provenance: n.Provenance,
 			Source:     n.Source,
 		}

@@ -82,6 +82,30 @@ class TestNormalise(unittest.TestCase):
     def test_collapses_nbsp_and_runs_of_space(self):
         self.assertEqual(normalise("a\xa0b   c\n"), "a b c")
 
+class TestSchemaDrift(unittest.TestCase):
+    """A guardrail that crashes is not a guardrail. Schema drift must come back as
+    a problem list, not as a KeyError three frames down."""
+
+    def test_a_missing_column_is_reported_not_raised(self):
+        problems = validate([{"code": "R22", "name_en": "x"}])  # no name_de at all
+        self.assertTrue(problems, "expected a problem list, got none")
+        self.assertTrue(any("column" in p or "name_de" in p for p in problems), problems)
+
+    def test_a_short_row_is_reported_not_raised(self):
+        # csv.DictReader fills missing trailing cells with None, which used to
+        # blow up on .strip().
+        problems = validate([{"code": "R22", "name_en": "x", "name_de": None,
+                              "vernacular_de": None}])
+        self.assertTrue(problems, "expected a problem list, got none")
+
+    def test_a_missing_code_column_is_reported_not_raised(self):
+        problems = validate([{"name_en": "x", "name_de": "y"}])
+        self.assertTrue(problems, "expected a problem list, got none")
+
+    def test_rows_for_tolerates_an_absent_vernacular_column(self):
+        fields = [r["field"] for r in rows_for({"code": "R22", "name_de": "x"}, "0.3.0")]
+        self.assertEqual(fields, ["name"])
+
 
 if __name__ == "__main__":
     unittest.main()
