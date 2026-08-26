@@ -17,6 +17,8 @@ import (
 const (
 	deLang    = "de"
 	nameField = "name"
+	// vernacular carries the established German term next to the faithful name.
+	vernacularField = "vernacular"
 )
 
 // The provenance vocabulary of localization: an overlay is either the official
@@ -25,6 +27,10 @@ const (
 	provenanceOfficial = "official"
 	provenanceCurated  = "curated"
 	provenanceDerived  = "derived"
+	// situs is the weakest claim: situs itself translated this label and no
+	// external source stands behind it. It must stay distinguishable on the wire,
+	// and it may never seed a derivation — see officialOrCuratedName.
+	provenanceSitus = "situs"
 )
 
 // IngestLocalizations loads csvPath (localizations.csv:
@@ -52,8 +58,10 @@ func IngestLocalizations(ctx context.Context, repo output.Repository, csvPath st
 		[]string{"entity_type", "entity_key", "lang", "field", "value", "source", "provenance"}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			provenance := row[idx["provenance"]]
-			if provenance != provenanceOfficial && provenance != provenanceCurated && provenance != provenanceDerived {
-				skip(line, fmt.Errorf("provenance %q is none of official/curated/derived", provenance))
+			switch provenance {
+			case provenanceOfficial, provenanceCurated, provenanceDerived, provenanceSitus:
+			default:
+				skip(line, fmt.Errorf("provenance %q is none of official/curated/derived/situs", provenance))
 				return nil
 			}
 			l := domain.Localization{
@@ -132,6 +140,19 @@ func DeriveGermanLabels(ctx context.Context, repo output.Repository) (int, error
 	return count, nil
 }
 
+// namesOnly keeps the rows the derivation cares about. Repository.Localization
+// hands back every field of the entity, and a vernacular term must never be
+// mistaken for a name — neither as a reason to skip deriving nor as a seed.
+func namesOnly(ls []domain.Localization) []domain.Localization {
+	out := make([]domain.Localization, 0, len(ls))
+	for _, l := range ls {
+		if l.Field == nameField {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
 // deriveOne applies the derivation rule to one crosswalk: only '=' qualifies,
 // an existing official/curated de/name for the source is never overwritten,
 // and there must be an official/curated de/name on the Annex I target to
@@ -141,19 +162,19 @@ func deriveOne(ctx context.Context, repo output.Repository, tx output.IngestTx, 
 		return false, nil
 	}
 
-	existing, err := repo.Localization(ctx, "habitat_type", c.From.String(), deLang, nameField)
+	existing, err := repo.Localization(ctx, "habitat_type", c.From.String(), deLang)
 	if err != nil {
 		return false, fmt.Errorf("checking existing localization for %s: %w", c.From, err)
 	}
-	if hasOfficialOrCurated(existing) {
+	if hasOfficialOrCurated(namesOnly(existing)) {
 		return false, nil
 	}
 
-	target, err := repo.Localization(ctx, "habitat_type", c.To.String(), deLang, nameField)
+	target, err := repo.Localization(ctx, "habitat_type", c.To.String(), deLang)
 	if err != nil {
 		return false, fmt.Errorf("fetching Annex I name for %s: %w", c.To, err)
 	}
-	name, ok := officialOrCuratedName(target)
+	name, ok := officialOrCuratedName(namesOnly(target))
 	if !ok {
 		return false, nil
 	}
@@ -186,6 +207,10 @@ func hasOfficialOrCurated(ls []domain.Localization) bool {
 // implementation of the port, not just the sqlite one. A derived entry
 // must never be treated as a source to derive from, nor as a reason to skip
 // deriving.
+// provenanceSitus is deliberately absent from the accepted set: a situs value is
+// an invention, and letting it seed a derivation would return it marked
+// "derived", which reads as traceable to an official source. Held by
+// TestDeriveGermanLabels_NeverSeedsFromSitus.
 func officialOrCuratedName(ls []domain.Localization) (string, bool) {
 	var curated string
 	var sawCurated bool

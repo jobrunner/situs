@@ -200,11 +200,11 @@ func (q *QueryService) summary(ctx context.Context, key domain.HabitatTypeKey, l
 		Priority: h.Priority,
 	}
 	if lang == deLang {
-		labels, err := q.repo.Localization(ctx, "habitat_type", key.String(), deLang, nameField)
+		labels, err := q.repo.Localization(ctx, "habitat_type", key.String(), deLang)
 		if err != nil {
 			return input.HabitatTypeSummary{}, fmt.Errorf("fetching German label of %s: %w", key, err)
 		}
-		s.NameDE, s.NameDEProvenance = preferredLabel(labels)
+		s.NameDE = preferredLabel(labels)
 	}
 	return s, nil
 }
@@ -266,25 +266,6 @@ func speciesEntry(r domain.SpeciesRole) input.SpeciesEntry {
 		e.ConceptID = *r.ConceptID
 	}
 	return e
-}
-
-// preferredLabel picks the label to serve and reports its provenance, ordered
-// official > curated > derived: the most authoritative wording wins, and the
-// answer never depends on row order. Repository.Localization does order its
-// rows, but this holds regardless of whether an implementation does.
-func preferredLabel(labels []domain.Localization) (string, string) {
-	best := map[string]domain.Localization{}
-	for _, l := range labels {
-		if _, seen := best[l.Provenance]; !seen {
-			best[l.Provenance] = l
-		}
-	}
-	for _, provenance := range []string{provenanceOfficial, provenanceCurated, provenanceDerived} {
-		if l, ok := best[provenance]; ok {
-			return l.Value, l.Provenance
-		}
-	}
-	return "", ""
 }
 
 // translateNotFound maps the repository's ErrNotFound onto the driving port's

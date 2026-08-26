@@ -471,3 +471,57 @@ func TestDeriveGermanLabels_FirstCrosswalkWinsWhenSourceHasTwoSameQualifierTarge
 		t.Errorf("derived value = %q, want the first crosswalk's target name", got.Value)
 	}
 }
+
+// A situs row must pass the ingest; an invented provenance must not. Without the
+// fourth value every authored translation would be silently skipped.
+func TestIngestLocalizations_AcceptsSitusAndRejectsUnknownProvenance(t *testing.T) {
+	dir := t.TempDir()
+	writeCSV(t, dir, "localizations.csv",
+		"entity_type,entity_key,lang,field,value,source,provenance\n"+
+			"habitat_type,eunis@2021:R22,de,name,Maehwiese,situs@test,situs\n"+
+			"habitat_type,eunis@2021:R23,de,name,Irgendwas,x,erfunden\n")
+
+	repo := newFakeRepo()
+	n, err := IngestLocalizations(context.Background(), repo, filepath.Join(dir, "localizations.csv"))
+	if err != nil {
+		t.Fatalf("IngestLocalizations: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("count = %d, want 1 (the situs row, not the invented one)", n)
+	}
+	if len(repo.localizations) != 1 || repo.localizations[0].Provenance != "situs" {
+		t.Errorf("localizations = %+v, want exactly one situs row", repo.localizations)
+	}
+}
+
+// Provenance laundering: if a label situs invented could seed a derivation, the
+// result would come back out marked "derived" and read as traceable to an
+// official source, while the head of the chain is an invention. The seed set is
+// deliberately official/curated only.
+func TestDeriveGermanLabels_NeverSeedsFromSitus(t *testing.T) {
+	repo := newFakeRepo()
+	repo.crosswalks = []domain.Crosswalk{{
+		From:      domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"},
+		To:        domain.HabitatTypeKey{Typology: "annex1", Code: "6510"},
+		Qualifier: domain.QualifierSame,
+	}}
+	// The Annex I type's only German name is one situs wrote itself.
+	repo.localizations = []domain.Localization{{
+		EntityType: "habitat_type", EntityKey: "annex1:6510",
+		Lang: "de", Field: "name", Value: "Von situs erfunden",
+		Source: "situs@test", Provenance: provenanceSitus,
+	}}
+
+	n, err := DeriveGermanLabels(context.Background(), repo)
+	if err != nil {
+		t.Fatalf("DeriveGermanLabels: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("derived = %d, want 0 — a situs label must never seed a derivation", n)
+	}
+	for _, l := range repo.localizations {
+		if l.Provenance == provenanceDerived {
+			t.Errorf("wrote %+v seeded from a situs value — that is provenance laundering", l)
+		}
+	}
+}

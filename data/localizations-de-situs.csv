@@ -1,0 +1,276 @@
+# Von situs verfasste deutsche Namen für EUNIS-Level-3-Habitattypen.
+#
+# Diese Datei ist die Quelle für alle Zeilen mit provenance=situs: hier steht,
+# was situs selbst übersetzt hat, und keine externe Quelle steht dahinter.
+# pipelines/eurlex/merge.py führt sie mit den amtlichen EUR-Lex-Zeilen zu einer
+# localizations.csv zusammen und setzt source auf situs@<version>.
+#
+# EINE ZEILE JE HABITATTYP, mit dem englischen Original daneben: nur so ist eine
+# Übersetzung ohne Index-Abfrage prüfbar. name_en ist eine Kontrollspalte und
+# wandert NICHT in den Index; die Zusammenführung verwirft sie.
+#
+# name_de   — treu am englischen Original, biogeografische Zusätze mitübersetzt.
+#             Wer beide nebeneinander legt, muss die Zuordnung ohne Fachwissen
+#             bestätigen können.
+# vernacular_de — der etablierte deutsche Begriff. LEER, wo keiner denselben
+#             Umfang trägt. Das ist überwiegend dort der Fall, wo der Typ in
+#             Deutschland nicht vorkommt: für mediterrane, makaronesische und
+#             Schwarzmeer-Varianten gibt es keinen etablierten deutschen
+#             Begriff, weil sie im Deutschen nie benannt werden. Ein Begriff,
+#             der weiter reicht als der Typ, ist eine falsche Gleichsetzung und
+#             bleibt weg.
+#
+# Nur EUNIS-Level 3, und nur Typen OHNE '='-Crosswalk nach annex1 — wo eine
+# Ableitung aus dem amtlichen Anhang-I-Namen existiert, wird nichts erfunden.
+#
+# Gruppen in EUNIS-Reihenfolge: N Küste, Q Moore/Sümpfe, R Grasland,
+# S Gebüsch/Heide, T Wald, U Fels/Geröll, V Kulturland.
+code,name_en,name_de,vernacular_de
+# --- N — Küste, Strände, Dünen (21) ---
+N11,"Atlantic, Baltic and Arctic sand beach","Atlantischer, baltischer und arktischer Sandstrand",Sandstrand
+N12,"Mediterranean and Black Sea sand beach","Mediterraner und Schwarzmeer-Sandstrand",
+N13,"Atlantic and Baltic shifting coastal dune","Atlantische und baltische Wanderdüne der Küste",Weißdüne
+N14,"Mediterranean, Macaronesian and Black Sea shifting coastal dune","Mediterrane, makaronesische und Schwarzmeer-Wanderdüne der Küste",
+N15,"Atlantic and Baltic coastal dune grassland (grey dune)","Atlantischer und baltischer Küstendünen-Rasen (Graudüne)",Graudüne
+N16,"Mediterranean and Macaronesian coastal dune grassland (grey dune)","Mediterraner und makaronesischer Küstendünen-Rasen (Graudüne)",
+N17,"Black Sea coastal dune grassland (grey dune)","Schwarzmeer-Küstendünen-Rasen (Graudüne)",
+N1A,"Atlantic and Baltic coastal dune scrub","Atlantisches und baltisches Küstendünen-Gebüsch",Dünengebüsch
+N1B,"Mediterranean and Black Sea coastal dune scrub","Mediterranes und Schwarzmeer-Küstendünen-Gebüsch",
+N1C,"Macaronesian coastal dune scrub","Makaronesisches Küstendünen-Gebüsch",
+N1D,"Atlantic and Baltic broad-leaved coastal dune forest","Atlantischer und baltischer Laubwald der Küstendünen",
+N1E,"Black Sea broad-leaved coastal dune forest","Schwarzmeer-Laubwald der Küstendünen",
+N1F,"Baltic coniferous coastal dune forest","Baltischer Nadelwald der Küstendünen",
+N1H,"Atlantic and Baltic moist and wet dune slack","Atlantische und baltische feuchte bis nasse Dünentäler",Dünental
+N1J,"Mediterranean and Black Sea moist and wet dune slack","Mediterrane und Schwarzmeer-feuchte bis nasse Dünentäler",
+N21,"Atlantic, Baltic and Arctic coastal shingle beach","Atlantischer, baltischer und arktischer Kiesstrand der Küste",Kiesstrand
+N22,"Mediterranean and Black Sea coastal shingle beach","Mediterraner und Schwarzmeer-Kiesstrand der Küste",
+N31,"Atlantic and Baltic rocky sea cliff and shore","Atlantische und baltische Felsküste und Felsufer",Felsküste
+N32,"Mediterranean and Black Sea rocky sea cliff and shore","Mediterrane und Schwarzmeer-Felsküste und Felsufer",
+N34,"Atlantic and Baltic soft sea cliff","Atlantisches und baltisches Kliff in weichem Substrat",Kliff
+N35,"Mediterranean and Black Sea soft sea cliff","Mediterranes und Schwarzmeer-Kliff in weichem Substrat",
+# --- Q — Moore, Sümpfe, Röhrichte (19) ---
+Q11,"Raised bog","Hochmoor",Hochmoor
+Q13,"Ombrotrophic percolation mire","Ombrotrophes Durchströmungsmoor",
+Q21,"Oceanic valley mire","Ozeanisches Talmoor",
+Q22,"Poor fen","Sauerarmes Niedermoor",
+Q23,"Relict mire of Mediterranean mountains","Reliktmoor der mediterranen Gebirge",
+Q24,"Intermediate fen and soft-water spring mire","Übergangsmoor und Weichwasser-Quellmoor",Übergangsmoor
+Q25,"Non-calcareous quaking mire","Kalkarmes Schwingmoor",
+Q41,"Alkaline, calcareous, carbonate-rich small-sedge spring fen","Alkalisches, kalk- und karbonatreiches Kleinseggen-Quellmoor",Kalk-Kleinseggenried
+Q42,"Extremely rich moss-sedge fen","Außerordentlich basenreiches Moos-Seggen-Ried",
+Q43,"Tall-sedge base-rich fen","Basenreiches Großseggen-Niedermoor",
+Q44,"Calcareous quaking mire","Kalk-Schwingmoor",
+Q46,"Carpathian travertine fen with halophytes","Karpatisches Kalktuff-Niedermoor mit Salzpflanzen",
+Q51,"Tall-helophyte bed","Bestand hochwüchsiger Sumpfpflanzen",Röhricht
+Q52,"Small-helophyte bed","Bestand niederwüchsiger Sumpfpflanzen",Kleinröhricht
+Q53,"Tall-sedge bed","Großseggen-Bestand",Großseggenried
+Q54,"Inland saline or brackish helophyte bed","Binnenländischer Salz- oder Brackwasser-Sumpfpflanzenbestand",
+Q61,"Periodically exposed shore with stable, eutrophic sediments with pioneer or ephemeral vegetation","Zeitweilig trockenfallendes Ufer mit stabilen, eutrophen Sedimenten und Pionier- oder ephemerer Vegetation",
+Q62,"Periodically exposed shore with stable, mesotrophic sediments with pioneer or ephemeral vegetation","Zeitweilig trockenfallendes Ufer mit stabilen, mesotrophen Sedimenten und Pionier- oder ephemerer Vegetation",
+Q63,"Periodically exposed saline shore with pioneer or ephemeral vegetation","Zeitweilig trockenfallendes Salzufer mit Pionier- oder ephemerer Vegetation",
+# --- R — Grasland, Säume, Steppen (53) ---
+R11,"Pannonian and Pontic sandy steppe","Pannonische und pontische Sandsteppe",
+R12,"Cryptogam- and annual-dominated vegetation on siliceous rock outcrops","Kryptogamen- und annuellenreiche Vegetation auf Silikatfelskuppen",
+R13,"Cryptogam- and annual-dominated vegetation on calcareous and ultramafic rock outcrops","Kryptogamen- und annuellenreiche Vegetation auf Kalk- und Ultrabasitfelskuppen",
+R14,"Perennial rocky grassland of the Italian Peninsula","Ausdauernder Felsrasen der Apenninenhalbinsel",
+R15,"Continental dry rocky steppic grassland and dwarf scrub on chalk outcrops","Kontinentaler trockener Felssteppenrasen und Zwergstrauchflur auf Kreidefels",
+R16,"Perennial rocky grassland of Central and South-Eastern Europe","Ausdauernder Felsrasen Mittel- und Südosteuropas",
+R17,"Heavy-metal dry grassland of the Balkans","Schwermetall-Trockenrasen des Balkans",
+R18,"Perennial rocky calcareous grassland of subatlantic-submediterranean Europe","Ausdauernder Kalk-Felsrasen des subatlantisch-submediterranen Europas",
+R19,"Dry steppic submediterranean pasture of the Amphi-Adriatic region","Trockene submediterrane Steppenweide des amphiadriatischen Raums",
+R1A,"Semi-dry perennial calcareous grassland (meadow steppe)","Ausdauernder Kalk-Halbtrockenrasen (Wiesensteppe)",Kalk-Halbtrockenrasen
+R1B,"Continental dry grassland (true steppe)","Kontinentaler Trockenrasen (echte Steppe)",
+R1C,"Desert steppe","Wüstensteppe",
+R1D,"Mediterranean closely grazed dry grassland","Mediterraner kurzrasig beweideter Trockenrasen",
+R1E,"Mediterranean tall perennial dry grassland","Mediterraner hochwüchsiger ausdauernder Trockenrasen",
+R1F,"Mediterranean annual-rich dry grassland","Mediterraner annuellenreicher Trockenrasen",
+R1H,"Iberian oromediterranean basiphilous dry grassland","Iberischer oromediterraner basiphiler Trockenrasen",
+R1J,"Cyrno-Sardean oromediterranean siliceous dry grassland","Korsisch-sardischer oromediterraner Silikat-Trockenrasen",
+R1K,"Balkan and Anatolian oromediterranean dry grassland","Balkanischer und anatolischer oromediterraner Trockenrasen",
+R1L,"Madeiran oromediterranean siliceous dry grassland","Madeirischer oromediterraner Silikat-Trockenrasen",
+R1M,"Lowland to montane, dry to mesic grassland usually dominated by Nardus stricta","Tief- bis hochmontaner trockener bis frischer Rasen, meist von Nardus stricta beherrscht",Borstgrasrasen
+R1N,"Open Iberian supramediterranean dry acid and neutral grassland","Offener iberischer supramediterraner trockener saurer und neutraler Rasen",
+R1P,"Oceanic to subcontinental inland sand grassland on dry acid and neutral soils","Ozeanischer bis subkontinentaler Binnenland-Sandrasen auf trockenen sauren und neutralen Böden",Sandtrockenrasen
+R1Q,"Inland sanddrift and dune with siliceous grassland","Binnenland-Sandtriebe und -dünen mit Silikatrasen",Binnendüne
+R1R,"Mediterranean to Atlantic open, dry, acid and neutral grassland","Mediterran-atlantischer offener, trockener, saurer und neutraler Rasen",
+R1S,"Heavy-metal grassland in Western and Central Europe","Schwermetallrasen West- und Mitteleuropas",Schwermetallrasen
+R21,"Mesic permanent pasture of lowlands and mountains","Frische Dauerweide der Tief- und Berglagen",Fettweide
+R22,"Low and medium altitude hay meadow","Mähwiese der Tief- und mittleren Lagen",
+R24,"Iberian summer pasture (vallicar)","Iberische Sommerweide (Vallicar)",
+R31,"Mediterranean tall humid inland grassland","Mediterraner hochwüchsiger feuchter Binnenlandrasen",
+R32,"Mediterranean short moist grassland of lowlands","Mediterraner kurzrasiger Feuchtrasen der Tieflagen",
+R33,"Mediterranean short moist grassland of mountains","Mediterraner kurzrasiger Feuchtrasen der Gebirge",
+R34,"Submediterranean moist meadow","Submediterrane Feuchtwiese",
+R35,"Moist or wet mesotrophic to eutrophic hay meadow","Feuchte bis nasse mesotrophe bis eutrophe Mähwiese",Feuchtwiese
+R36,"Moist or wet mesotrophic to eutrophic pasture","Feuchte bis nasse mesotrophe bis eutrophe Weide",Feuchtweide
+R41,"Snow-bed vegetation","Schneebodenvegetation",Schneetälchen
+R42,"Boreal and arctic acidophilous alpine grassland","Borealer und arktischer säureliebender alpiner Rasen",
+R43,"Temperate acidophilous alpine grassland","Temperater säureliebender alpiner Rasen",Krummseggenrasen
+R44,"Arctic-alpine calcareous grassland","Arktisch-alpiner Kalkrasen",
+R45,"Alpine and subalpine calcareous grassland of the Balkans and Apennines","Alpiner und subalpiner Kalkrasen des Balkans und der Apenninen",
+R51,"Thermophilous forest fringe of base-rich soils","Wärmeliebender Waldsaum basenreicher Böden",
+R52,"Forest fringe of acidic nutrient-poor soils","Waldsaum saurer, nährstoffarmer Böden",
+R53,"Macaronesian thermophilous forest fringe","Makaronesischer wärmeliebender Waldsaum",
+R54,"Pteridium aquilinum vegetation","Adlerfarn-Vegetation",Adlerfarnflur
+R55,"Lowland moist or wet tall-herb and fern fringe","Feuchter bis nasser Hochstauden- und Farnsaum der Tieflagen",Feuchte Hochstaudenflur
+R56,"Montane to subalpine moist or wet tall-herb and fern fringe","Feuchter bis nasser Hochstauden- und Farnsaum der montanen bis subalpinen Lagen",Subalpine Hochstaudenflur
+R57,"Herbaceous forest clearing vegetation","Krautige Waldschlag-Vegetation",Schlagflur
+R62,"Continental inland salt steppe","Kontinentale Binnenland-Salzsteppe",
+R63,"Temperate inland salt marsh","Temperate Binnenland-Salzwiese",Binnensalzstelle
+R64,"Semi-desert salt pan","Halbwüsten-Salzpfanne",
+R65,"Continental subsaline alluvial pasture and meadow","Kontinentale subsaline Auenweide und -wiese",
+R71,"Temperate wooded pasture and meadow","Temperate Weide und Wiese mit Baumbestand",Hutewald
+R72,"Hemiboreal and boreal wooded pasture and meadow","Hemiboreale und boreale Weide und Wiese mit Baumbestand",
+R73,"Mediterranean wooded pasture and meadow","Mediterrane Weide und Wiese mit Baumbestand",
+# --- S — Gebüsch, Zwergstrauchheide, Macchie (38) ---
+S11,"Shrub tundra","Strauchtundra",
+S12,"Moss and lichen tundra","Moos- und Flechtentundra",
+S21,"Subarctic and alpine dwarf Salix scrub","Subarktisches und alpines Zwergweiden-Gebüsch",Zwergweiden-Gebüsch
+S22,"Alpine and subalpine ericoid heath","Alpine und subalpine Zwergstrauchheide",Alpine Zwergstrauchheide
+S23,"Alpine and subalpine Juniperus scrub","Alpines und subalpines Wacholder-Gebüsch",Latschen-Wacholder-Gebüsch
+S24,"Subalpine genistoid scrub of the Amphi-Adriatic region","Subalpines Ginster-Gebüsch des amphiadriatischen Raums",
+S25,"Subalpine and subarctic deciduous scrub","Subalpines und subarktisches Laubgebüsch",Grünerlen-Gebüsch
+S27,"Krummholz with conifers other than Pinus mugo","Krummholz mit Nadelbäumen außer Pinus mugo",
+S32,"Temperate Rubus scrub","Temperates Brombeer-Gebüsch",Brombeergebüsch
+S33,"Lowland to montane temperate and submediterranean genistoid scrub","Tief- bis montanes temperates und submediterranes Ginster-Gebüsch",Ginsterheide
+S34,"Balkan-Anatolian submontane genistoid scrub","Balkanisch-anatolisches submontanes Ginster-Gebüsch",
+S35,"Temperate and submediterranean thorn scrub","Temperates und submediterranes Dorngebüsch",Schlehen-Gebüsch
+S36,"Low steppic scrub","Niedriges Steppengebüsch",
+S37,"Corylus avellana scrub","Hasel-Gebüsch",Haselgebüsch
+S38,"Temperate forest clearing scrub","Temperates Waldschlag-Gebüsch",Vorwald
+S41,"Wet heath","Feuchtheide",Feuchtheide
+S42,"Dry heath","Trockenheide",Trockenheide
+S51,"Mediterranean maquis and arborescent matorral","Mediterrane Macchie und baumförmiges Matorral",
+S52,"Submediterranean pseudomaquis","Submediterrane Pseudomacchie",
+S53,"Spartium junceum scrub","Binsen-Ginster-Gebüsch",
+S54,"Thermomediterranean arid scrub","Thermomediterranes Trockengebüsch",
+S61,"Western basiphilous garrigue","Westliche basiphile Garigue",
+S62,"Western acidophilous garrigue","Westliche säureliebende Garigue",
+S63,"Eastern garrigue","Östliche Garigue",
+S64,"Macaronesian garrigue","Makaronesische Garigue",
+S67,"Aralo-Caspian semi-desert","Aralo-kaspische Halbwüste",
+S68,"Semi-desert sand dune with sparse scrub","Halbwüsten-Sanddüne mit lückigem Gebüsch",
+S71,"Western Mediterranean spiny heath","Westmediterrane Dornheide",
+S72,"Eastern Mediterranean spiny heath (phrygana)","Ostmediterrane Dornheide (Phrygana)",
+S73,"Western Mediterranean mountain hedgehog-heath","Westmediterrane Igelpolsterheide der Gebirge",
+S74,"Central Mediterranean mountain hedgehog-heath","Zentralmediterrane Igelpolsterheide der Gebirge",
+S75,"Eastern Mediterranean mountain hedgehog-heath","Ostmediterrane Igelpolsterheide der Gebirge",
+S76,"Canarian mountain hedgehog-heath","Kanarische Igelpolsterheide der Gebirge",
+S81,"Canarian xerophytic scrub","Kanarisches xerophytisches Gebüsch",
+S82,"Madeiran xerophytic scrub","Madeirisches xerophytisches Gebüsch",
+S91,"Temperate riparian scrub","Temperates Ufergebüsch",Weiden-Ufergebüsch
+S92,"Salix fen scrub","Weiden-Moorgebüsch",Weidenbruch
+S94,"Semi-desert riparian scrub","Halbwüsten-Ufergebüsch",
+# --- T — Wald und Gehölzbestände (46) ---
+T11,"Temperate Salix and Populus riparian forest","Temperater Weiden- und Pappel-Auwald",Weichholzaue
+T12,"Alnus glutinosa-Alnus incana forest on riparian and mineral soils","Schwarz- und Grauerlenwald auf Auen- und Mineralböden",Erlen-Auwald
+T14,"Mediterranean and Macaronesian riparian forest","Mediterraner und makaronesischer Auwald",
+T15,"Broadleaved swamp forest on non-acid peat","Laub-Sumpfwald auf basenreichem Torf",Erlenbruchwald
+T16,"Broadleaved mire forest on acid peat","Laub-Moorwald auf saurem Torf",Birken-Moorwald
+T17,"Fagus forest on non-acid soils","Buchenwald basenreicher Böden",Kalk-Buchenwald
+T18,"Fagus forest on acid soils","Buchenwald saurer Böden",Hainsimsen-Buchenwald
+T19,"Temperate and submediterranean thermophilous deciduous forest","Temperater und submediterraner wärmeliebender Laubwald",Wärmeliebender Eichenwald
+T1B,"Acidophilous Quercus forest","Säureliebender Eichenwald",Eichen-Birkenwald
+T1C,"Temperate and boreal mountain Betula and Populus tremula forest on mineral soils","Temperater und borealer Birken- und Aspenwald der Gebirge auf Mineralböden",
+T1D,"Southern European mountain Betula and Populus tremula forest on mineral soils","Südeuropäischer Birken- und Aspenwald der Gebirge auf Mineralböden",
+T1E,"Carpinus and Quercus mesic deciduous forest","Frischer Hainbuchen- und Eichen-Laubwald",Eichen-Hainbuchenwald
+T1G,"Alnus cordata forest","Herzblättriger-Erlen-Wald",
+T1H,"Broadleaved deciduous plantation of non site-native trees","Laubholzforst mit gebietsfremden Baumarten",
+T1J,"Deciduous self sown forest of non site-native trees","Spontan aufgewachsener Laubwald gebietsfremder Baumarten",
+T1K,"Broadleaved deciduous plantation of site-native trees","Laubholzforst mit gebietsheimischen Baumarten",
+T21,"Mediterranean evergreen Quercus forest","Mediterraner immergrüner Eichenwald",
+T22,"Mainland laurophyllous forest","Lorbeerwald des Festlands",
+T23,"Macaronesian laurophyllous forest","Makaronesischer Lorbeerwald",
+T25,"Phoenix theophrasti vegetation","Kretische-Dattelpalmen-Vegetation",
+T26,"Phoenix canariensis vegetation","Kanarische-Dattelpalmen-Vegetation",
+T27,"Ilex aquifolium forest","Stechpalmen-Wald",
+T28,"Macaronesian heathy forest","Makaronesischer Heidewald",
+T29,"Broadleaved evergreen plantation of non site-native trees","Immergrüner Laubholzforst mit gebietsfremden Baumarten",
+T2A,"Broadleaved evergreen plantation of site-native trees","Immergrüner Laubholzforst mit gebietsheimischen Baumarten",
+T32,"Temperate mountain Abies forest","Temperater Tannenwald der Gebirge",Tannenwald
+T33,"Mediterranean mountain Abies forest","Mediterraner Tannenwald der Gebirge",
+T34,"Temperate subalpine Larix, Pinus cembra and Pinus uncinata forest","Temperater subalpiner Lärchen-, Zirben- und Hakenkiefernwald",Lärchen-Zirbenwald
+T35,"Temperate continental Pinus sylvestris forest","Temperater kontinentaler Kiefernwald",
+T36,"Temperate and submediterranean montane Pinus sylvestris-Pinus nigra forest","Temperater und submediterraner montaner Kiefern- und Schwarzkiefernwald",
+T37,"Mediterranean montane Pinus sylvestris-Pinus nigra forest","Mediterraner montaner Kiefern- und Schwarzkiefernwald",
+T3A,"Mediterranean lowland to submontane Pinus forest","Mediterraner Kiefernwald der Tief- bis submontanen Lagen",
+T3C,"Taxus baccata forest","Eiben-Wald",Eibenwald
+T3D,"Mediterranean Cupressaceae forest","Mediterraner Zypressengewächse-Wald",
+T3E,"Macaronesian Juniperus forest","Makaronesischer Wacholderwald",
+T3F,"Dark taiga","Dunkle Taiga",
+T3G,"Pinus sylvestris light taiga","Kiefern-Helltaiga",
+T3H,"Larix light taiga","Lärchen-Helltaiga",
+T3J,"Pinus and Larix mire forest","Kiefern- und Lärchen-Moorwald",Kiefern-Moorwald
+T3K,"Picea mire forest","Fichten-Moorwald",Fichten-Moorwald
+T3L,"Coniferous self sown forest of non site-native trees","Spontan aufgewachsener Nadelwald gebietsfremder Baumarten",
+T3M,"Coniferous plantation of non site-native trees","Nadelholzforst mit gebietsfremden Baumarten",
+T3N,"Coniferous plantation of site-native trees","Nadelholzforst mit gebietsheimischen Baumarten",
+T41,"Early-stage natural and semi-natural forest and regrowth","Naturnaher Wald früher Entwicklungsstadien und Wiederaufwuchs",Pionierwald
+T42,"Coppice and early stage plantations","Niederwald und Forste früher Entwicklungsstadien",Niederwald
+T43,"Recently felled areas","Kürzlich geschlagene Flächen",Kahlschlag
+# --- U — Fels, Geröll, Schutt, Eis, Höhlen (33) ---
+U11,"Cave","Höhle",Höhle
+U12,"Disused underground mines and tunnels","Aufgelassene Bergwerke und Tunnel unter Tage",Stollen
+U21,"Boreal and arctic siliceous scree and block field","Boreale und arktische Silikatschutthalde und Blockfeld",
+U22,"Temperate high-mountain siliceous scree","Temperate Silikatschutthalde der Hochgebirge",Silikatschutthalde
+U24,"Mediterranean siliceous scree","Mediterrane Silikatschutthalde",
+U25,"Boreal and arctic base-rich scree and block field","Boreale und arktische basenreiche Schutthalde und Blockfeld",
+U26,"Temperate high-mountain base-rich scree and moraine","Temperate basenreiche Schutthalde und Moräne der Hochgebirge",Kalkschutthalde
+U28,"Western Mediterranean base-rich scree","Westmediterrane basenreiche Schutthalde",
+U29,"Eastern Mediterranean base-rich scree","Ostmediterrane basenreiche Schutthalde",
+U2A,"Crimean base-rich screes","Krimische basenreiche Schutthalden",
+U31,"Boreal and arctic siliceous inland cliff","Boreale und arktische Silikatfelswand des Binnenlands",
+U32,"Temperate high-mountain siliceous inland cliff","Temperate Silikatfelswand der Hochgebirge",
+U33,"Temperate, lowland to montane siliceous inland cliff","Temperate Silikatfelswand der Tief- bis montanen Lagen",Silikatfelsflur
+U34,"Mediterranean siliceous inland cliff","Mediterrane Silikatfelswand des Binnenlands",
+U35,"Boreal and arctic base-rich inland cliff","Boreale und arktische basenreiche Felswand des Binnenlands",
+U36,"Temperate high-mountain base-rich inland cliff","Temperate basenreiche Felswand der Hochgebirge",
+U37,"Temperate, lowland to montane base-rich inland cliff","Temperate basenreiche Felswand der Tief- bis montanen Lagen",Kalkfelsflur
+U38,"Mediterranean base-rich inland cliff","Mediterrane basenreiche Felswand des Binnenlands",
+U39,"Boreal ultramafic inland cliff","Boreale Ultrabasit-Felswand des Binnenlands",
+U3A,"Temperate ultramafic inland cliff","Temperate Ultrabasit-Felswand des Binnenlands",Serpentinit-Felsflur
+U3B,"Mediterranean ultramafic inland cliff","Mediterrane Ultrabasit-Felswand des Binnenlands",
+U3C,"Macaronesian inland cliff","Makaronesische Felswand des Binnenlands",
+U3D,"Wet inland cliff","Feuchte Felswand des Binnenlands",Sickerfelsen
+U41,"Snow pack","Schneefeld",Schneefeld
+U42,"Ice cap and glacier","Eiskappe und Gletscher",Gletscher
+U43,"Rock glacier and unvegetated ice-dominated moraine","Blockgletscher und vegetationsfreie eisreiche Moräne",Blockgletscher
+U51,"Wind exposed Arctic and Boreal summits","Windexponierte arktische und boreale Gipfelfluren",
+U52,"Polar desert","Polarwüste",
+U53,"Glacial moraines with very sparse or no vegetation","Gletschermoränen mit sehr lückiger oder fehlender Vegetation",Gletschervorfeld
+U61,"Subarctic volcanic field","Subarktisches Vulkanfeld",
+U62,"Mediterranean, Macaronesian and temperate volcanic field","Mediterranes, makaronesisches und temperates Vulkanfeld",
+U71,"Unvegetated or sparsely vegetated gravel bars in montane and alpine regions","Vegetationsfreie oder lückig bewachsene Kiesbänke der montanen und alpinen Lagen",Alpine Kiesbank
+U72,"Unvegetated or sparsely vegetated gravel bars in the Mediterranean region","Vegetationsfreie oder lückig bewachsene Kiesbänke des Mittelmeerraums",
+# --- V — Kulturland, Gärten, Hecken, Pflanzungen (31) ---
+V11,"Intensive unmixed crops","Intensiv genutzte Reinkulturen",Intensivacker
+V12,"Mixed crops of market gardens and horticulture","Mischkulturen des Gemüse- und Gartenbaus",Gärtnerei
+V13,"Arable land with unmixed crops grown by low-intensity agricultural methods","Acker mit Reinkulturen extensiver Bewirtschaftung",Extensivacker
+V14,"Inundated or inundatable croplands, including rice fields","Überflutete oder überflutbare Ackerflächen, einschließlich Reisfelder",
+V15,"Bare tilled, fallow or recently abandoned arable land","Offener bearbeiteter Boden, Brache oder kürzlich aufgegebener Acker",Ackerbrache
+V21,"Large-scale ornamental garden areas","Großflächige Zierpflanzungen",Parkanlage
+V22,"Small-scale ornamental and domestic garden areas","Kleinflächige Zier- und Hausgärten",Hausgarten
+V23,"Recently abandoned garden areas","Kürzlich aufgegebene Gartenflächen",
+V31,"Agriculturally-improved, re-seeded and heavily fertilised grassland, including sports fields and grass lawns","Landwirtschaftlich verbessertes, neu angesätes und stark gedüngtes Grünland, einschließlich Sportplätze und Zierrasen",Intensivgrünland
+V32,"Mediterranean subnitrophilous annual grasslands","Mediterrane subnitrophile Annuellenrasen",
+V33,"Dry mediterranean lands with unpalatable non-vernal herbaceous vegetation","Trockene mediterrane Flächen mit nicht verbissener, nicht frühjahrsgrüner Krautvegetation",
+V34,"Trampled xeric grasslands with annuals","Trittbelastete Trockenrasen mit Annuellen",Trittrasen
+V35,"Trampled mesophilous grasslands with annuals","Trittbelastete frische Rasen mit Annuellen",Trittrasen
+V36,"Alpine and subalpine enriched grassland","Alpiner und subalpiner nährstoffreicher Rasen",Lägerflur
+V37,"Annual anthropogenic herbaceous vegetation","Einjährige anthropogene Krautvegetation",Ruderalflur
+V38,"Dry perennial anthropogenic herbaceous vegetation","Trockene ausdauernde anthropogene Krautvegetation",Trockene Ruderalflur
+V39,"Mesic perennial anthropogenic herbaceous vegetation","Frische ausdauernde anthropogene Krautvegetation",Frische Ruderalflur
+V41,"Hedgerows of non-native species","Hecken aus gebietsfremden Arten",
+V42,"Highly-managed hedgerows of native species","Intensiv gepflegte Hecken aus heimischen Arten",Schnitthecke
+V43,"Species-rich hedgerows of native species","Artenreiche Hecken aus heimischen Arten",Artenreiche Feldhecke
+V44,"Species-poor hedgerows of native species","Artenarme Hecken aus heimischen Arten",
+V51,"Shrub plantations for whole-plant harvesting","Strauchpflanzungen zur Ganzpflanzen-Ernte",
+V52,"Shrub plantations for leaf or branch harvest","Strauchpflanzungen zur Blatt- oder Zweigernte",
+V53,"Shrub plantations for ornamental purposes or for fruit, other than vineyards","Strauchpflanzungen zu Zier- oder Fruchtzwecken, ausgenommen Weinberge",Beerenobstanlage
+V54,"Vineyards","Weinberge",Weinberg
+V61,"Broadleaved fruit and nut tree orchards","Laubbaum-Obst- und Nussanlagen",Streuobstwiese
+V62,"Evergreen orchards and groves","Immergrüne Obst- und Baumhaine",
+V63,"Lines of planted trees","Baumreihen",Baumreihe
+V64,"Small deciduous broadleaved planted other wooded land","Kleinflächige gepflanzte laubabwerfende Gehölzbestände",Feldgehölz
+V65,"Small evergreen broadleaved planted other wooded land","Kleinflächige gepflanzte immergrüne Laubgehölzbestände",
+V66,"Small coniferous planted other wooded land","Kleinflächige gepflanzte Nadelgehölzbestände",

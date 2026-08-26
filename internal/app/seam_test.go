@@ -152,11 +152,14 @@ func TestSeam_HabitatTypeInGermanCarriesTheDerivedLabelAndItsProvenance(t *testi
 	if got.NameEN != "Mesic hay meadow" {
 		t.Errorf("name_en = %q, want the English identity to survive localization", got.NameEN)
 	}
-	if got.NameDE != "Magere Flachland-Mähwiesen" {
-		t.Errorf("name_de = %q, want the derived German label", got.NameDE)
+	if got.NameDE == nil {
+		t.Fatal("name_de is absent, want the derived German label")
 	}
-	if got.NameDEProvenance != "derived" {
-		t.Errorf("name_de_provenance = %q, want %q", got.NameDEProvenance, "derived")
+	if got.NameDE.Value != "Magere Flachland-Mähwiesen" {
+		t.Errorf("name_de.value = %q, want the derived German label", got.NameDE.Value)
+	}
+	if got.NameDE.Provenance != "derived" {
+		t.Errorf("name_de.provenance = %q, want %q", got.NameDE.Provenance, "derived")
 	}
 
 	// Role bucketing over the pipeline's own role strings.
