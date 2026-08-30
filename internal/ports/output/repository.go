@@ -24,6 +24,14 @@ type IngestTx interface {
 	// UpsertDistribution records that a concept occurs in an area. Idempotent:
 	// a repinned artifact is simply re-ingested.
 	UpsertDistribution(conceptID string, a domain.Area) error
+	// UpsertTraitValue writes one trait_value row for conceptID. Idempotent
+	// like every other Upsert here: a repinned vocabulary is simply
+	// re-ingested.
+	UpsertTraitValue(conceptID string, tv domain.TraitValue) error
+	// UpsertTraitVocabulary records that vocab/version was (re-)ingested —
+	// pure ingest metadata for later drift detection, no factual content for
+	// the reader. Idempotent.
+	UpsertTraitVocabulary(vocab, version string) error
 	Commit() error
 	Rollback() error
 }
@@ -70,6 +78,14 @@ type Repository interface {
 	// ConceptIDs lists the distinct concept ids the index holds, so the
 	// distribution step knows what to ask for.
 	ConceptIDs(ctx context.Context) ([]string, error)
+	// Traits returns every domain.TraitSet situs holds for conceptID,
+	// grouped PER VOCABULARY, never mixed. vocabs empty means every
+	// ingested vocabulary; otherwise filtered (serves GET .../traits?vocab=).
+	Traits(ctx context.Context, conceptID string, vocabs []string) ([]domain.TraitSet, error)
+	// KnownVocabs lists the trait vocabularies the index has data for. A
+	// ?vocab= filter must be validated against this: an unknown value is an
+	// error, not an empty answer that could be a typo.
+	KnownVocabs(ctx context.Context) ([]string, error)
 }
 
 // A NameResolver can fail in two ways that must not be confused, because they
