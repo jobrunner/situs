@@ -68,7 +68,7 @@ Pipeline — keine neue Abhängigkeit in keiner der beiden Sprachen.
 | `internal/ports/input/services.go` | `SyntaxonRef` um `Author`/`ParentID` erweitert |
 | `internal/application/query.go` | `syntaxaOf` füllt die neuen Felder |
 | `internal/adapters/http/openapi.yaml`, `api/openapi/openapi.yaml` | `SyntaxonRef`-Schema erweitert (beide Kopien, byte-identisch) |
-| `internal/adapters/http/habitat_test.go` | JSON-Test für `author`/`parent_id` |
+| `internal/adapters/http/handlers_test.go` | JSON-Test für `author`/`parent_id` |
 | `docs/reference/measured-index.md` | Abschnitt „Syntaxa-Tiefe" mit echten neuen Zahlen |
 
 ---
@@ -1585,7 +1585,7 @@ git commit -m "feat(cmd): wire IngestSyntaxaHierarchy into situs ingest"
 - Modify: `internal/application/query.go`
 - Modify: `internal/adapters/http/openapi.yaml`
 - Modify: `api/openapi/openapi.yaml`
-- Modify: `internal/adapters/http/habitat_test.go`
+- Modify: `internal/adapters/http/handlers_test.go`
 
 **Interfaces:**
 - Consumes: `domain.Syntaxon.Author`/`ParentID` (Task 1).
@@ -1594,32 +1594,63 @@ git commit -m "feat(cmd): wire IngestSyntaxaHierarchy into situs ingest"
 
 - [ ] **Step 1: Fehlschlagenden HTTP-Test schreiben**
 
-In `internal/adapters/http/habitat_test.go` einen Test suchen, der
-`syntaxa` im JSON-Response prüft (z. B. den Test rund um
-`GET /v1/habitat-type/{typology}/{code}`), und dort ergänzen bzw. einen
-neuen Test hinzufügen, der prüft, dass ein Syntaxon mit gesetztem `Author`/
-`ParentID` beide Felder im JSON zeigt, UND dass ein Syntaxon ohne beide
-(EUNIS-Verband ohne FloraVeg-Treffer) sie **auslässt**:
+Die Tests für `GET /v1/habitat-type/{typology}/{code}` leben in
+`internal/adapters/http/handlers_test.go` (package `httpapi_test`) und laufen
+gegen einen `*fakeQueryService` (siehe `seededQueryService()`, dieselbe Datei,
+implementiert `input.QueryService` direkt — keine sqlite-`DB` involviert).
+`seededQueryService()` seedet u. a. `syntaxa := []input.SyntaxonRef{{ID:
+"BRO-01A", Rank: "alliance", Name: "Bromion erecti"}}`, verwendet für
+`eunis@2021:R22` und `wcvp-1`/`wcvp:concept:1`. Diesen Test danebenstellen —
+nicht die geteilte `syntaxa`-Variable in `seededQueryService` selbst ändern
+(die nutzen mehrere andere Tests unverändert), sondern einen eigenen Server
+mit eigener Fixture aufziehen:
 
 ```go
 func TestHabitatType_SyntaxonAuthorAndParentIDAreOmittedWhenEmpty(t *testing.T) {
-	// Wire the handler with a QueryService whose HabitatType returns one
-	// syntaxon with Author/ParentID set and, if the existing fixture already
-	// has a second unmatched syntaxon, verify that one omits both fields.
-	// Follow this file's existing setup pattern (stub QueryService or seeded
-	// sqlite DB — match whatever the surrounding tests in this file already
-	// use) and assert on the raw response body:
-	//   body must contain `"author":"Br.-Bl. 1931"` and `"parent_id":"AA01"`
-	//   for the matched syntaxon entry, and must NOT contain `"author":`
-	//   inside the unmatched syntaxon's JSON object.
+	q := seededQueryService()
+	detail := q.types["eunis@2021:R22"]
+	detail.Syntaxa = []input.SyntaxonRef{
+		{ID: "CAK-01C", Rank: "alliance", Name: "Cakilion edentulae Br.-Bl. 1931", Author: "Br.-Bl. 1931", ParentID: "AA01"},
+		{ID: "XYZ-01", Rank: "alliance", Name: "Nomatchion nowhereii"}, // no FloraVeg match
+	}
+	q.types["eunis@2021:R22"] = detail
+	srv := newTestServer(t, q)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/habitat-type/eunis@2021/R22", nil)
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got struct {
+		Syntaxa []struct {
+			ID       string `json:"id"`
+			Author   string `json:"author"`
+			ParentID string `json:"parent_id"`
+		} `json:"syntaxa"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if len(got.Syntaxa) != 2 {
+		t.Fatalf("syntaxa = %+v, want 2 entries", got.Syntaxa)
+	}
+	if got.Syntaxa[0].Author != "Br.-Bl. 1931" || got.Syntaxa[0].ParentID != "AA01" {
+		t.Errorf("matched syntaxon = %+v, want Author=%q ParentID=%q", got.Syntaxa[0], "Br.-Bl. 1931", "AA01")
+	}
+	if !strings.Contains(rec.Body.String(), `"id":"XYZ-01","rank":"alliance","name":"Nomatchion nowhereii"}`) {
+		t.Errorf("body = %s, want the unmatched syntaxon's object to omit author/parent_id entirely", rec.Body)
+	}
 }
 ```
 
-Diesen Test **konkret** nach dem tatsächlichen Setup-Stil der Nachbartests in
-`habitat_test.go` ausformulieren (stub `input.QueryService` vs. echte
-sqlite-`DB` — im File nachsehen, welches Muster dort für
-`GET /v1/habitat-type/...` bereits verwendet wird, und exakt diesem Muster
-folgen statt einer neuen Teststrategie).
+Die letzte Prüfung (exakter Teilstring ohne `"author"`/`"parent_id"`) belegt
+die `omitempty`-Zusage direkter als ein `!strings.Contains(..., "author")`
+über den ganzen Body, das auch am ersten (gesetzten) Eintrag vorbeischauen
+könnte — den erwarteten Teilstring vor dem Implementieren gegen die
+tatsächliche Feldreihenfolge in `input.SyntaxonRef` prüfen (Step 3 legt sie
+fest: `id, rank, name, author, parent_id`) und bei Abweichung anpassen.
 
 - [ ] **Step 2: Test laufen lassen, erwartet: rot**
 
@@ -1722,7 +1753,7 @@ make verify
 ```bash
 git add internal/ports/input/services.go internal/application/query.go \
   internal/adapters/http/openapi.yaml api/openapi/openapi.yaml \
-  internal/adapters/http/habitat_test.go
+  internal/adapters/http/handlers_test.go
 git commit -m "feat(http): expose SyntaxonRef.author/parent_id"
 ```
 
@@ -1821,16 +1852,19 @@ git commit -m "docs(reference): measure the FloraVeg syntaxa hierarchy against t
   passt nicht, Mehrdeutigkeit, fehlende Datei); alle vier „Prüfbare Zusagen" →
   jeweils durch einen konkreten Test in Task 4/6 abgesichert; Test-Dateien aus
   Abschnitt 5 der Spec → `internal/application/syntaxa_hierarchy_ingest_test.go`
-  (Task 4) und `internal/adapters/http/habitat_test.go` (Task 6) — die Spec
-  nennt zusätzlich `pipelines/eurovegchecklist/xlsx_to_csv_test.py`; dieser
-  Plan folgt stattdessen der bereits im Repo etablierten Namenskonvention
-  `test_xlsx_to_csv.py` (siehe `pipelines/eunis/`), inhaltlich identisch
-  abgedeckt.
-- **Platzhalter-Scan:** Task 6 Step 1 enthält bewusst keinen ausformulierten
-  Testkörper, sondern eine Anweisung, dem Nachbar-Testmuster zu folgen — das
-  ist eine reale Unsicherheit (welches Test-Setup `habitat_test.go` schon
-  benutzt, unbekannt ohne den vollen Dateiinhalt zu lesen), keine Bequemlichkeit.
-  Jeder andere Testkörper im Plan ist vollständig ausformuliert.
+  (Task 4) und `internal/adapters/http/handlers_test.go` (Task 6, korrigiert —
+  die Spec selbst nennt fälschlich `habitat_test.go`, eine Datei, die im Repo
+  nicht existiert; der tatsächliche Dateiname und das tatsächliche
+  Test-Setup-Muster (`*fakeQueryService` über `seededQueryService()`, kein
+  sqlite) wurden vor Fertigstellung dieses Plans gegen den echten Dateiinhalt
+  geprüft) — die Spec nennt zusätzlich `pipelines/eurovegchecklist/
+  xlsx_to_csv_test.py`; dieser Plan folgt stattdessen der bereits im Repo
+  etablierten Namenskonvention `test_xlsx_to_csv.py` (siehe
+  `pipelines/eunis/`), inhaltlich identisch abgedeckt.
+- **Platzhalter-Scan:** keine offenen Stellen mehr — Task 6 Step 1 war
+  ursprünglich als "folge dem Nachbarmuster"-Anweisung offen gelassen, ist
+  inzwischen (vor Task-6-Dispatch) gegen den echten Inhalt von
+  `handlers_test.go` konkretisiert und vollständig ausformuliert.
 - **Typkonsistenz:** `domain.Syntaxon{ID,Rank,Name,Author,ParentID}` (Task 1)
   → `input.SyntaxonRef{ID,Rank,Name,Author,ParentID}` (Task 6) →
   `SyntaxaHierarchyReport{ClassesWritten,OrdersWritten,AlliancesMatched,

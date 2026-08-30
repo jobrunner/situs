@@ -146,4 +146,5 @@ Fundament-Spec und Implementierungsplan liegen unter `docs/`:
 | FFH-Richtlinie Anhang I, deutsche Fassung (EUR-Lex) | amtliche deutsche LRT-Bezeichnungen — **noch nicht gepinnt**, siehe oben | EU-Recht |
 
 Die Artefakte werden **gepinnt** (URL + Prüfsumme in
-`pipelines/eunis/manifest.yaml`) und **nicht** ins Repo eingecheckt.
+`pipelines/eunis/manifest.yaml`, `pipelines/eurovegchecklist/manifest.yaml`)
+und **nicht** ins Repo eingecheckt.

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -439,6 +440,10 @@ type fakeRepo struct {
 		key        domain.HabitatTypeKey
 		syntaxonID string
 	}
+	authorUpdates []struct {
+		id, name, author, parentID string
+	}
+	allSyntaxaErr error
 	speciesRoles  []domain.SpeciesRole
 	localizations []domain.Localization
 	distribution  []fakeDistribution
@@ -553,6 +558,36 @@ func (r *fakeRepo) UpsertSyntaxon(s domain.Syntaxon) error {
 	}
 	r.syntaxa = append(r.syntaxa, s)
 	return nil
+}
+
+func (r *fakeRepo) UpsertSyntaxonAuthor(id, name, author, parentID string) error {
+	if err := r.failIfNamed("UpsertSyntaxonAuthor"); err != nil {
+		return err
+	}
+	r.authorUpdates = append(r.authorUpdates, struct{ id, name, author, parentID string }{id, name, author, parentID})
+	for i := range r.syntaxa {
+		if r.syntaxa[i].ID == id {
+			r.syntaxa[i].Name = name
+			r.syntaxa[i].Author = author
+			if parentID != "" {
+				r.syntaxa[i].ParentID = parentID
+			}
+		}
+	}
+	return nil
+}
+
+func (r *fakeRepo) AllSyntaxa(_ context.Context) ([]domain.Syntaxon, error) {
+	if r.allSyntaxaErr != nil {
+		return nil, r.allSyntaxaErr
+	}
+	out := make([]domain.Syntaxon, len(r.syntaxa))
+	copy(out, r.syntaxa)
+	// The interface promises id order (the sqlite adapter does ORDER BY id) —
+	// keep the fake honest about it rather than relaxing the contract, even
+	// though today's callers don't depend on the order.
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
 }
 
 func (r *fakeRepo) LinkSyntaxon(key domain.HabitatTypeKey, syntaxonID string) error {
