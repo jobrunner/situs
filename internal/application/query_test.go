@@ -585,12 +585,6 @@ func (r *fakeRepo) Syntaxa(_ context.Context, key domain.HabitatTypeKey) ([]doma
 	return out, nil
 }
 
-func (r *fakeRepo) AllSyntaxa(_ context.Context) ([]domain.Syntaxon, error) {
-	out := make([]domain.Syntaxon, len(r.syntaxa))
-	copy(out, r.syntaxa)
-	return out, nil
-}
-
 func (r *fakeRepo) HabitatTypeKeysForSyntaxon(_ context.Context, syntaxonID string) ([]domain.HabitatTypeKey, error) {
 	if r.syntaxonKeysErr != nil {
 		return nil, r.syntaxonKeysErr

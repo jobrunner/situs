@@ -439,6 +439,10 @@ type fakeRepo struct {
 		key        domain.HabitatTypeKey
 		syntaxonID string
 	}
+	authorUpdates []struct {
+		id, author, parentID string
+	}
+	allSyntaxaErr error
 	speciesRoles  []domain.SpeciesRole
 	localizations []domain.Localization
 	distribution  []fakeDistribution
@@ -559,16 +563,25 @@ func (r *fakeRepo) UpsertSyntaxonAuthor(id, author, parentID string) error {
 	if err := r.failIfNamed("UpsertSyntaxonAuthor"); err != nil {
 		return err
 	}
-	for i, s := range r.syntaxa {
-		if s.ID == id {
+	r.authorUpdates = append(r.authorUpdates, struct{ id, author, parentID string }{id, author, parentID})
+	for i := range r.syntaxa {
+		if r.syntaxa[i].ID == id {
 			r.syntaxa[i].Author = author
 			if parentID != "" {
 				r.syntaxa[i].ParentID = parentID
 			}
-			return nil
 		}
 	}
 	return nil
+}
+
+func (r *fakeRepo) AllSyntaxa(_ context.Context) ([]domain.Syntaxon, error) {
+	if r.allSyntaxaErr != nil {
+		return nil, r.allSyntaxaErr
+	}
+	out := make([]domain.Syntaxon, len(r.syntaxa))
+	copy(out, r.syntaxa)
+	return out, nil
 }
 
 func (r *fakeRepo) LinkSyntaxon(key domain.HabitatTypeKey, syntaxonID string) error {
