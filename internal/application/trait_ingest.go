@@ -144,23 +144,9 @@ func IngestTraits(ctx context.Context, repo output.Repository, resolver output.N
 	sort.Strings(vocabKeys) // reproducible order, not map iteration order
 
 	rep := TraitReport{PerVocab: map[string]VocabReport{}, Skipped: []string{}}
-	byVocab := map[string][]traitRow{}
-	var all []traitRow
-	skipped := 0
-	for _, vocab := range vocabKeys {
-		path := csvPaths[vocab]
-		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-			rep.Skipped = append(rep.Skipped, vocab)
-			continue
-		}
-		_, file := filepath.Split(path)
-		skip := newRowSkipper(&skipped, file, "trait value")
-		rows, err := readTraitRows(ctx, path, vocab, skip)
-		if err != nil {
-			return TraitReport{}, fmt.Errorf("reading %s trait CSV: %w", vocab, err)
-		}
-		byVocab[vocab] = rows
-		all = append(all, rows...)
+	byVocab, all, err := readTraitCSVs(ctx, vocabKeys, csvPaths, &rep.Skipped)
+	if err != nil {
+		return TraitReport{}, err
 	}
 
 	resolved, err := resolver.Resolve(ctx, distinctTaxa(all))
@@ -173,28 +159,67 @@ func IngestTraits(ctx context.Context, repo output.Repository, resolver output.N
 		return TraitReport{}, fmt.Errorf("beginning trait ingest transaction: %w", err)
 	}
 
-	for _, vocab := range vocabKeys {
-		rows, ok := byVocab[vocab]
-		if !ok {
-			continue
+	if err := writeTraitRows(tx, vocabKeys, byVocab, resolved, &rep); err != nil {
+		if rbErr := tx.Rollback(); rbErr != nil {
+			return TraitReport{}, fmt.Errorf("%w (rollback also failed: %w)", err, rbErr)
 		}
-		vr, verr := writeVocab(tx, vocab, rows, resolved)
-		if verr != nil {
-			if rbErr := tx.Rollback(); rbErr != nil {
-				return TraitReport{}, fmt.Errorf("%w (rollback also failed: %w)", verr, rbErr)
-			}
-			return TraitReport{}, verr
-		}
-		rep.PerVocab[vocab] = vr
-		rep.Rows += vr.Rows
-		rep.Resolved += vr.Resolved
-		rep.Unresolved += vr.Unresolved
+		return TraitReport{}, err
 	}
 
 	if err := tx.Commit(); err != nil {
 		return TraitReport{}, fmt.Errorf("committing trait ingest transaction: %w", err)
 	}
 	return rep, nil
+}
+
+// readTraitCSVs reads every vocab's canonical CSV named in csvPaths, in
+// vocabKeys order. A missing file is appended to skipped and the vocabulary
+// is left out of byVocab entirely, matching IngestTraits' original inline
+// loop.
+func readTraitCSVs(ctx context.Context, vocabKeys []string, csvPaths map[string]string,
+	skipped *[]string) (map[string][]traitRow, []traitRow, error) {
+	byVocab := map[string][]traitRow{}
+	var all []traitRow
+	rowsSkipped := 0
+	for _, vocab := range vocabKeys {
+		path := csvPaths[vocab]
+		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+			*skipped = append(*skipped, vocab)
+			continue
+		}
+		_, file := filepath.Split(path)
+		skip := newRowSkipper(&rowsSkipped, file, "trait value")
+		rows, err := readTraitRows(ctx, path, vocab, skip)
+		if err != nil {
+			return nil, nil, fmt.Errorf("reading %s trait CSV: %w", vocab, err)
+		}
+		byVocab[vocab] = rows
+		all = append(all, rows...)
+	}
+	return byVocab, all, nil
+}
+
+// writeTraitRows writes every vocab present in byVocab through tx (in
+// vocabKeys order) and tallies the result into rep. It does not commit or
+// roll back tx — that stays IngestTraits' call, since only it knows whether
+// the transaction is otherwise done.
+func writeTraitRows(tx output.IngestTx, vocabKeys []string, byVocab map[string][]traitRow,
+	resolved map[string]string, rep *TraitReport) error {
+	for _, vocab := range vocabKeys {
+		rows, ok := byVocab[vocab]
+		if !ok {
+			continue
+		}
+		vr, err := writeVocab(tx, vocab, rows, resolved)
+		if err != nil {
+			return err
+		}
+		rep.PerVocab[vocab] = vr
+		rep.Rows += vr.Rows
+		rep.Resolved += vr.Resolved
+		rep.Unresolved += vr.Unresolved
+	}
+	return nil
 }
 
 // writeVocab clears vocab's prior rows and writes rows in their place. A
