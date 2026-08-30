@@ -153,6 +153,7 @@ type ingestOutput struct {
 	DistributionFailed int
 	Localizations      int
 	DerivedLabels      int
+	Traits             application.TraitReport
 }
 
 func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath string) error {
@@ -187,6 +188,16 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath string) er
 		return fmt.Errorf("ingesting species distribution: %w", err)
 	}
 
+	traitCSVPaths := map[string]string{
+		"eive":       filepath.Join(csvDir, "eive_traits.csv"),
+		"tichy2023":  filepath.Join(csvDir, "tichy_traits.csv"),
+		"midolo2023": filepath.Join(csvDir, "midolo_traits.csv"),
+	}
+	traitReport, err := application.IngestTraits(ctx, db, resolver, traitCSVPaths)
+	if err != nil {
+		return fmt.Errorf("ingesting traits: %w", err)
+	}
+
 	localizations, err := application.IngestLocalizations(ctx, db, filepath.Join(csvDir, "localizations.csv"))
 	if err != nil {
 		return fmt.Errorf("ingesting localizations from %q: %w", csvDir, err)
@@ -217,6 +228,7 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath string) er
 		DistributionFailed: distSrc.FailedConcepts(),
 		Localizations:      localizations,
 		DerivedLabels:      derivedLabels,
+		Traits:             traitReport,
 	}
 	enc := json.NewEncoder(cmd.OutOrStdout())
 	enc.SetIndent("", "  ")

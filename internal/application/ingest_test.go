@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -442,6 +443,8 @@ type fakeRepo struct {
 	speciesRoles  []domain.SpeciesRole
 	localizations []domain.Localization
 	distribution  []fakeDistribution
+	traitValues   []fakeTraitValue
+	traitVocabs   []fakeTraitVocab
 	committed     bool
 	rolledBack    bool
 
@@ -472,12 +475,28 @@ type fakeRepo struct {
 	areasErr error
 	// conceptIDsErr fails ConceptIDs, exercising IngestDistribution's error path.
 	conceptIDsErr error
+	// knownVocabsErr fails KnownVocabs, exercising QueryService.Traits' ?vocab=
+	// validation error path.
+	knownVocabsErr error
+	// traitsErr fails Traits, exercising QueryService.Traits' data-fetch error path.
+	traitsErr error
 }
 
 // fakeDistribution is one recorded UpsertDistribution call.
 type fakeDistribution struct {
 	ConceptID string
 	Area      domain.Area
+}
+
+// fakeTraitValue is one recorded UpsertTraitValue call.
+type fakeTraitValue struct {
+	ConceptID string
+	Value     domain.TraitValue
+}
+
+// fakeTraitVocab is one recorded UpsertTraitVocabulary call.
+type fakeTraitVocab struct {
+	Vocab, Version string
 }
 
 func newFakeRepo() *fakeRepo { return &fakeRepo{} }
@@ -588,6 +607,82 @@ func (r *fakeRepo) UpsertDistribution(conceptID string, a domain.Area) error {
 	}
 	r.distribution = append(r.distribution, fakeDistribution{ConceptID: conceptID, Area: a})
 	return nil
+}
+
+func (r *fakeRepo) UpsertTraitValue(conceptID string, tv domain.TraitValue) error {
+	if err := r.failIfNamed("UpsertTraitValue"); err != nil {
+		return err
+	}
+	r.traitValues = append(r.traitValues, fakeTraitValue{ConceptID: conceptID, Value: tv})
+	return nil
+}
+
+// DeleteTraitValuesForVocab drops every recorded traitValue for vocab,
+// mirroring the sqlite adapter's DELETE FROM trait_value WHERE vocab = ?.
+func (r *fakeRepo) DeleteTraitValuesForVocab(vocab string) error {
+	if err := r.failIfNamed("DeleteTraitValuesForVocab"); err != nil {
+		return err
+	}
+	kept := r.traitValues[:0]
+	for _, tv := range r.traitValues {
+		if tv.Value.Vocab != vocab {
+			kept = append(kept, tv)
+		}
+	}
+	r.traitValues = kept
+	return nil
+}
+
+func (r *fakeRepo) UpsertTraitVocabulary(vocab, version string) error {
+	if err := r.failIfNamed("UpsertTraitVocabulary"); err != nil {
+		return err
+	}
+	r.traitVocabs = append(r.traitVocabs, fakeTraitVocab{Vocab: vocab, Version: version})
+	return nil
+}
+
+func (r *fakeRepo) Traits(_ context.Context, conceptID string, vocabs []string) ([]domain.TraitSet, error) {
+	if r.traitsErr != nil {
+		return nil, r.traitsErr
+	}
+	sets := map[string]*domain.TraitSet{}
+	var order []string
+	for _, tv := range r.traitValues {
+		if tv.ConceptID != conceptID {
+			continue
+		}
+		if len(vocabs) > 0 && !slices.Contains(vocabs, tv.Value.Vocab) {
+			continue
+		}
+		key := tv.Value.Vocab + "@" + tv.Value.VocabVersion
+		set, ok := sets[key]
+		if !ok {
+			set = &domain.TraitSet{Vocab: tv.Value.Vocab, VocabVersion: tv.Value.VocabVersion}
+			sets[key] = set
+			order = append(order, key)
+		}
+		set.Values = append(set.Values, tv.Value)
+	}
+	out := make([]domain.TraitSet, 0, len(order))
+	for _, key := range order {
+		out = append(out, *sets[key])
+	}
+	return out, nil
+}
+
+func (r *fakeRepo) KnownVocabs(_ context.Context) ([]string, error) {
+	if r.knownVocabsErr != nil {
+		return nil, r.knownVocabsErr
+	}
+	seen := map[string]bool{}
+	out := []string{}
+	for _, tv := range r.traitVocabs {
+		if !seen[tv.Vocab] {
+			seen[tv.Vocab] = true
+			out = append(out, tv.Vocab)
+		}
+	}
+	return out, nil
 }
 
 func (r *fakeRepo) AreasForConcepts(_ context.Context, conceptIDs []string, scheme string) (map[string][]string, error) {

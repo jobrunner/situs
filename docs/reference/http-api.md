@@ -19,6 +19,7 @@ decken).
 | `GET /v1/species/{conceptId}/habitat-types` | Habitattypen einer Art (mit Rolle) |
 | `POST /v1/species/habitat-types` | Batch über Konzept-IDs (`concept_ids`) |
 | `GET /v1/syntaxon/{id}/habitat-types` | Habitattypen einer Pflanzengesellschaft |
+| `GET /v1/species/{conceptId}/traits?vocab=` | Zeigerwerte einer Art, optional nach Vokabular gefiltert |
 
 **Die Leseseite läuft ohne hostus.** Jede Route hier wird allein aus der lokalen
 SQLite-Datei beantwortet; kein Lesepfad ruft einen Upstream-Dienst. hostus wird
@@ -48,6 +49,14 @@ Anhang-I-Entsprechungen, in beiden Richtungen abfragbar. Sie ist leer, wenn es
 keine gibt — bei Anhang I ist das der Normalfall. Der Qualifier liest sich immer
 als „abgefragter Typ *qualifier* dieser Typ"; eine gespeicherte Zeile, die auf
 den abgefragten Typ zeigt, wird dafür invertiert (`<` ↔ `>`).
+
+## Zeigerwerte: `GET /v1/species/{conceptId}/traits`
+
+Pflanzenökologische Zeigerwerte (EIVE, Tichý, Midolo) zu einer Konzept-ID,
+optional per `?vocab=` auf ein Vokabular gefiltert. Wie die Habitat-Routen
+autark und mit demselben Leseverhalten: ein unbekanntes Vokabular ist
+`400 INVALID_QUERY`, ein Konzept ohne Trait-Daten liefert ein leeres Array,
+kein 404.
 
 ## Sprache
 

@@ -93,3 +93,28 @@ CREATE TABLE IF NOT EXISTS species_distribution (
 );
 CREATE INDEX IF NOT EXISTS idx_species_distribution_area
   ON species_distribution(area_scheme, area_code);
+
+-- Pflanzenökologische Zeigerwerte (EIVE, Tichý, Midolo). Jede Zeile ist ein
+-- Wert einer Dimension in einem Vokabular für ein Konzept; niche_width/
+-- n_systems sind NULL, wenn das Vokabular sie nicht liefert (Tichý/Midolo
+-- nie, EIVE immer) — nie 0/0.0.
+CREATE TABLE IF NOT EXISTS trait_value (
+  concept_id    TEXT NOT NULL,
+  vocab         TEXT NOT NULL,
+  vocab_version TEXT NOT NULL,
+  dim           TEXT NOT NULL,
+  value         REAL NOT NULL,
+  niche_width   REAL,
+  n_systems     INTEGER,
+  PRIMARY KEY (concept_id, vocab, vocab_version, dim)
+);
+CREATE INDEX IF NOT EXISTS idx_trait_value_concept_id ON trait_value(concept_id);
+
+-- Reines Ingest-Metadatum: wann wurde welche Vokabular-Version zuletzt
+-- geschrieben. Kein fachlicher Inhalt für den Leser.
+CREATE TABLE IF NOT EXISTS trait_vocabulary (
+  vocab       TEXT NOT NULL,
+  version     TEXT NOT NULL,
+  ingested_at TEXT NOT NULL,
+  PRIMARY KEY (vocab, version)
+);

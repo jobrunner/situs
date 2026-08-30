@@ -569,8 +569,13 @@ func TestIngestTx_MethodsWrapErrorsOnAClosedTransaction(t *testing.T) {
 		"UpsertDistribution": func() error {
 			return tx.UpsertDistribution("wcvp:concept:1", domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"})
 		},
-		"Commit":   func() error { return tx.Commit() },
-		"Rollback": func() error { return tx.Rollback() },
+		"UpsertTraitValue": func() error {
+			return tx.UpsertTraitValue("wcvp:concept:1", domain.TraitValue{Vocab: "eive", VocabVersion: "1.0", Dim: "M", Value: 1})
+		},
+		"UpsertTraitVocabulary":     func() error { return tx.UpsertTraitVocabulary("eive", "1.0") },
+		"DeleteTraitValuesForVocab": func() error { return tx.DeleteTraitValuesForVocab("eive") },
+		"Commit":                    func() error { return tx.Commit() },
+		"Rollback":                  func() error { return tx.Rollback() },
 	}
 	for name, call := range cases {
 		err := call()
