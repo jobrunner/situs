@@ -96,6 +96,20 @@ func readSpeciesRows(ctx context.Context, dir, file string, skip rowSkipper) ([]
 	return rows, err
 }
 
+// splitCSVPath is filepath.Split with one correction: a bare relative
+// filename ("crosswalk.csv", no directory component) splits to dir="",
+// which os.OpenRoot (csvReader's confinement mechanism) does not treat as
+// "the current directory" the way many other os functions do — normalizing
+// to "." keeps a plain relative --crosswalk/--aggregate-members flag value
+// working.
+func splitCSVPath(csvPath string) (dir, file string) {
+	dir, file = filepath.Split(csvPath)
+	if dir == "" {
+		dir = "."
+	}
+	return dir, file
+}
+
 // loadCrosswalk reads eurosl_crosswalk.csv (name,concept_id) into a
 // name -> concept-ids dictionary. More than one row for a name is not
 // malformed — it is how an ambiguous name is recorded — so every id is kept
@@ -104,7 +118,7 @@ func readSpeciesRows(ctx context.Context, dir, file string, skip rowSkipper) ([]
 // one would otherwise misclassify the name as ambiguous ({"", "wcvp:..."}
 // counts as two distinct ids) instead of simply unresolved.
 func loadCrosswalk(ctx context.Context, csvPath string) (map[string][]string, int, error) {
-	dir, file := filepath.Split(csvPath)
+	dir, file := splitCSVPath(csvPath)
 	crosswalk := map[string][]string{}
 	skipped := 0
 	skip := newRowSkipper(&skipped, file, "crosswalk entry")
@@ -146,7 +160,7 @@ func loadAggregateMembers(ctx context.Context, csvPath string) (map[string][]agg
 		return nil, 0, fmt.Errorf("checking %s: %w", csvPath, err)
 	}
 
-	dir, file := filepath.Split(csvPath)
+	dir, file := splitCSVPath(csvPath)
 	members := map[string][]aggregateMember{}
 	skipped := 0
 	skip := newRowSkipper(&skipped, file, "aggregate member")
@@ -295,7 +309,7 @@ func deriveAggregateMembers(tx output.IngestTx, r speciesRow, crosswalk map[stri
 // is extra information).
 func IngestSpeciesRoles(ctx context.Context, repo output.Repository, csvPath, crosswalkPath,
 	aggregateMembersPath string) (SpeciesReport, error) {
-	dir, file := filepath.Split(csvPath)
+	dir, file := splitCSVPath(csvPath)
 
 	skipped := 0
 	rows, err := readSpeciesRows(ctx, dir, file, newRowSkipper(&skipped, file, "species role"))

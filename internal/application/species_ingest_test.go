@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -33,6 +34,49 @@ func seedSpeciesRolesDir(t *testing.T) string {
 	writeCSV(t, dir, "aggregate_members.csv",
 		"aggregate_concept_id,member_concept_id,member_name\n")
 	return dir
+}
+
+// splitCSVPath must not leave dir=="" for a bare relative filename:
+// os.OpenRoot("") does not mean "the current directory" the way many other
+// os functions treat an empty path.
+func TestSplitCSVPath_NormalizesABareFilenameToTheCurrentDirectory(t *testing.T) {
+	dir, file := splitCSVPath("crosswalk.csv")
+	if dir != "." {
+		t.Errorf("dir = %q, want %q", dir, ".")
+	}
+	if file != "crosswalk.csv" {
+		t.Errorf("file = %q, want %q", file, "crosswalk.csv")
+	}
+}
+
+// A real end-to-end exercise of the bug Copilot flagged: --crosswalk (and
+// --aggregate-members) passed as bare relative filenames, with no directory
+// component, must still resolve — the CLI's own IngestTx-facing entry point,
+// not just the internal helper.
+func TestIngestSpeciesRoles_ResolvesRelativePathsWithNoDirectoryComponent(t *testing.T) {
+	dir := seedSpeciesRolesDir(t)
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(cwd); err != nil {
+			t.Fatalf("restoring cwd: %v", err)
+		}
+	})
+
+	repo := newFakeRepo()
+	rep, err := IngestSpeciesRoles(context.Background(), repo,
+		"species_roles.csv", "eurosl_crosswalk.csv", "aggregate_members.csv")
+	if err != nil {
+		t.Fatalf("IngestSpeciesRoles: %v", err)
+	}
+	if rep.Rows != 2 {
+		t.Errorf("Rows = %d, want 2", rep.Rows)
+	}
 }
 
 func TestIngestSpeciesRoles_ResolvesViaTheLocalCrosswalk(t *testing.T) {
