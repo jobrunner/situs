@@ -264,64 +264,69 @@ func TestIngestTx_UpsertSyntaxonRoundTripsAuthor(t *testing.T) {
 	}
 }
 
-func TestIngestTx_UpsertSyntaxonAuthor(t *testing.T) {
-	db := openTestDB(t)
-	ctx := t.Context()
-
-	seed := func() {
-		tx, err := db.Begin(ctx)
-		if err != nil {
-			t.Fatalf("Begin: %v", err)
-		}
-		if err := tx.UpsertSyntaxon(domain.Syntaxon{ID: "arrhenatherion", Rank: "alliance", Name: "Arrhenatherion"}); err != nil {
-			t.Fatalf("UpsertSyntaxon: %v", err)
-		}
-		if err := tx.Commit(); err != nil {
-			t.Fatalf("Commit: %v", err)
-		}
-	}
-	seed()
-
+// withTx begins a transaction on db, runs fn, and commits — the shared shape
+// of every ingest step in this test, so a caller states only what changes.
+func withTx(ctx context.Context, t *testing.T, db *DB, fn func(tx output.IngestTx) error) {
+	t.Helper()
 	tx, err := db.Begin(ctx)
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	if err := tx.UpsertSyntaxonAuthor("arrhenatherion", "Koch 1926", "AA01"); err != nil {
-		t.Fatalf("UpsertSyntaxonAuthor: %v", err)
+	if err := fn(tx); err != nil {
+		t.Fatalf("ingest step: %v", err)
 	}
 	if err := tx.Commit(); err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
+}
 
-	got, err := db.Syntaxon(ctx, "arrhenatherion")
+// assertSyntaxonAuthorAndRank fetches id and checks that UpsertSyntaxonAuthor
+// set Author/ParentID as wanted without touching Rank/Name.
+func assertSyntaxonAuthorAndRank(ctx context.Context, t *testing.T, db *DB, id, wantAuthor, wantParentID, wantRank, wantName string) {
+	t.Helper()
+	got, err := db.Syntaxon(ctx, id)
 	if err != nil {
 		t.Fatalf("Syntaxon: %v", err)
 	}
-	if got.Author != "Koch 1926" || got.ParentID != "AA01" {
-		t.Errorf("got = %+v, want Author=%q ParentID=%q", got, "Koch 1926", "AA01")
+	if got.Author != wantAuthor || got.ParentID != wantParentID {
+		t.Errorf("got = %+v, want Author=%q ParentID=%q", got, wantAuthor, wantParentID)
 	}
-	if got.Rank != "alliance" || got.Name != "Arrhenatherion" {
+	if got.Rank != wantRank || got.Name != wantName {
 		t.Errorf("got = %+v, want Rank/Name untouched", got)
 	}
+}
 
-	// A second call with an empty parentID must not clear the one just set.
-	tx2, err := db.Begin(ctx)
-	if err != nil {
-		t.Fatalf("Begin: %v", err)
-	}
-	if err := tx2.UpsertSyntaxonAuthor("arrhenatherion", "Koch 1926 emend.", ""); err != nil {
-		t.Fatalf("UpsertSyntaxonAuthor: %v", err)
-	}
-	if err := tx2.Commit(); err != nil {
-		t.Fatalf("Commit: %v", err)
-	}
-	got2, err := db.Syntaxon(ctx, "arrhenatherion")
+// assertSyntaxonParentID fetches id and checks only ParentID — used for the
+// empty-parentID call, which must leave a previously set ParentID untouched.
+func assertSyntaxonParentID(ctx context.Context, t *testing.T, db *DB, id, wantParentID string) {
+	t.Helper()
+	got, err := db.Syntaxon(ctx, id)
 	if err != nil {
 		t.Fatalf("Syntaxon: %v", err)
 	}
-	if got2.ParentID != "AA01" {
-		t.Errorf("ParentID = %q after empty-parentID call, want it untouched (%q)", got2.ParentID, "AA01")
+	if got.ParentID != wantParentID {
+		t.Errorf("ParentID = %q after empty-parentID call, want it untouched (%q)", got.ParentID, wantParentID)
 	}
+}
+
+func TestIngestTx_UpsertSyntaxonAuthor(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	withTx(ctx, t, db, func(tx output.IngestTx) error {
+		return tx.UpsertSyntaxon(domain.Syntaxon{ID: "arrhenatherion", Rank: "alliance", Name: "Arrhenatherion"})
+	})
+
+	withTx(ctx, t, db, func(tx output.IngestTx) error {
+		return tx.UpsertSyntaxonAuthor("arrhenatherion", "Koch 1926", "AA01")
+	})
+	assertSyntaxonAuthorAndRank(ctx, t, db, "arrhenatherion", "Koch 1926", "AA01", "alliance", "Arrhenatherion")
+
+	// A second call with an empty parentID must not clear the one just set.
+	withTx(ctx, t, db, func(tx output.IngestTx) error {
+		return tx.UpsertSyntaxonAuthor("arrhenatherion", "Koch 1926 emend.", "")
+	})
+	assertSyntaxonParentID(ctx, t, db, "arrhenatherion", "AA01")
 }
 
 func TestCrosswalksTo_ReturnsOnlyCrosswalksToTheGivenTypology(t *testing.T) {

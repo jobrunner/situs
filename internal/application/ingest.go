@@ -18,11 +18,15 @@ import (
 	"github.com/jobrunner/situs/internal/ports/output"
 )
 
-// colCode/colTypologyID are the CSV column names shared by every file keyed
-// on (typology_id, code): habitat types, syntaxon links and species roles.
+// colCode/colTypologyID/colName are the CSV column names shared across the
+// ingest files. colName names the "name" CSV column (typology, syntaxon):
+// a different concept from application.nameField, which pins the
+// localization (lang, field) pair — the two happen to share the string
+// value but not the meaning, so they get their own constant.
 const (
 	colCode       = "code"
 	colTypologyID = "typology_id"
+	colName       = "name"
 )
 
 // IngestReport summarizes one ingest run.
@@ -228,7 +232,7 @@ func parseOptionalBool(s string) (*bool, error) {
 func ingestTypologies(ctx context.Context, tx output.IngestTx, dir string) (skipped int, err error) {
 	const file = "typologies.csv"
 	skip := newRowSkipper(&skipped, file, "typology")
-	err = readAll(ctx, dir, file, []string{"id", "scheme", "version", "name", "source_ref"}, skip,
+	err = readAll(ctx, dir, file, []string{"id", "scheme", "version", colName, "source_ref"}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			id, perr := domain.ParseTypologyID(row[idx["id"]])
 			if perr != nil {
@@ -238,7 +242,7 @@ func ingestTypologies(ctx context.Context, tx output.IngestTx, dir string) (skip
 				ID:        id,
 				Scheme:    row[idx["scheme"]],
 				Version:   row[idx["version"]],
-				Name:      row[idx["name"]],
+				Name:      row[idx[colName]],
 				SourceRef: row[idx["source_ref"]],
 			}
 			if err := tx.UpsertTypology(t); err != nil {
@@ -324,12 +328,12 @@ func ingestCrosswalks(ctx context.Context, tx output.IngestTx, dir string) (coun
 func ingestSyntaxa(ctx context.Context, tx output.IngestTx, dir string) (count, skipped int, err error) {
 	const file = "syntaxa.csv"
 	skip := newRowSkipper(&skipped, file, "syntaxon")
-	err = readAll(ctx, dir, file, []string{"id", "rank", "name", "parent_id"}, skip,
+	err = readAll(ctx, dir, file, []string{"id", "rank", colName, "parent_id"}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			s := domain.Syntaxon{
 				ID:       row[idx["id"]],
 				Rank:     row[idx["rank"]],
-				Name:     row[idx["name"]],
+				Name:     row[idx[colName]],
 				ParentID: row[idx["parent_id"]],
 			}
 			if err := tx.UpsertSyntaxon(s); err != nil {

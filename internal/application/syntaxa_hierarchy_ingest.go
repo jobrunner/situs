@@ -28,6 +28,15 @@ type hierarchyRow struct {
 	code, rank, name, author, parentCode string
 }
 
+// rankAlliance is the FloraVeg/EUNIS rank that this file matches against
+// existing syntaxa. rankClass exists alongside it only because "class"
+// crosses goconst's occurrence threshold too; "order" stays a literal since
+// it occurs only twice.
+const (
+	rankAlliance = "alliance"
+	rankClass    = "class"
+)
+
 // IngestSyntaxaHierarchy loads csvPath (syntaxa_hierarchy.csv:
 // code,rank,name,author,parent_code, produced by pipelines/eurovegchecklist)
 // into repo. It writes every class/order row as a new syntaxon, then matches
@@ -88,11 +97,11 @@ func readHierarchyRows(csvPath string) ([]hierarchyRow, int, error) {
 	skipped := 0
 	skip := newRowSkipper(&skipped, file, "syntaxon hierarchy")
 	err := readAll(context.Background(), dir, file,
-		[]string{"code", "rank", "name", "author", "parent_code"}, skip,
+		[]string{"code", "rank", colName, "author", "parent_code"}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			rank := row[idx["rank"]]
 			switch rank {
-			case "class", "order", "alliance":
+			case rankClass, "order", rankAlliance:
 			default:
 				skip(line, fmt.Errorf("unknown rank %q", rank))
 				return nil
@@ -100,7 +109,7 @@ func readHierarchyRows(csvPath string) ([]hierarchyRow, int, error) {
 			rows = append(rows, hierarchyRow{
 				code:       row[idx["code"]],
 				rank:       rank,
-				name:       row[idx["name"]],
+				name:       row[idx[colName]],
 				author:     row[idx["author"]],
 				parentCode: row[idx["parent_code"]],
 			})
@@ -121,24 +130,24 @@ func ingestHierarchyRows(tx output.IngestTx, rows []hierarchyRow, existing []dom
 
 	for _, r := range rows {
 		switch r.rank {
-		case "class", "order":
+		case rankClass, "order":
 			if err := tx.UpsertSyntaxon(domain.Syntaxon{
 				ID: r.code, Rank: r.rank, Name: r.name, Author: r.author, ParentID: r.parentCode,
 			}); err != nil {
 				return SyntaxaHierarchyReport{}, fmt.Errorf("upserting %s %s: %w", r.rank, r.code, err)
 			}
-			if r.rank == "class" {
+			if r.rank == rankClass {
 				rep.ClassesWritten++
 			} else {
 				rep.OrdersWritten++
 			}
-		case "alliance":
+		case rankAlliance:
 			allianceRows = append(allianceRows, r)
 		}
 	}
 
 	for _, e := range existing {
-		if e.Rank != "alliance" {
+		if e.Rank != rankAlliance {
 			continue
 		}
 		match, ambiguous := longestPrefixMatch(e.Name, allianceRows)
