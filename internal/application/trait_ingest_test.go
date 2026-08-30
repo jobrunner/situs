@@ -3,9 +3,32 @@ package application
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
+
+// fakeResolver/erroringResolver back IngestTraits' output.NameResolver in
+// these tests. species_ingest.go no longer uses a NameResolver (aggregate
+// derivation resolves via a file-based crosswalk instead), so these types
+// live here rather than in species_ingest_test.go.
+type fakeResolver map[string]string
+
+func (r fakeResolver) Resolve(_ context.Context, names []string) (map[string]string, error) {
+	out := make(map[string]string, len(names))
+	for _, n := range names {
+		if id, ok := r[n]; ok {
+			out[n] = id
+		}
+	}
+	return out, nil
+}
+
+type erroringResolver struct{}
+
+func (erroringResolver) Resolve(context.Context, []string) (map[string]string, error) {
+	return nil, fmt.Errorf("hostus unavailable")
+}
 
 func seedTraitDir(t *testing.T, eive, tichy, midolo string) string {
 	t.Helper()

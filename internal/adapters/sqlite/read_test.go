@@ -73,9 +73,9 @@ func seedReadFixture(t *testing.T, db *DB) {
 		t.Fatalf("LinkSyntaxon: %v", err)
 	}
 	for _, r := range []domain.SpeciesRole{
-		{Key: r22, ConceptID: &concept, VerbatimName: "Bromus erectus", Role: "diagnostic", Fidelity: &fidelity},
-		{Key: r22, VerbatimName: "Unresolvable dubia", Role: "constant"},
-		{Key: r99, ConceptID: &concept, VerbatimName: "Bromus erectus", Role: "dominant"},
+		{Key: r22, ConceptID: &concept, VerbatimName: "Bromus erectus", Role: "diagnostic", Fidelity: &fidelity, Provenance: "observed"},
+		{Key: r22, VerbatimName: "Unresolvable dubia", Role: "constant", Provenance: "observed"},
+		{Key: r99, ConceptID: &concept, VerbatimName: "Bromus erectus", Role: "dominant", Provenance: "observed"},
 	} {
 		if err := tx.UpsertSpeciesRole(r); err != nil {
 			t.Fatalf("UpsertSpeciesRole(%q): %v", r.VerbatimName, err)
@@ -180,6 +180,35 @@ func TestSpeciesRoles_FilterAndNullables(t *testing.T) {
 	}
 }
 
+// Constancy must round-trip too, the same way Fidelity already does.
+func TestSpeciesRoles_RoundTripsConstancy(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	constancy := 72.5
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertSpeciesRole(domain.SpeciesRole{
+		Key: key, VerbatimName: "Bromus erectus", Role: "constant", Constancy: &constancy,
+	}); err != nil {
+		t.Fatalf("UpsertSpeciesRole: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.SpeciesRoles(ctx, key, "")
+	if err != nil {
+		t.Fatalf("SpeciesRoles: %v", err)
+	}
+	if len(got) != 1 || got[0].Constancy == nil || *got[0].Constancy != constancy {
+		t.Errorf("SpeciesRoles = %+v, want Constancy = %v", got, constancy)
+	}
+}
+
 func TestSpeciesRolesByConcept_ReturnsEveryRoleAndKey(t *testing.T) {
 	db := openSeededDB(t)
 
@@ -204,6 +233,38 @@ func TestSpeciesRolesByConcept_ReturnsEveryRoleAndKey(t *testing.T) {
 	}
 	if len(unknown) != 0 {
 		t.Errorf("SpeciesRolesByConcept(unknown) = %+v, want nothing", unknown)
+	}
+}
+
+// SpeciesRolesByConcept must round-trip DerivedFrom too, the same way
+// SpeciesRoles already does.
+func TestSpeciesRolesByConcept_ReturnsDerivedFromWhenSet(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	member := "wcvp:concept:100"
+	aggregate := "wcvp:concept:99"
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertSpeciesRole(domain.SpeciesRole{
+		Key: key, ConceptID: &member, VerbatimName: "Rubus caesius", Role: "diagnostic",
+		Provenance: "derived_from_aggregate", DerivedFrom: &aggregate,
+	}); err != nil {
+		t.Fatalf("UpsertSpeciesRole: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.SpeciesRolesByConcept(ctx, member)
+	if err != nil {
+		t.Fatalf("SpeciesRolesByConcept: %v", err)
+	}
+	if len(got) != 1 || got[0].DerivedFrom == nil || *got[0].DerivedFrom != aggregate {
+		t.Errorf("SpeciesRolesByConcept = %+v, want one row with DerivedFrom = %q", got, aggregate)
 	}
 }
 

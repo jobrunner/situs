@@ -66,6 +66,8 @@ CREATE TABLE IF NOT EXISTS species_role (
   role          TEXT NOT NULL,
   fidelity      REAL,
   constancy     REAL,
+  provenance    TEXT NOT NULL DEFAULT 'observed',
+  derived_from  TEXT,
   PRIMARY KEY (typology_id, code, verbatim_name, role)
 );
 CREATE INDEX IF NOT EXISTS idx_species_role_concept ON species_role(concept_id);

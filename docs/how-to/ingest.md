@@ -16,6 +16,10 @@ Liest die von `pipelines/eunis/xlsx_to_csv.py` erzeugten CSVs
 Ausgabe ist ein JSON-Report mit den Zeilenzählern je Entität plus dem
 Artenrollen-Report und dem Trait-Report (siehe unten).
 
+`--crosswalk`/`--aggregate-members` sind optional und fallen auf
+`<csv-dir>/eurosl_crosswalk.csv` bzw. `<csv-dir>/aggregate_members.csv`
+zurück — nur bei abweichender Ablage nötig.
+
 `--db` ist **optional** und fällt auf `index.path` (`SITUS_INDEX_PATH`,
 Default `situs.sqlite`) zurück — dieselbe Datei, aus der `serve` liest. Das
 ist Absicht: `serve` kennt kein `--db`, und ein Index, in den ingestiert
@@ -60,43 +64,64 @@ Am gepinnten Datenstand sind beide gemessen **0**. Siehe
    an, soweit ein eindeutiger Namenstreffer existiert. Läuft direkt nach
    `IngestCSV` und vor Artenrollen/Verbreitung/Zeigerwerten/Label-Overlay, von
    denen keiner davon abhängt.
-3. `IngestSpeciesRoles` — Artenrollen, inklusive hostus-Namensauflösung.
+3. `IngestSpeciesRoles` — Artenrollen, aufgelöst gegen eine lokale
+   Crosswalk-Datei (`eurosl_crosswalk.csv`), plus abgeleitete
+   Mitgliedsarten-Zeilen für Sammelarten (`aggregate_members.csv`). Kein
+   hostus-Aufruf mehr in diesem Schritt.
 4. `IngestDistribution` — die Verbreitung der aufgelösten Konzepte (siehe unten).
 5. `IngestTraits` — die Zeigerwerte (EIVE, Tichý, Midolo) der aufgelösten
    Konzepte, gelesen aus `eive_traits.csv`, `tichy_traits.csv` und
    `midolo_traits.csv` im `--csv-dir`, ebenfalls über hostus-Namensauflösung.
 6. `IngestLocalizations` und `DeriveGermanLabels` — der Label-Overlay.
 
-Ist hostus beim **dritten** Schritt (`IngestSpeciesRoles`) nicht erreichbar,
-bricht `ingest` mit einem Fehler ab — aber die **ersten beiden** Schritte sind
-zu diesem Zeitpunkt bereits committed. Der Index enthält dann
-Typologien/Habitattypen/Crosswalks/Syntaxa inklusive der FloraVeg-Hierarchie-
-Anreicherung, aber keine Artenrollen. Das ist kein Datenverlust: jeder
-`Upsert*` ist idempotent, ein erneuter `situs ingest`-Lauf gegen denselben
-Index holt den fehlenden dritten Schritt einfach nach. Ein Operator, der nach
-einem fehlgeschlagenen Lauf den Index inspiziert, sollte diese Teilbefüllung
-aber nicht als Bug lesen.
+Fehlt `eurosl_crosswalk.csv`, bricht `ingest` beim **dritten** Schritt
+(`IngestSpeciesRoles`) mit einem Fehler ab — aber die **ersten beiden**
+Schritte sind zu diesem Zeitpunkt bereits committed
+(Typologien/Habitattypen/Crosswalks/Syntaxa inklusive der
+FloraVeg-Hierarchie-Anreicherung, aber keine Artenrollen). hostus wird
+dabei gar nicht erst kontaktiert: die Namensauflösung ist seit der
+Aggregat-Mitgliedsarten-Erweiterung rein dateibasiert, hostus kommt erst ab
+Schritt 4 (`IngestDistribution`) ins Spiel. Ein fehlgeschlagener dritter
+Schritt ist kein Datenverlust: jeder `Upsert*` ist idempotent, ein erneuter
+`situs ingest`-Lauf gegen denselben Index holt ihn einfach nach. Ein
+Operator, der nach einem fehlgeschlagenen Lauf den Index inspiziert, sollte
+diese Teilbefüllung nicht als Bug lesen.
 
-## Die gemeldete Resolution Rate
+## Namensauflösung und Mitgliedsarten-Ableitung
 
-Der Artenrollen-Report (`SpeciesReport`) meldet `ResolutionRate()` als
-**zeilengewichtet**: `Resolved / Rows`, über alle Zeilen von
-`species_roles.csv`, nicht über die Menge distinkter Artennamen. Das ist eine
-andere Grundgesamtheit als die ~57 %-Untergrenze aus dem ESy-Spike
-(`../research/sp9-esy-spike.md`), die über distinkte Namen misst — beide
-Zahlen sind nicht direkt vergleichbar.
+`IngestSpeciesRoles` löst jeden `verbatim_name` gegen ein lokales,
+deterministisches Wörterbuch auf — `eurosl_crosswalk.csv`
+(`name,concept_id`), von hostus vorab exportiert, kein Netzwerkaufruf, keine
+Fuzzy-/Homonym-Logik. Ein Name mit mehr als einer Concept-ID in dieser Datei
+ist ein Datenfund, kein Rateanlass: er bleibt `concept_id: null`, wird
+gezählt (`AmbiguousCrosswalk`) und geloggt.
 
-Beide sind gegen den gepinnten Datenstand und einen vollen hostus-Index
-**gemessen** (Design-Spec, offener Punkt 3):
+Für jede Zeile, deren aufgelöste Concept-ID selbst eine in
+`aggregate_members.csv` gelistete Sammelart ist, schreibt der Ingest je
+Mitgliedsart eine zusätzliche Zeile mit `provenance: derived_from_aggregate`
+— außer eine explizite `species_roles.csv`-Zeile für dasselbe Mitglied
+existiert bereits; die gewinnt immer. Eine abgeleitete Zeile trägt nie
+`fidelity`/`constancy` (nie für das Mitglied selbst gemessen).
 
-| Grundgesamtheit | Aufgelöst | Rate |
-|---|---|---|
-| Zeilen von `species_roles.csv` | 11559 / 13791 (2232 offen) | **83,82 %** |
-| distinkte Artennamen | 3142 / 3587 (445 offen) | **87,59 %** |
+`ResolutionRate()` bleibt **zeilengewichtet**: `Resolved / Rows`, über alle
+Zeilen von `species_roles.csv`.
 
-Die distinktgewichtete Zahl ist die mit dem ESy-Spike vergleichbare: 87,59 %
-liegen deutlich über der dort abgeschätzten ~57 %-Untergrenze. `ResolutionRate()`
-im Report meldet weiterhin die **zeilengewichtete** Zahl (`Resolved / Rows`).
+Die drei neuen Report-Felder:
+
+| Feld | Bedeutung |
+|---|---|
+| `DerivedRows` | zusätzlich geschriebene Mitgliedsarten-Zeilen |
+| `SuppressedByExplicit` | abgeleitete Zeilen, die wegen einer expliziten CSV-Zeile NICHT geschrieben wurden |
+| `AmbiguousCrosswalk` | Namen mit mehr als einer Concept-ID in `eurosl_crosswalk.csv` |
+
+**Noch nicht messbar:** `eurosl_crosswalk.csv`/`aggregate_members.csv`
+kommen aus einem hostus-seitigen Export, der zum Zeitpunkt dieser Zeilen noch
+nicht existiert (siehe
+`../superpowers/specs/2026-08-29-situs-aggregat-mitgliedsarten-design.md`).
+Bis dahin: `Resolved`, `DerivedRows`, `SuppressedByExplicit` und
+`AmbiguousCrosswalk` sind an keinem echten Datenstand gemessen — genau wie
+`Localizations`/`DerivedLabels` in `../reference/measured-index.md`, solange
+die passende Quelle fehlt.
 
 Nicht aufgelöste Namen werden **nicht verworfen**: `verbatim_name` ist immer
 gesetzt, `concept_id` bleibt NULL.

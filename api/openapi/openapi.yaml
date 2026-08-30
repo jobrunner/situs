@@ -500,10 +500,23 @@ components:
         qualifier:
           type: string
           example: "="
+    AggregateSource:
+      description: >-
+        name is absent: the index only persists the aggregate's concept id,
+        never its name.
+      type: object
+      required: [concept_id]
+      properties:
+        concept_id:
+          type: string
+        name:
+          type: string
     SpeciesEntry:
       description: >-
         verbatim_name ist immer gesetzt; concept_id fehlt, wenn der Name nicht
-        auf ein hostus-Konzept auflösbar war — solche Zeilen werden behalten.
+        auf ein Konzept auflösbar war — solche Zeilen werden behalten.
+        provenance/derived_from erscheinen nur bei einer aus einer Sammelart
+        abgeleiteten Zeile.
       type: object
       required: [verbatim_name, role]
       properties:
@@ -519,6 +532,11 @@ components:
           type: number
         in_area:
           $ref: "#/components/schemas/InArea"
+        provenance:
+          type: string
+          enum: [derived_from_aggregate]
+        derived_from:
+          $ref: "#/components/schemas/AggregateSource"
     HabitatTypeDetail:
       allOf:
         - $ref: "#/components/schemas/HabitatTypeSummary"
@@ -560,6 +578,11 @@ components:
                 $ref: "#/components/schemas/SyntaxonRef"
             in_area:
               $ref: "#/components/schemas/InArea"
+            provenance:
+              type: string
+              enum: [derived_from_aggregate]
+            derived_from:
+              $ref: "#/components/schemas/AggregateSource"
     InArea:
       description: >-
         Dreiwertig: true/false, wenn der Index Verbreitungsdaten zum Konzept
