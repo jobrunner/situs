@@ -155,6 +155,25 @@ func loadAggregateMembers(ctx context.Context, csvPath string) (map[string][]agg
 	return members, skipped, nil
 }
 
+// tallyResolution classifies one row's resolution outcome into rep and
+// returns the concept id to store — nil unless the row resolved cleanly.
+// Two independent guard clauses, not an if-else chain: each is its own
+// mutation-coverable branch, unlike a three-way switch/if-else-if, whose
+// case-expression negation gremlins cannot distinguish from adjacent cases.
+func tallyResolution(id string, ambiguous bool, rep *SpeciesReport) *string {
+	if ambiguous {
+		rep.AmbiguousCrosswalk++
+		rep.Unresolved++
+		return nil
+	}
+	if id == "" {
+		rep.Unresolved++
+		return nil
+	}
+	rep.Resolved++
+	return &id
+}
+
 // resolveRow looks verbatim up in crosswalk. More than one DISTINCT concept
 // id for the same name is a data find, not a guessing occasion: ambiguous is
 // true and conceptID stays empty. Repeated identical rows are not ambiguous.
@@ -181,69 +200,69 @@ func resolveRow(verbatim string, crosswalk map[string][]string) (conceptID strin
 func upsertSpeciesRows(tx output.IngestTx, rows []speciesRow, crosswalk map[string][]string,
 	aggregates map[string][]aggregateMember) (SpeciesReport, error) {
 	rep := SpeciesReport{Rows: len(rows)}
-	resolvedIDs := make(map[domain.HabitatTypeKey][]string, len(rows))
 
 	for _, r := range rows {
-		id, ambiguous := resolveRow(r.verbatim, crosswalk)
-		var conceptID *string
-		switch {
-		case ambiguous:
-			rep.AmbiguousCrosswalk++
-			rep.Unresolved++
-		case id != "":
-			conceptID = &id
-			rep.Resolved++
-			resolvedIDs[r.key] = append(resolvedIDs[r.key], id)
-		default:
-			rep.Unresolved++
-		}
-		sr := domain.SpeciesRole{
-			Key:          r.key,
-			ConceptID:    conceptID,
-			VerbatimName: r.verbatim,
-			Role:         r.role,
-			Fidelity:     r.fidelity,
-			Constancy:    r.constancy,
-			Provenance:   speciesProvenanceObserved,
-		}
-		if err := tx.UpsertSpeciesRole(sr); err != nil {
+		if err := upsertExplicitRow(tx, r, crosswalk, &rep); err != nil {
 			return SpeciesReport{}, err
 		}
 	}
-
 	for _, r := range rows {
-		id, ambiguous := resolveRow(r.verbatim, crosswalk)
-		if ambiguous || id == "" {
-			continue
-		}
-		members, isAggregate := aggregates[id]
-		if !isAggregate {
-			continue
-		}
-		aggregateID := id
-		for _, m := range members {
-			memberID := m.conceptID
-			derived := domain.SpeciesRole{
-				Key:          r.key,
-				ConceptID:    &memberID,
-				VerbatimName: m.name,
-				Role:         r.role,
-				Provenance:   speciesProvenanceDerivedFromAggregate,
-				DerivedFrom:  &aggregateID,
-			}
-			suppressed, err := tx.UpsertDerivedSpeciesRole(derived)
-			if err != nil {
-				return SpeciesReport{}, err
-			}
-			if suppressed {
-				rep.SuppressedByExplicit++
-			} else {
-				rep.DerivedRows++
-			}
+		if err := deriveAggregateMembers(tx, r, crosswalk, aggregates, &rep); err != nil {
+			return SpeciesReport{}, err
 		}
 	}
-
 	return rep, nil
+}
+
+// upsertExplicitRow writes one species_roles.csv row as-is, tallying its
+// resolution outcome into rep.
+func upsertExplicitRow(tx output.IngestTx, r speciesRow, crosswalk map[string][]string, rep *SpeciesReport) error {
+	id, ambiguous := resolveRow(r.verbatim, crosswalk)
+	conceptID := tallyResolution(id, ambiguous, rep)
+	return tx.UpsertSpeciesRole(domain.SpeciesRole{
+		Key:          r.key,
+		ConceptID:    conceptID,
+		VerbatimName: r.verbatim,
+		Role:         r.role,
+		Fidelity:     r.fidelity,
+		Constancy:    r.constancy,
+		Provenance:   speciesProvenanceObserved,
+	})
+}
+
+// deriveAggregateMembers writes one derived row per member species, if r's
+// resolved concept id is itself a listed aggregate — a no-op otherwise.
+func deriveAggregateMembers(tx output.IngestTx, r speciesRow, crosswalk map[string][]string,
+	aggregates map[string][]aggregateMember, rep *SpeciesReport) error {
+	id, ambiguous := resolveRow(r.verbatim, crosswalk)
+	if ambiguous || id == "" {
+		return nil
+	}
+	members, isAggregate := aggregates[id]
+	if !isAggregate {
+		return nil
+	}
+	aggregateID := id
+	for _, m := range members {
+		memberID := m.conceptID
+		suppressed, err := tx.UpsertDerivedSpeciesRole(domain.SpeciesRole{
+			Key:          r.key,
+			ConceptID:    &memberID,
+			VerbatimName: m.name,
+			Role:         r.role,
+			Provenance:   speciesProvenanceDerivedFromAggregate,
+			DerivedFrom:  &aggregateID,
+		})
+		if err != nil {
+			return err
+		}
+		if suppressed {
+			rep.SuppressedByExplicit++
+		} else {
+			rep.DerivedRows++
+		}
+	}
+	return nil
 }
 
 // IngestSpeciesRoles loads csvPath (species_roles.csv, produced by

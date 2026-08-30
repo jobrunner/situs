@@ -180,6 +180,35 @@ func TestSpeciesRoles_FilterAndNullables(t *testing.T) {
 	}
 }
 
+// Constancy must round-trip too, the same way Fidelity already does.
+func TestSpeciesRoles_RoundTripsConstancy(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	constancy := 72.5
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertSpeciesRole(domain.SpeciesRole{
+		Key: key, VerbatimName: "Bromus erectus", Role: "constant", Constancy: &constancy,
+	}); err != nil {
+		t.Fatalf("UpsertSpeciesRole: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.SpeciesRoles(ctx, key, "")
+	if err != nil {
+		t.Fatalf("SpeciesRoles: %v", err)
+	}
+	if len(got) != 1 || got[0].Constancy == nil || *got[0].Constancy != constancy {
+		t.Errorf("SpeciesRoles = %+v, want Constancy = %v", got, constancy)
+	}
+}
+
 func TestSpeciesRolesByConcept_ReturnsEveryRoleAndKey(t *testing.T) {
 	db := openSeededDB(t)
 

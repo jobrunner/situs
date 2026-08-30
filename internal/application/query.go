@@ -116,12 +116,7 @@ func (q *QueryService) SpeciesHabitatTypes(ctx context.Context, conceptID, lang 
 			Syntaxa:            syntaxa,
 			InArea:             inA,
 		}
-		if r.Provenance == "derived_from_aggregate" {
-			htr.Provenance = r.Provenance
-			if r.DerivedFrom != nil {
-				htr.DerivedFrom = &input.AggregateSource{ConceptID: *r.DerivedFrom}
-			}
-		}
+		htr.Provenance, htr.DerivedFrom = derivedProvenance(r)
 		out = append(out, htr)
 	}
 	return out, nil
@@ -260,25 +255,6 @@ func groupByRole(roles []domain.SpeciesRole) map[string][]input.SpeciesEntry {
 		out[r.Role] = append(out[r.Role], speciesEntry(r))
 	}
 	return out
-}
-
-func speciesEntry(r domain.SpeciesRole) input.SpeciesEntry {
-	e := input.SpeciesEntry{
-		VerbatimName: r.VerbatimName,
-		Role:         r.Role,
-		Fidelity:     r.Fidelity,
-		Constancy:    r.Constancy,
-	}
-	if r.ConceptID != nil {
-		e.ConceptID = *r.ConceptID
-	}
-	if r.Provenance == "derived_from_aggregate" {
-		e.Provenance = r.Provenance
-		if r.DerivedFrom != nil {
-			e.DerivedFrom = &input.AggregateSource{ConceptID: *r.DerivedFrom}
-		}
-	}
-	return e
 }
 
 // translateNotFound maps the repository's ErrNotFound onto the driving port's
