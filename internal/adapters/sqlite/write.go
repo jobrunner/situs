@@ -81,6 +81,17 @@ func (t *ingestTx) LinkSyntaxon(key domain.HabitatTypeKey, syntaxonID string) er
 	return nil
 }
 
+// normalizedProvenance falls back to the table default when a caller leaves
+// Provenance unset — binding an empty string would otherwise bypass
+// species_role's `DEFAULT 'observed'` and let an out-of-contract value (never
+// "observed" or "derived_from_aggregate") into the index.
+func normalizedProvenance(p string) string {
+	if p == "" {
+		return "observed"
+	}
+	return p
+}
+
 func (t *ingestTx) UpsertSpeciesRole(r domain.SpeciesRole) error {
 	_, err := t.tx.ExecContext(t.ctx,
 		`INSERT INTO species_role (typology_id, code, concept_id, verbatim_name, role, fidelity, constancy, provenance, derived_from)
@@ -89,7 +100,7 @@ func (t *ingestTx) UpsertSpeciesRole(r domain.SpeciesRole) error {
 		   concept_id=excluded.concept_id, fidelity=excluded.fidelity, constancy=excluded.constancy,
 		   provenance=excluded.provenance, derived_from=excluded.derived_from`,
 		string(r.Key.Typology), r.Key.Code, r.ConceptID, r.VerbatimName, r.Role, r.Fidelity, r.Constancy,
-		r.Provenance, r.DerivedFrom)
+		normalizedProvenance(r.Provenance), r.DerivedFrom)
 	if err != nil {
 		return fmt.Errorf("sqlite: upserting species role %q in %s: %w", r.VerbatimName, r.Key, err)
 	}
@@ -105,7 +116,7 @@ func (t *ingestTx) UpsertDerivedSpeciesRole(r domain.SpeciesRole) (bool, error) 
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(typology_id, code, verbatim_name, role) DO NOTHING`,
 		string(r.Key.Typology), r.Key.Code, r.ConceptID, r.VerbatimName, r.Role, r.Fidelity, r.Constancy,
-		r.Provenance, r.DerivedFrom)
+		normalizedProvenance(r.Provenance), r.DerivedFrom)
 	if err != nil {
 		return false, fmt.Errorf("sqlite: upserting derived species role %q in %s: %w", r.VerbatimName, r.Key, err)
 	}

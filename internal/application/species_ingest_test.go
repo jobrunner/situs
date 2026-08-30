@@ -1,8 +1,10 @@
 package application
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -184,6 +186,36 @@ func TestIngestSpeciesRoles_AmbiguousCrosswalkEntryStaysUnresolved(t *testing.T)
 	}
 	if len(repo.speciesRoles) != 1 || repo.speciesRoles[0].ConceptID != nil {
 		t.Errorf("stored roles = %+v, want one row with a nil ConceptID", repo.speciesRoles)
+	}
+}
+
+// An ambiguous crosswalk entry must be logged, not just counted — an
+// operator diagnosing a low resolution rate needs to see which names were
+// ambiguous, not just how many.
+func TestIngestSpeciesRoles_LogsAnAmbiguousCrosswalkEntry(t *testing.T) {
+	dir := t.TempDir()
+	writeCSV(t, dir, "species_roles.csv",
+		"typology_id,code,verbatim_name,role,fidelity,constancy\n"+
+			"eunis@2021,R22,Homonym species,diagnostic,,\n")
+	writeCSV(t, dir, "eurosl_crosswalk.csv",
+		"name,concept_id\nHomonym species,wcvp:concept:1\nHomonym species,wcvp:concept:2\n")
+	writeCSV(t, dir, "aggregate_members.csv",
+		"aggregate_concept_id,member_concept_id,member_name\n")
+	species, crosswalk, aggregates := speciesRolesPaths(t, dir)
+
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	defer slog.SetDefault(prev)
+
+	repo := newFakeRepo()
+	if _, err := IngestSpeciesRoles(context.Background(), repo, species, crosswalk, aggregates); err != nil {
+		t.Fatalf("IngestSpeciesRoles: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "ambiguous") || !strings.Contains(got, "Homonym species") {
+		t.Errorf("log = %q, want it to name the ambiguous verbatim name", got)
 	}
 }
 

@@ -160,10 +160,12 @@ func loadAggregateMembers(ctx context.Context, csvPath string) (map[string][]agg
 // Two independent guard clauses, not an if-else chain: each is its own
 // mutation-coverable branch, unlike a three-way switch/if-else-if, whose
 // case-expression negation gremlins cannot distinguish from adjacent cases.
-func tallyResolution(id string, ambiguous bool, rep *SpeciesReport) *string {
+func tallyResolution(verbatim, id string, ambiguous bool, rep *SpeciesReport) *string {
 	if ambiguous {
 		rep.AmbiguousCrosswalk++
 		rep.Unresolved++
+		slog.Warn("ambiguous crosswalk entry: more than one concept id, name stays unresolved",
+			"verbatim_name", verbatim)
 		return nil
 	}
 	if id == "" {
@@ -218,7 +220,7 @@ func upsertSpeciesRows(tx output.IngestTx, rows []speciesRow, crosswalk map[stri
 // resolution outcome into rep.
 func upsertExplicitRow(tx output.IngestTx, r speciesRow, crosswalk map[string][]string, rep *SpeciesReport) error {
 	id, ambiguous := resolveRow(r.verbatim, crosswalk)
-	conceptID := tallyResolution(id, ambiguous, rep)
+	conceptID := tallyResolution(r.verbatim, id, ambiguous, rep)
 	return tx.UpsertSpeciesRole(domain.SpeciesRole{
 		Key:          r.key,
 		ConceptID:    conceptID,

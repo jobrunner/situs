@@ -427,8 +427,11 @@ components:
           type: string
           example: "="
     AggregateSource:
+      description: >-
+        name is absent: the index only persists the aggregate's concept id,
+        never its name.
       type: object
-      required: [concept_id, name]
+      required: [concept_id]
       properties:
         concept_id:
           type: string

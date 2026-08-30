@@ -102,9 +102,12 @@ type CrosswalkRef struct {
 }
 
 // AggregateSource lets a caller ask "what aggregate produced this match?".
+// Name is omitempty: the index only ever persists the aggregate's concept
+// id (domain.SpeciesRole.DerivedFrom), never its name, so this field stays
+// unset until a future ingest step stores that name too.
 type AggregateSource struct {
 	ConceptID string `json:"concept_id"`
-	Name      string `json:"name"`
+	Name      string `json:"name,omitempty"`
 }
 
 // SpeciesEntry is one species in its role. VerbatimName is always set;

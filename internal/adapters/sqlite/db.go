@@ -45,7 +45,66 @@ func Open(ctx context.Context, dsn string) (*DB, error) {
 	if _, err := sqlDB.ExecContext(ctx, schema); err != nil {
 		return nil, errors.Join(fmt.Errorf("applying schema to %q: %w", dsn, err), sqlDB.Close())
 	}
+	if err := addMissingColumns(ctx, sqlDB); err != nil {
+		return nil, errors.Join(fmt.Errorf("migrating schema of %q: %w", dsn, err), sqlDB.Close())
+	}
 	return &DB{DB: sqlDB}, nil
+}
+
+// addMissingColumns adds the columns CREATE TABLE IF NOT EXISTS cannot add to
+// an already-existing table — sqlite has no "ADD COLUMN IF NOT EXISTS" in the
+// version this driver embeds, so a repinned index (created before these
+// columns existed) has to be migrated explicitly, or ingest fails with
+// "no such column" on an index nobody rebuilt from scratch. Each ALTER TABLE
+// is a static string, same as every other statement in this package — the
+// table/column names are never interpolated, only the existence check runs
+// first via PRAGMA table_info.
+func addMissingColumns(ctx context.Context, db *sql.DB) error {
+	columns, err := speciesRoleColumns(ctx, db)
+	if err != nil {
+		return fmt.Errorf("checking species_role columns: %w", err)
+	}
+
+	if !columns["provenance"] {
+		if _, err := db.ExecContext(ctx,
+			`ALTER TABLE species_role ADD COLUMN provenance TEXT NOT NULL DEFAULT 'observed'`); err != nil {
+			return fmt.Errorf("adding species_role.provenance: %w", err)
+		}
+	}
+	if !columns["derived_from"] {
+		if _, err := db.ExecContext(ctx, `ALTER TABLE species_role ADD COLUMN derived_from TEXT`); err != nil {
+			return fmt.Errorf("adding species_role.derived_from: %w", err)
+		}
+	}
+	return nil
+}
+
+// speciesRoleColumns reads species_role's actual columns via PRAGMA
+// table_info — the table's own answer, not an assumption about which
+// migrations already ran. table_info is a fixed, static statement: it takes
+// no bound parameter and this function only ever asks about one table.
+func speciesRoleColumns(ctx context.Context, db *sql.DB) (map[string]bool, error) {
+	rows, err := db.QueryContext(ctx, `PRAGMA table_info(species_role)`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	columns := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk); err != nil {
+			return nil, err
+		}
+		columns[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return columns, nil
 }
 
 // Begin starts one atomic ingest run.
