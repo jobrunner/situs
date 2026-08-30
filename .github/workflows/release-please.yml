@@ -50,6 +50,15 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
 
+      # continue-on-error keeps a misconfigured App secret from silently
+      # passing as green: the step above is allowed to fail, but this one
+      # makes that failure a visible, annotated warning on the run instead of
+      # nothing at all — the run still falls back to GITHUB_TOKEN, but an
+      # operator sees why the release PR risks going blocked.
+      - name: Warn if the App token could not be minted
+        if: steps.app-token.outcome == 'failure'
+        run: echo "::warning::release-please App token minting failed (check RELEASE_PLEASE_APP_ID/RELEASE_PLEASE_APP_KEY) — falling back to GITHUB_TOKEN, which does not trigger required-status-check workflows on the release PR."
+
       - uses: googleapis/release-please-action@v4
         id: release
         with:
