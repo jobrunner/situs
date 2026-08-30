@@ -28,12 +28,12 @@ type DB struct {
 }
 
 // Open opens the index at dsn, verifies it is reachable and applies the
-// schema. dsn is a file path or ":memory:". Open never writes beyond
-// CREATE TABLE IF NOT EXISTS (a no-op read on an already-current schema) —
-// it is used by serve too, and serve is read-only; opening an index whose
-// species_role predates provenance/derived_from does not fail here, but a
-// query touching those columns will. Call Migrate right after Open at
-// ingest time to add them.
+// embedded schema.sql — CREATE TABLE/INDEX IF NOT EXISTS statements, so on
+// an already-current schema they are a no-op. What Open never does is an
+// ALTER TABLE migration: it is used by serve too, and serve is read-only;
+// opening an index whose species_role predates provenance/derived_from does
+// not fail here, but a query touching those columns will. Call Migrate
+// right after Open at ingest time to add them.
 func Open(ctx context.Context, dsn string) (*DB, error) {
 	sqlDB, err := sql.Open(DriverName, dsn)
 	if err != nil {

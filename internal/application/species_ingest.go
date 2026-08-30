@@ -28,8 +28,11 @@ type SpeciesReport struct {
 	// was after the fact, so this counts "derivation lost the race", not
 	// specifically "an explicit row was the cause". Not a defect either way.
 	SuppressedByExplicit int
-	// AmbiguousCrosswalk counts verbatim names with more than one distinct
-	// concept id in eurosl_crosswalk.csv — never guessed, kept unresolved.
+	// AmbiguousCrosswalk counts species_roles.csv ROWS whose verbatim name
+	// has more than one distinct concept id in eurosl_crosswalk.csv — never
+	// guessed, kept unresolved. Row-weighted like ResolutionRate, not a
+	// count of distinct ambiguous names: the same ambiguous name repeated
+	// across several rows adds to this once per row, not once overall.
 	AmbiguousCrosswalk int
 }
 
@@ -123,12 +126,13 @@ func resolveRow(verbatim string, crosswalk map[string][]string) (conceptID strin
 	if !ok || len(ids) == 0 {
 		return "", false
 	}
-	distinct := make(map[string]struct{}, len(ids))
-	for _, id := range ids {
-		distinct[id] = struct{}{}
-	}
-	if len(distinct) > 1 {
-		return "", true
+	// resolveRow runs twice per row (explicit upsert + derivation pass), so
+	// this avoids a map allocation per call: every id after the first just
+	// needs comparing against it, not deduplicating into a set.
+	for _, id := range ids[1:] {
+		if id != ids[0] {
+			return "", true
+		}
 	}
 	return ids[0], false
 }
