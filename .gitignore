@@ -19,6 +19,9 @@
 # generated from them and never committed either
 /pipelines/*/artifacts/
 /pipelines/*/out/
+/pipelines/*/.cache/
+/pipelines/*/output/
+/pipelines/*/*.summary.txt
 
 # Python pipeline byte-compiled caches
 __pycache__/
