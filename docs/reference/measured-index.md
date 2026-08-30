@@ -77,6 +77,37 @@ Ausnahme auf Ordnungs-Ebene (`Moltkeetalia petraeae`). **Assoziationen kommen
 nicht vor** und sind in keiner freien paneuropäischen Quelle verfügbar — das ist
 die dokumentierte Decke, kein Versäumnis.
 
+### Volle Hierarchie via FloraVeg.EU (2026-08-30)
+
+`pipelines/eurovegchecklist/` lädt die EuroVegChecklist (Mucina et al. 2016 +
+Updates, Version 4) und liefert Klasse/Ordnung/Verband mit Codes und
+Autorschaft. Gemessen gegen die reale Datei: **1841** Zeilen, **150**
+Klassen, **381** Ordnungen, **1310** Verbände (siehe
+`pipelines/eurovegchecklist/out/report.json`) — deckungsgleich mit den Zahlen
+aus `docs/research/situs-eea-eunis-2021-spike.md`.
+
+Von den **1050** EUNIS-Verbänden im Index (1049 Rang `alliance` + die eine
+`Moltkeetalia petraeae`-Ausnahme auf Rang `order`) fanden **1011** einen
+FloraVeg-Namenstreffer (Author + ParentID übernommen), **38** blieben ohne
+Treffer (Name bleibt der historische EUNIS-Kombi-String, `Author=""`), **0**
+Mehrfachtreffer wurden nicht geraten (`AmbiguousMatches`).
+
+Gemessen mit einem echten `situs ingest`-Lauf gegen beide Pipelines
+(hostus dabei durch einen lokalen Stub ersetzt, der jede Anfrage mit
+`{"results":[]}` beantwortet — Namensauflösung war für diesen Lauf nicht das
+Ziel, siehe die Namensauflösungs-Zahlen im Abschnitt „Namensauflösung gegen
+hostus" unten, die unverändert aus einem echten hostus-Lauf stammen):
+
+```json
+"SyntaxaHierarchy": {
+  "ClassesWritten": 150,
+  "OrdersWritten": 381,
+  "AlliancesMatched": 1011,
+  "AlliancesUnmatched": 38,
+  "AmbiguousMatches": null
+}
+```
+
 ## Anhang-I-Abdeckung (offener Punkt 5)
 
 | Größe | Gemessen |

@@ -8,7 +8,9 @@ situs ingest --csv-dir pipelines/eunis/out --db situs.sqlite
 Liest die von `pipelines/eunis/xlsx_to_csv.py` erzeugten CSVs
 (`typologies.csv`, `habitat_types.csv`, `crosswalks.csv`, `syntaxa.csv`,
 `habitat_type_syntaxa.csv`, `species_roles.csv`, optional
-`localizations.csv`) aus `--csv-dir` und schreibt in die SQLite-Datei
+`localizations.csv`) plus, optional, `syntaxa_hierarchy.csv` von
+`pipelines/eurovegchecklist/xlsx_to_csv.py` — beide Pipelines schreiben in
+denselben `--csv-dir` — aus `--csv-dir` und schreibt in die SQLite-Datei
 `--db`. Die Ausgabe ist ein JSON-Report mit den Zeilenzählern je Entität
 plus dem Artenrollen-Report (siehe unten).
 
@@ -46,9 +48,15 @@ Am gepinnten Datenstand sind beide gemessen **0**. Siehe
 `ingest` läuft in mehreren Schritten, jeder mit eigener Transaktion:
 
 1. `IngestCSV` — Typologien, Habitattypen, Crosswalks, Syntaxa.
-2. `IngestSpeciesRoles` — Artenrollen, inklusive hostus-Namensauflösung.
-3. `IngestDistribution` — die Verbreitung der aufgelösten Konzepte (siehe unten).
-4. `IngestLocalizations` und `DeriveGermanLabels` — der Label-Overlay.
+2. `IngestSyntaxaHierarchy` — liest optional `syntaxa_hierarchy.csv` (FloraVeg.EU
+   EuroVegChecklist, siehe `../reference/measured-index.md#syntaxa-tiefe-offener-punkt-1`)
+   und reichert die gerade ingestierten EUNIS-Verbände um Klasse/Ordnung/Autorschaft
+   an, soweit ein eindeutiger Namenstreffer existiert. Läuft direkt nach
+   `IngestCSV` und vor Artenrollen/Verbreitung/Label-Overlay, von denen keiner
+   davon abhängt.
+3. `IngestSpeciesRoles` — Artenrollen, inklusive hostus-Namensauflösung.
+4. `IngestDistribution` — die Verbreitung der aufgelösten Konzepte (siehe unten).
+5. `IngestLocalizations` und `DeriveGermanLabels` — der Label-Overlay.
 
 Ist hostus beim zweiten Schritt nicht erreichbar, bricht `ingest` mit einem
 Fehler ab — aber der **erste** Schritt ist zu diesem Zeitpunkt bereits
