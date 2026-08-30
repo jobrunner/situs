@@ -49,7 +49,7 @@ type speciesRow struct {
 // rows the same way every other ingest file does.
 func readSpeciesRows(ctx context.Context, dir, file string, skip rowSkipper) ([]speciesRow, error) {
 	var rows []speciesRow
-	err := readAll(ctx, dir, file,
+	err := readAll(ctx, dir, file, ',',
 		[]string{colTypologyID, colCode, "verbatim_name", "role", "fidelity", "constancy"}, skip,
 		func(idx map[string]int, r []string, line int) error {
 			typologyID, perr := domain.ParseTypologyID(r[idx[colTypologyID]])
