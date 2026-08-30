@@ -197,6 +197,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /v1/species/{conceptId}/traits:
+    get:
+      summary: Pflanzenökologische Zeigerwerte einer Art
+      description: >-
+        Zeigerwerte aller ingestierten Vokabulare (EIVE, Tichý, Midolo) zu
+        einer Konzept-ID, optional auf ein Vokabular gefiltert. Autark: eine
+        Konzept-ID braucht keinen Upstream-Dienst. Ein Konzept ohne
+        Trait-Daten liefert ein leeres Array, kein 404 — "keine Daten" ist
+        hier eine normale Antwort.
+      operationId: speciesTraits
+      parameters:
+        - name: conceptId
+          in: path
+          required: true
+          description: Konzept-ID aus hostus.
+          schema:
+            type: string
+        - name: vocab
+          in: query
+          required: false
+          description: >-
+            Filtert auf ein Vokabular (z. B. "eive"). Unbekannter Wert (kein
+            ingestiertes Vokabular) -> 400 INVALID_QUERY.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Die Zeigerwerte, je Vokabular gruppiert, nie vermischt.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TraitSet"
+        "400":
+          $ref: "#/components/responses/InvalidQuery"
   /v1/species/habitat-types:
     post:
       summary: Habitattypen zu einem Satz Konzept-IDs (Batch)
@@ -412,6 +448,34 @@ components:
           enum: [class, order, alliance]
         name:
           type: string
+    TraitValue:
+      type: object
+      required: [dim, value]
+      properties:
+        dim:
+          type: string
+        value:
+          type: number
+        niche_width:
+          type: number
+          description: Fehlt, wenn das Vokabular keine Nischenbreite liefert (Tichý, Midolo).
+        n_systems:
+          type: integer
+          description: Fehlt, wenn das Vokabular keine Systemanzahl liefert (Tichý, Midolo).
+    TraitSet:
+      type: object
+      required: [vocab, vocab_version, values]
+      properties:
+        vocab:
+          type: string
+          example: eive
+        vocab_version:
+          type: string
+          example: "1.0"
+        values:
+          type: array
+          items:
+            $ref: "#/components/schemas/TraitValue"
     CrosswalkRef:
       description: >-
         Die Gegenseite einer Entsprechung, gesehen vom abgefragten Typ. Der
