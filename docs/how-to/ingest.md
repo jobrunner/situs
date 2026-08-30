@@ -21,6 +21,10 @@ wurde, während ein anderer serviert wird, ergibt einen leeren, aber
 `/health/ready`-grünen Dienst. Wird `--db` gesetzt, gewinnt das Flag über die
 Konfiguration, wie überall in diesem Dienst.
 
+Ein Index, der vor der Syntaxa-Hierarchie-Erweiterung gebaut wurde (ohne die
+Spalte `syntaxon.author`), muss gelöscht und per frischem `situs ingest` neu
+aufgebaut werden — ein erneuter Ingest in einen alten Index ist nicht sicher.
+
 Der Index gehört **nicht** ins Repo. `.gitignore` ignoriert `*.sqlite`
 (plus `-wal`/`-shm`), aber keine anderen Endungen — eine Datei namens
 `situs.db` wäre also versehentlich stagebar. Deshalb heißt der Default

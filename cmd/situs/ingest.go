@@ -177,9 +177,10 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath string) er
 	// Runs right after the EUNIS alliances are indexed (IngestCSV, above) and
 	// before species/localization/derivation, which do not depend on it and
 	// which it does not depend on.
-	hierarchyReport, err := application.IngestSyntaxaHierarchy(ctx, db, filepath.Join(csvDir, "syntaxa_hierarchy.csv"))
+	hierarchyCSV := filepath.Join(csvDir, "syntaxa_hierarchy.csv")
+	hierarchyReport, err := application.IngestSyntaxaHierarchy(ctx, db, hierarchyCSV)
 	if err != nil {
-		return fmt.Errorf("ingesting syntaxa hierarchy from %q: %w", csvDir, err)
+		return fmt.Errorf("ingesting syntaxa hierarchy from %q: %w", hierarchyCSV, err)
 	}
 
 	resolver := hostus.NewClient(cfg.Hostus.BaseURL, &http.Client{Timeout: cfg.Hostus.Timeout}, cfg.Hostus.BatchSize, cfg.Hostus.EntryBackbone)

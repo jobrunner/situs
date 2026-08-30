@@ -26,6 +26,11 @@ CSV_HEADERS = {
     "syntaxa_hierarchy.csv": ["code", "rank", "name", "author", "parent_code"],
 }
 
+# Maps a row's rank to its counter key in the report dict below. Explicit on
+# purpose: string-arithmetic pluralization ("class" -> "classes" vs. plain
+# "+s") would silently misname a future rank instead of failing loudly.
+_RANK_COUNTER_KEY = {"class": "classes", "order": "orders", "alliance": "alliances"}
+
 _NON_DATA_SHEETS = {"read me", "legend"}
 
 _REQUIRED_HEADERS = ["Code", "Name", "Author"]
@@ -185,7 +190,7 @@ def convert(xlsx_path, out_dir):
             if not rank:
                 skipped.append((sheet_name, code))
                 continue
-            counts[rank + "es" if rank == "class" else rank + "s"] += 1
+            counts[_RANK_COUNTER_KEY[rank]] += 1
             rows_out.append({
                 "code": code,
                 "rank": rank,
