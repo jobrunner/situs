@@ -50,10 +50,11 @@ Die echte Kopfzeile weicht von einem naiven `Code/Name/Author`-Schema ab:
   primären Code (`AA01A`) — der Klammerteil hat in den fünf CSV-Spalten keinen
   Platz und wird verworfen, nie erraten.
 - Name und Autor liegen doppelt vor: als ursprüngliche EVC-Fassung (Mucina et
-  al. 2016) und als aktualisierte Fassung (`EVC, version 2025-06-12`, exakt
-  die Version, die `manifest.yaml` pinnt). `_HEADER_ALIASES` in
-  `xlsx_to_csv.py` bevorzugt die 2025-06-12-Spalten und fällt nur auf die
-  Original-Spalten zurück, falls ein älterer Export sie nicht mitführt.
+  al. 2016) und als aktualisierte Fassung — in der gepinnten Datei tragen
+  deren Spaltenköpfe selbst das Datum `EVC, version 2025-06-12`.
+  `_HEADER_ALIASES` in `xlsx_to_csv.py` bevorzugt diese aktualisierten
+  Spalten und fällt nur auf die Original-Spalten zurück, falls ein älterer
+  Export sie nicht mitführt.
 
 ## Tests
 
