@@ -286,15 +286,17 @@ func IngestSpeciesRoles(ctx context.Context, repo output.Repository, csvPath, cr
 		return SpeciesReport{}, err
 	}
 
-	crosswalk, _, err := loadCrosswalk(ctx, crosswalkPath)
+	crosswalk, crosswalkSkipped, err := loadCrosswalk(ctx, crosswalkPath)
 	if err != nil {
 		return SpeciesReport{}, fmt.Errorf("loading crosswalk %q: %w", crosswalkPath, err)
 	}
+	skipped += crosswalkSkipped
 
-	aggregates, _, err := loadAggregateMembers(ctx, aggregateMembersPath)
+	aggregates, aggregatesSkipped, err := loadAggregateMembers(ctx, aggregateMembersPath)
 	if err != nil {
 		return SpeciesReport{}, fmt.Errorf("loading aggregate members %q: %w", aggregateMembersPath, err)
 	}
+	skipped += aggregatesSkipped
 
 	tx, err := repo.Begin(ctx)
 	if err != nil {

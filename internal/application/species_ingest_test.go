@@ -294,6 +294,31 @@ func TestIngestSpeciesRoles_SkipsMalformedRows(t *testing.T) {
 	}
 }
 
+// Malformed rows in eurosl_crosswalk.csv and aggregate_members.csv must count
+// toward the same Skipped total species_roles.csv rows do — the operator
+// reads one number, and a row dropped from one file but invisible in that
+// total is a trap for whoever is diagnosing a low resolution rate.
+func TestIngestSpeciesRoles_SkippedCountsRowsFromEveryFile(t *testing.T) {
+	dir := t.TempDir()
+	writeCSV(t, dir, "species_roles.csv",
+		"typology_id,code,verbatim_name,role,fidelity,constancy\n"+
+			"eunis@2021,R22,Inula hirta,diagnostic,0.8,\n")
+	writeCSV(t, dir, "eurosl_crosswalk.csv",
+		"name,concept_id\nInula hirta,wcvp:concept:1\ntoo,many,fields,here\n")
+	writeCSV(t, dir, "aggregate_members.csv",
+		"aggregate_concept_id,member_concept_id,member_name\ntoo,many,fields,here\n")
+	species, crosswalk, aggregates := speciesRolesPaths(t, dir)
+
+	repo := newFakeRepo()
+	rep, err := IngestSpeciesRoles(context.Background(), repo, species, crosswalk, aggregates)
+	if err != nil {
+		t.Fatalf("IngestSpeciesRoles: %v", err)
+	}
+	if rep.Skipped != 2 {
+		t.Errorf("Skipped = %d, want 2 (one malformed row each in the crosswalk and the aggregate-members file)", rep.Skipped)
+	}
+}
+
 func TestIngestSpeciesRoles_MissingSpeciesRolesFileFails(t *testing.T) {
 	dir := t.TempDir()
 	writeCSV(t, dir, "eurosl_crosswalk.csv", "name,concept_id\n")

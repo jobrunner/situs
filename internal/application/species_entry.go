@@ -25,7 +25,7 @@ func speciesEntry(r domain.SpeciesRole) input.SpeciesEntry {
 // stays unchanged for existing clients. Shared by speciesEntry and
 // SpeciesHabitatTypes so neither grows a second copy of this branching.
 func derivedProvenance(r domain.SpeciesRole) (string, *input.AggregateSource) {
-	if r.Provenance != "derived_from_aggregate" {
+	if r.Provenance != speciesProvenanceDerivedFromAggregate {
 		return "", nil
 	}
 	if r.DerivedFrom == nil {
