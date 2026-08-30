@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.3.0](https://github.com/jobrunner/situs/compare/v0.2.0...v0.3.0) (2026-08-30)
+
+
+### Features
+
+* Aggregat-Mitgliedsarten via dateibasiertem Species-Ingest ([00590e9](https://github.com/jobrunner/situs/commit/00590e9560625eacfb0b9cb0677d3bd48c6508f2))
+* Aggregat-Mitgliedsarten via dateibasiertem Species-Ingest ([815fe4b](https://github.com/jobrunner/situs/commit/815fe4b76aeac798cc8c42fc5f8f26746d40f5a5))
+* **application:** IngestSyntaxaHierarchy matches EUNIS alliances to FloraVeg ([f63fc9d](https://github.com/jobrunner/situs/commit/f63fc9d7317f4bf9fcf8d5227f2e4092b83c63c8))
+* **application:** IngestTraits — one resolver call across three vocabularies ([d5f1ef4](https://github.com/jobrunner/situs/commit/d5f1ef4155edb853ba05e8361a3af17fbe7dd2ed))
+* **application:** resolve species roles from a local crosswalk file, derive aggregate members ([ca80ef5](https://github.com/jobrunner/situs/commit/ca80ef541f2ede9298e336b67b86db4a1e74ebce))
+* **cmd:** wire IngestSyntaxaHierarchy into situs ingest ([a19203a](https://github.com/jobrunner/situs/commit/a19203a10526f17e32a49a1d3f5ee26f8313f5f7))
+* **cmd:** wire IngestTraits into situs ingest ([9c0b421](https://github.com/jobrunner/situs/commit/9c0b421fa68210f5386db1dd54a685b5418acdc6))
+* **cmd:** wire the crosswalk/aggregate-members flags into situs ingest ([fa9c019](https://github.com/jobrunner/situs/commit/fa9c01911ca9331d20b1599132348d630b85a347))
+* **domain:** add SpeciesRole.Provenance/DerivedFrom and UpsertDerivedSpeciesRole ([29d6f9c](https://github.com/jobrunner/situs/commit/29d6f9ceb8af8856e16fb5da530db3758f022b82))
+* **domain:** add Syntaxon.Author and AllSyntaxa/UpsertSyntaxonAuthor ([c3b18d7](https://github.com/jobrunner/situs/commit/c3b18d702a42acb61710fe1bbb6bc386d029f9d8))
+* **domain:** TraitDim/TraitValue/TraitSet + IngestTx/Repository trait ports ([d9cfd55](https://github.com/jobrunner/situs/commit/d9cfd55681271403ed94db896a4041c2f83152e6))
+* **http:** expose SpeciesEntry/HabitatTypeRole provenance/derived_from ([765f9b8](https://github.com/jobrunner/situs/commit/765f9b8500bd5d42c468c2387489ed9b5a2f34e7))
+* **http:** expose SyntaxonRef.author/parent_id ([a0b74a2](https://github.com/jobrunner/situs/commit/a0b74a2ffb37ec55caa11380c3fc55ad8f8634ef))
+* **http:** GET /v1/species/{conceptId}/traits ([6e9217e](https://github.com/jobrunner/situs/commit/6e9217e923ded7621b006caeea5b93756455de99))
+* **pipelines:** eive/tichy/midolo trait pipelines from hostus transfer ([143546e](https://github.com/jobrunner/situs/commit/143546ee8f53679228ee061248436fccb92b93d9))
+* **pipelines:** FloraVeg EuroVegChecklist -&gt; syntaxa_hierarchy.csv ([3e6e238](https://github.com/jobrunner/situs/commit/3e6e238e61b66e4925465564e3f104ec3b1b531c))
+* **sqlite:** trait_value/trait_vocabulary tables + Traits/KnownVocabs ([144809f](https://github.com/jobrunner/situs/commit/144809f760dd9530aeb27f4b219351f70099f011))
+* Syntaxa-Hierarchie (Klasse/Ordnung) via FloraVeg.EU + Autorschafts-Trennung ([6677a8f](https://github.com/jobrunner/situs/commit/6677a8fcc672f0ae350cca3b481c64453595101e))
+* Syntaxa-Hierarchie (Klasse/Ordnung) via FloraVeg.EU + Autorschafts-Trennung ([0479c16](https://github.com/jobrunner/situs/commit/0479c16fca5bf2c3c4baf79dd7be9e9ca762f8a3))
+* Trait-Modul (EIVE/Tichý/Midolo Zeigerwerte) ([107bc2e](https://github.com/jobrunner/situs/commit/107bc2ece1c84ab71e598af02c5fa731ca51ff53))
+
+
+### Bug Fixes
+
+* address Copilot review round 1 on PR [#21](https://github.com/jobrunner/situs/issues/21) ([a606fe8](https://github.com/jobrunner/situs/commit/a606fe819d6dd053c793049b21b98bdfafee0641))
+* address Copilot review round 1 on PR [#25](https://github.com/jobrunner/situs/issues/25) ([cfc2347](https://github.com/jobrunner/situs/commit/cfc23477ffbc9f01494ef2362c7fdc85cc588420))
+* address Copilot review round 1 on PR [#26](https://github.com/jobrunner/situs/issues/26) ([15350ea](https://github.com/jobrunner/situs/commit/15350eab1dcbad6784afa3117632e6f77b4c81e2))
+* address Copilot review round 2 on PR [#21](https://github.com/jobrunner/situs/issues/21) ([34de730](https://github.com/jobrunner/situs/commit/34de730de421ed56fca0b674c809ce274f631b56))
+* address Copilot review round 3 on PR [#21](https://github.com/jobrunner/situs/issues/21) ([7a1efcf](https://github.com/jobrunner/situs/commit/7a1efcf97988f7aacc316fc377367383ec4bec81))
+* address Copilot review round 3 on PR [#26](https://github.com/jobrunner/situs/issues/26) ([24ae396](https://github.com/jobrunner/situs/commit/24ae3962455f82f0fb750b29e10ee302631aa0d7))
+* address Copilot review round 4 on PR [#26](https://github.com/jobrunner/situs/issues/26) ([e1f3254](https://github.com/jobrunner/situs/commit/e1f3254e6f11ed38fa6e37594833427b7a8ca6f4))
+* address GitHub Copilot review findings on PR [#20](https://github.com/jobrunner/situs/issues/20) ([7059f81](https://github.com/jobrunner/situs/commit/7059f81b00f1858be54bebec80642a5827392010))
+* address whole-branch review findings on the trait module ([98265f2](https://github.com/jobrunner/situs/commit/98265f2299c1849148a1f5086c34eec82510e0ba))
+* **application:** update syntaxon Name on a FloraVeg match, harden prefix match ([a6472c6](https://github.com/jobrunner/situs/commit/a6472c60a346fa5694a2ce8a61c2f1c4e12f0233))
+* **ci:** App-token step tolerates a missing App secret ([8837c02](https://github.com/jobrunner/situs/commit/8837c02910e758064abc65fa59c3f1c9f4f36594))
+* **ci:** surface a visible warning when the App token fails to mint ([f955256](https://github.com/jobrunner/situs/commit/f955256935066f77f9208c59b5beeb4e7e7a0b56))
+* **domain:** translate leftover German comments to English ([8f16444](https://github.com/jobrunner/situs/commit/8f16444f73541ff429bf7f24f7b40bbbc0da9126))
+* **lint:** resolve goconst/gocyclo findings from Task 1 and Task 4 ([145a077](https://github.com/jobrunner/situs/commit/145a077a9d11a44d70f4a0404441289cc0272daf))
+* **pipelines:** fail fast on HTTP errors during source download ([287902c](https://github.com/jobrunner/situs/commit/287902cee641e89acacd16cca0aec21b47dd3999))
+
 ## [0.2.0](https://github.com/jobrunner/situs/compare/v0.1.1...v0.2.0) (2026-08-26)
 
 
