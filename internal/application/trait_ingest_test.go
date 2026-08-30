@@ -90,6 +90,46 @@ func TestIngestTraits_PerVocabBreakdown(t *testing.T) {
 	}
 }
 
+// A vocab file with only a header row (zero data rows) must not register in
+// trait_vocabulary at all: UpsertTraitVocabulary is called only when the file
+// actually contributed rows, distinguishing it from a missing file (Skipped)
+// and from a file whose rows all failed to parse. A sibling vocab with one
+// well-formed row is ingested in the same run and must get its entry, so the
+// assertion is sharp enough to catch a >/>= boundary mistake rather than
+// passing on an empty-map coincidence.
+func TestIngestTraits_HeaderOnlyFileDoesNotRegisterItsVocabulary(t *testing.T) {
+	dir := seedTraitDir(t,
+		"taxon|vocab|vocab_version|dim|value|niche_width|n_systems\n"+
+			"Inula hirta|eive|1.0|M|4.22|2.47|1\n",
+		"taxon|vocab|vocab_version|dim|value|niche_width|n_systems\n", "")
+	repo := newFakeRepo()
+	resolver := fakeResolver{"Inula hirta": "wcvp:1"}
+	rep, err := IngestTraits(context.Background(), repo, resolver, traitCSVPaths(dir))
+	if err != nil {
+		t.Fatalf("IngestTraits: %v", err)
+	}
+	if rep.Rows != 1 || rep.Resolved != 1 {
+		t.Errorf("Rows/Resolved = %d/%d, want 1/1 (only the eive row)", rep.Rows, rep.Resolved)
+	}
+	if _, ok := rep.PerVocab["tichy2023"]; !ok {
+		t.Error("PerVocab should still carry an entry for the header-only vocab (its file was read)")
+	}
+	for _, tv := range repo.traitVocabs {
+		if tv.Vocab == "tichy2023" {
+			t.Errorf("traitVocabs contains %q from a header-only file, want no entry", tv.Vocab)
+		}
+	}
+	found := false
+	for _, tv := range repo.traitVocabs {
+		if tv.Vocab == "eive" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("traitVocabs missing the \"eive\" entry from the sibling file that had a data row")
+	}
+}
+
 func TestIngestTraits_MissingFileIsSkippedNotAborted(t *testing.T) {
 	dir := seedTraitDir(t,
 		"taxon|vocab|vocab_version|dim|value|niche_width|n_systems\n"+
