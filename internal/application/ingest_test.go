@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -582,6 +583,10 @@ func (r *fakeRepo) AllSyntaxa(_ context.Context) ([]domain.Syntaxon, error) {
 	}
 	out := make([]domain.Syntaxon, len(r.syntaxa))
 	copy(out, r.syntaxa)
+	// The interface promises id order (the sqlite adapter does ORDER BY id) —
+	// keep the fake honest about it rather than relaxing the contract, even
+	// though today's callers don't depend on the order.
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
 }
 

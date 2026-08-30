@@ -62,14 +62,15 @@ Am gepinnten Datenstand sind beide gemessen **0**. Siehe
 4. `IngestDistribution` — die Verbreitung der aufgelösten Konzepte (siehe unten).
 5. `IngestLocalizations` und `DeriveGermanLabels` — der Label-Overlay.
 
-Ist hostus beim zweiten Schritt nicht erreichbar, bricht `ingest` mit einem
-Fehler ab — aber der **erste** Schritt ist zu diesem Zeitpunkt bereits
-committed. Der Index enthält dann Typologien/Habitattypen/Crosswalks/Syntaxa,
-aber keine Artenrollen. Das ist kein Datenverlust: jeder `Upsert*` ist
-idempotent, ein erneuter `situs ingest`-Lauf gegen denselben Index holt den
-fehlenden zweiten Schritt einfach nach. Ein Operator, der nach einem
-fehlgeschlagenen Lauf den Index inspiziert, sollte diese Teilbefüllung aber
-nicht als Bug lesen.
+Ist hostus beim **dritten** Schritt (`IngestSpeciesRoles`) nicht erreichbar,
+bricht `ingest` mit einem Fehler ab — aber die **ersten beiden** Schritte sind
+zu diesem Zeitpunkt bereits committed. Der Index enthält dann
+Typologien/Habitattypen/Crosswalks/Syntaxa inklusive der FloraVeg-Hierarchie-
+Anreicherung, aber keine Artenrollen. Das ist kein Datenverlust: jeder
+`Upsert*` ist idempotent, ein erneuter `situs ingest`-Lauf gegen denselben
+Index holt den fehlenden dritten Schritt einfach nach. Ein Operator, der nach
+einem fehlgeschlagenen Lauf den Index inspiziert, sollte diese Teilbefüllung
+aber nicht als Bug lesen.
 
 ## Die gemeldete Resolution Rate
 
