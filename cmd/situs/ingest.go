@@ -153,6 +153,7 @@ type ingestOutput struct {
 	DistributionFailed int
 	Localizations      int
 	DerivedLabels      int
+	SyntaxaHierarchy   application.SyntaxaHierarchyReport
 }
 
 func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath string) error {
@@ -171,6 +172,14 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath string) er
 	report, err := application.IngestCSV(ctx, db, csvDir)
 	if err != nil {
 		return fmt.Errorf("ingesting %q: %w", csvDir, err)
+	}
+
+	// Runs right after the EUNIS alliances are indexed (IngestCSV, above) and
+	// before species/localization/derivation, which do not depend on it and
+	// which it does not depend on.
+	hierarchyReport, err := application.IngestSyntaxaHierarchy(ctx, db, filepath.Join(csvDir, "syntaxa_hierarchy.csv"))
+	if err != nil {
+		return fmt.Errorf("ingesting syntaxa hierarchy from %q: %w", csvDir, err)
 	}
 
 	resolver := hostus.NewClient(cfg.Hostus.BaseURL, &http.Client{Timeout: cfg.Hostus.Timeout}, cfg.Hostus.BatchSize, cfg.Hostus.EntryBackbone)
@@ -217,6 +226,7 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath string) er
 		DistributionFailed: distSrc.FailedConcepts(),
 		Localizations:      localizations,
 		DerivedLabels:      derivedLabels,
+		SyntaxaHierarchy:   hierarchyReport,
 	}
 	enc := json.NewEncoder(cmd.OutOrStdout())
 	enc.SetIndent("", "  ")
