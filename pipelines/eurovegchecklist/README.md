@@ -62,5 +62,5 @@ Die echte Kopfzeile weicht von einem naiven `Code/Name/Author`-Schema ab:
 python3 -m unittest discover -v
 ```
 
-Baut ihre XLSX-Fixtures im Speicher — kein Netzwerk, keine Binärdatei im Repo
-nötig.
+Baut ihre XLSX-Fixtures selbst (in ein temporäres Verzeichnis, das der Test
+danach wieder aufräumt) — kein Netzwerk, keine Binärdatei im Repo nötig.
