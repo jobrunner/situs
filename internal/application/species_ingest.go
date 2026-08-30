@@ -66,7 +66,7 @@ type speciesRow struct {
 // rows the same way every other ingest file does.
 func readSpeciesRows(ctx context.Context, dir, file string, skip rowSkipper) ([]speciesRow, error) {
 	var rows []speciesRow
-	err := readAll(ctx, dir, file,
+	err := readAll(ctx, dir, file, ',',
 		[]string{colTypologyID, colCode, "verbatim_name", "role", "fidelity", "constancy"}, skip,
 		func(idx map[string]int, r []string, line int) error {
 			typologyID, perr := domain.ParseTypologyID(r[idx[colTypologyID]])
@@ -108,7 +108,7 @@ func loadCrosswalk(ctx context.Context, csvPath string) (map[string][]string, in
 	crosswalk := map[string][]string{}
 	skipped := 0
 	skip := newRowSkipper(&skipped, file, "crosswalk entry")
-	err := readAll(ctx, dir, file, []string{nameField, "concept_id"}, skip,
+	err := readAll(ctx, dir, file, ',', []string{nameField, "concept_id"}, skip,
 		func(idx map[string]int, r []string, line int) error {
 			name := r[idx[nameField]]
 			id := r[idx["concept_id"]]
@@ -150,7 +150,7 @@ func loadAggregateMembers(ctx context.Context, csvPath string) (map[string][]agg
 	members := map[string][]aggregateMember{}
 	skipped := 0
 	skip := newRowSkipper(&skipped, file, "aggregate member")
-	err := readAll(ctx, dir, file,
+	err := readAll(ctx, dir, file, ',',
 		[]string{"aggregate_concept_id", "member_concept_id", "member_name"}, skip,
 		func(idx map[string]int, r []string, line int) error {
 			aggregateID := r[idx["aggregate_concept_id"]]

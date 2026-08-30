@@ -791,6 +791,21 @@ type fakeQueryService struct {
 	// handler's failure path is exercised without a broken index.
 	indexInfo    input.IndexInfo
 	indexInfoErr error
+	// traitSets/traitErr control what Traits returns; gotTraitConceptID and
+	// gotTraitVocab record its last call's arguments, analogous to
+	// speciesRoleFilter/areaFilter above.
+	traitSets         []input.TraitSetView
+	traitErr          error
+	gotTraitConceptID string
+	gotTraitVocab     string
+}
+
+func (f *fakeQueryService) Traits(_ context.Context, conceptID, vocab string) ([]input.TraitSetView, error) {
+	f.gotTraitConceptID, f.gotTraitVocab = conceptID, vocab
+	if f.traitErr != nil {
+		return nil, f.traitErr
+	}
+	return f.traitSets, nil
 }
 
 func (f *fakeQueryService) IndexInfo(context.Context) (input.IndexInfo, error) {

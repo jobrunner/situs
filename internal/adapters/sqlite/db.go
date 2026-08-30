@@ -130,6 +130,31 @@ func (d *DB) Begin(ctx context.Context) (output.IngestTx, error) {
 	return &ingestTx{ctx: ctx, tx: tx}, nil
 }
 
+// queryStrings runs a "SELECT DISTINCT <col> ..." query that yields exactly
+// one string column per row and collects the results. what is used only in
+// error messages, so ConceptIDs, KnownVocabs and KnownAreaCodes each get their
+// own wording despite sharing this body.
+func (d *DB) queryStrings(ctx context.Context, what, query string, args ...any) ([]string, error) {
+	rows, err := d.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: reading %s: %w", what, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := []string{}
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			return nil, fmt.Errorf("sqlite: scanning %s: %w", what, err)
+		}
+		out = append(out, v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite: iterating %s: %w", what, err)
+	}
+	return out, nil
+}
+
 // HabitatType looks up an abstract habitat type by its (typology, code) key.
 // It returns output.ErrNotFound (wrapped) when no such row exists.
 func (d *DB) HabitatType(ctx context.Context, key domain.HabitatTypeKey) (domain.HabitatType, error) {

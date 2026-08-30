@@ -167,7 +167,7 @@ func supportedLanguage(raw string) (string, bool) {
 // cause; the client only ever sees the envelope.
 func (s *Server) writeQueryError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
-	case errors.Is(err, input.ErrUnknownTypology), errors.Is(err, input.ErrUnknownArea):
+	case errors.Is(err, input.ErrUnknownTypology), errors.Is(err, input.ErrUnknownArea), errors.Is(err, input.ErrUnknownVocab):
 		s.writeError(w, http.StatusBadRequest, CodeInvalidQuery, err.Error())
 	case errors.Is(err, input.ErrNotFound):
 		s.writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
