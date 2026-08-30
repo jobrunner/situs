@@ -21,7 +21,8 @@ import (
 // silently misparse every row.
 const pipeDelim = '|'
 
-// VocabReport is one vocabulary's slice of TraitReport.
+// VocabReport is one vocabulary's slice of TraitReport's counters —
+// TraitReport.PerVocab's value type, not a slice itself.
 type VocabReport struct {
 	Rows       int
 	Resolved   int
