@@ -6,7 +6,7 @@ import tempfile
 import unittest
 import zipfile
 
-from xlsx_to_csv import CSV_HEADERS, HeaderError, convert, rank_and_parent
+from xlsx_to_csv import CSV_HEADERS, HeaderError, convert, primary_code, rank_and_parent
 
 
 def _xml_escape(value):
@@ -64,6 +64,17 @@ class RankAndParentTest(unittest.TestCase):
         self.assertEqual(rank_and_parent("not-a-code"), ("", ""))
 
 
+class PrimaryCodeTest(unittest.TestCase):
+    def test_strips_a_parenthesized_legacy_code(self):
+        self.assertEqual(primary_code("AA01A (KOB-01A)"), "AA01A")
+
+    def test_strips_a_legacy_code_with_no_space_before_the_paren(self):
+        self.assertEqual(primary_code("AA01A(KOB-01A)"), "AA01A")
+
+    def test_a_bare_code_with_no_parens_is_unchanged(self):
+        self.assertEqual(primary_code("AA"), "AA")
+
+
 class ConvertTest(unittest.TestCase):
     def test_writes_class_order_alliance_rows_with_derived_parents(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -107,6 +118,41 @@ class ConvertTest(unittest.TestCase):
             report = convert(xlsx, out_dir)
             self.assertEqual(report["classes"], 1)
             self.assertEqual(report["skipped_rows"], 1)
+
+    def test_prefers_the_2025_06_12_updated_name_and_author_over_the_2016_ones(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            xlsx = os.path.join(tmp, "floraveg.xlsx")
+            make_workbook(
+                [
+                    [
+                        "Code",
+                        "Syntaxon_name (original EVC, Mucina et al. 2016)",
+                        "Author (original EVC, Mucina et al. 2016)",
+                        "Syntaxon_name (EVC, version 2025-06-12)",
+                        "Author (EVC, version 2025-06-12)",
+                    ],
+                    [
+                        "AA01A (KOB-01A)",
+                        "Salicion albae (2016 name)",
+                        "Soó 1930 (2016 author)",
+                        "Salicion albae (2025 name)",
+                        "Soó 1930 emend. 2025 (2025 author)",
+                    ],
+                ],
+                xlsx,
+            )
+            out_dir = os.path.join(tmp, "out")
+            os.makedirs(out_dir)
+            convert(xlsx, out_dir)
+
+            with open(os.path.join(out_dir, "syntaxa_hierarchy.csv"), encoding="utf-8") as f:
+                content = f.read()
+            self.assertIn(
+                "AA01A,alliance,Salicion albae (2025 name),Soó 1930 emend. 2025 (2025 author),AA01\n",
+                content,
+            )
+            self.assertNotIn("2016 name", content)
+            self.assertNotIn("2016 author", content)
 
     def test_missing_required_header_raises_header_error(self):
         with tempfile.TemporaryDirectory() as tmp:
