@@ -440,7 +440,7 @@ type fakeRepo struct {
 		syntaxonID string
 	}
 	authorUpdates []struct {
-		id, author, parentID string
+		id, name, author, parentID string
 	}
 	allSyntaxaErr error
 	speciesRoles  []domain.SpeciesRole
@@ -559,13 +559,14 @@ func (r *fakeRepo) UpsertSyntaxon(s domain.Syntaxon) error {
 	return nil
 }
 
-func (r *fakeRepo) UpsertSyntaxonAuthor(id, author, parentID string) error {
+func (r *fakeRepo) UpsertSyntaxonAuthor(id, name, author, parentID string) error {
 	if err := r.failIfNamed("UpsertSyntaxonAuthor"); err != nil {
 		return err
 	}
-	r.authorUpdates = append(r.authorUpdates, struct{ id, author, parentID string }{id, author, parentID})
+	r.authorUpdates = append(r.authorUpdates, struct{ id, name, author, parentID string }{id, name, author, parentID})
 	for i := range r.syntaxa {
 		if r.syntaxa[i].ID == id {
+			r.syntaxa[i].Name = name
 			r.syntaxa[i].Author = author
 			if parentID != "" {
 				r.syntaxa[i].ParentID = parentID

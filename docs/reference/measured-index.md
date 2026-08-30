@@ -88,9 +88,11 @@ aus `docs/research/situs-eea-eunis-2021-spike.md`.
 
 Von den **1050** EUNIS-Verbänden im Index (1049 Rang `alliance` + die eine
 `Moltkeetalia petraeae`-Ausnahme auf Rang `order`) fanden **1011** einen
-FloraVeg-Namenstreffer (Author + ParentID übernommen), **38** blieben ohne
-Treffer (Name bleibt der historische EUNIS-Kombi-String, `Author=""`), **0**
-Mehrfachtreffer wurden nicht geraten (`AmbiguousMatches`).
+FloraVeg-Namenstreffer (Name + Author + ParentID von FloraVeg übernommen —
+der historische EUNIS-Kombi-String wird dabei durch FloraVegs sauberen Namen
+ersetzt), **38** blieben ohne Treffer (Name bleibt der historische
+EUNIS-Kombi-String, `Author=""`), **0** Mehrfachtreffer wurden nicht geraten
+(`AmbiguousMatches`).
 
 Gemessen mit einem echten `situs ingest`-Lauf gegen beide Pipelines
 (hostus dabei durch einen lokalen Stub ersetzt, der jede Anfrage mit

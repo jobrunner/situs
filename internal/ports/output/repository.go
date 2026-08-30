@@ -18,11 +18,13 @@ type IngestTx interface {
 	UpsertHabitatType(h domain.HabitatType) error
 	UpsertCrosswalk(c domain.Crosswalk) error
 	UpsertSyntaxon(s domain.Syntaxon) error
-	// UpsertSyntaxonAuthor sets Author on an already-upserted syntaxon and, if
-	// parentID is non-empty, its ParentID — used ONLY by the hierarchy-matching
-	// pass to enrich an existing EUNIS alliance row without re-declaring its
-	// Rank/Name (remain EUNIS-owned in case of missing FloraVeg match).
-	UpsertSyntaxonAuthor(id, author, parentID string) error
+	// UpsertSyntaxonAuthor sets Name and Author on an already-upserted syntaxon
+	// and, if parentID is non-empty, its ParentID — used ONLY by the
+	// hierarchy-matching pass to enrich an existing EUNIS alliance row on a
+	// FloraVeg match. name is FloraVeg's own clean name, replacing the
+	// historical EUNIS combi-string; it is always set (a match always has a
+	// real FloraVeg name), unlike parentID, which can legitimately be empty.
+	UpsertSyntaxonAuthor(id, name, author, parentID string) error
 	LinkSyntaxon(key domain.HabitatTypeKey, syntaxonID string) error
 	UpsertSpeciesRole(r domain.SpeciesRole) error
 	UpsertLocalization(l domain.Localization) error

@@ -69,21 +69,23 @@ func (t *ingestTx) UpsertSyntaxon(s domain.Syntaxon) error {
 	return nil
 }
 
-// UpsertSyntaxonAuthor sets author on an already-upserted syntaxon. An empty
-// parentID leaves the stored parent_id untouched — a repeated hierarchy-ingest
-// pass without a fresh match must not erase a previous one.
-func (t *ingestTx) UpsertSyntaxonAuthor(id, author, parentID string) error {
+// UpsertSyntaxonAuthor sets name and author on an already-upserted syntaxon.
+// name always updates — a match always has a real FloraVeg name to give. An
+// empty parentID leaves the stored parent_id untouched — a repeated
+// hierarchy-ingest pass without a fresh match must not erase a previous one.
+func (t *ingestTx) UpsertSyntaxonAuthor(id, name, author, parentID string) error {
 	if parentID == "" {
-		_, err := t.tx.ExecContext(t.ctx, `UPDATE syntaxon SET author = ? WHERE id = ?`, author, id)
+		_, err := t.tx.ExecContext(t.ctx,
+			`UPDATE syntaxon SET name = ?, author = ? WHERE id = ?`, name, author, id)
 		if err != nil {
-			return fmt.Errorf("sqlite: setting author of syntaxon %s: %w", id, err)
+			return fmt.Errorf("sqlite: setting name/author of syntaxon %s: %w", id, err)
 		}
 		return nil
 	}
 	_, err := t.tx.ExecContext(t.ctx,
-		`UPDATE syntaxon SET author = ?, parent_id = ? WHERE id = ?`, author, parentID, id)
+		`UPDATE syntaxon SET name = ?, author = ?, parent_id = ? WHERE id = ?`, name, author, parentID, id)
 	if err != nil {
-		return fmt.Errorf("sqlite: setting author/parent of syntaxon %s: %w", id, err)
+		return fmt.Errorf("sqlite: setting name/author/parent of syntaxon %s: %w", id, err)
 	}
 	return nil
 }

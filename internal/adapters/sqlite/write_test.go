@@ -281,18 +281,18 @@ func withTx(ctx context.Context, t *testing.T, db *DB, fn func(tx output.IngestT
 }
 
 // assertSyntaxonAuthorAndRank fetches id and checks that UpsertSyntaxonAuthor
-// set Author/ParentID as wanted without touching Rank/Name.
+// set Name/Author/ParentID as wanted without touching Rank.
 func assertSyntaxonAuthorAndRank(ctx context.Context, t *testing.T, db *DB, id, wantAuthor, wantParentID, wantRank, wantName string) {
 	t.Helper()
 	got, err := db.Syntaxon(ctx, id)
 	if err != nil {
 		t.Fatalf("Syntaxon: %v", err)
 	}
-	if got.Author != wantAuthor || got.ParentID != wantParentID {
-		t.Errorf("got = %+v, want Author=%q ParentID=%q", got, wantAuthor, wantParentID)
+	if got.Author != wantAuthor || got.ParentID != wantParentID || got.Name != wantName {
+		t.Errorf("got = %+v, want Author=%q ParentID=%q Name=%q", got, wantAuthor, wantParentID, wantName)
 	}
-	if got.Rank != wantRank || got.Name != wantName {
-		t.Errorf("got = %+v, want Rank/Name untouched", got)
+	if got.Rank != wantRank {
+		t.Errorf("got = %+v, want Rank untouched (%q)", got, wantRank)
 	}
 }
 
@@ -318,15 +318,17 @@ func TestIngestTx_UpsertSyntaxonAuthor(t *testing.T) {
 	})
 
 	withTx(ctx, t, db, func(tx output.IngestTx) error {
-		return tx.UpsertSyntaxonAuthor("arrhenatherion", "Koch 1926", "AA01")
+		return tx.UpsertSyntaxonAuthor("arrhenatherion", "Arrhenatherion elatioris", "Koch 1926", "AA01")
 	})
-	assertSyntaxonAuthorAndRank(ctx, t, db, "arrhenatherion", "Koch 1926", "AA01", "alliance", "Arrhenatherion")
+	assertSyntaxonAuthorAndRank(ctx, t, db, "arrhenatherion", "Koch 1926", "AA01", "alliance", "Arrhenatherion elatioris")
 
-	// A second call with an empty parentID must not clear the one just set.
+	// A second call with an empty parentID must not clear the one just set,
+	// but name/author DO update on every call.
 	withTx(ctx, t, db, func(tx output.IngestTx) error {
-		return tx.UpsertSyntaxonAuthor("arrhenatherion", "Koch 1926 emend.", "")
+		return tx.UpsertSyntaxonAuthor("arrhenatherion", "Arrhenatherion elatioris", "Koch 1926 emend.", "")
 	})
 	assertSyntaxonParentID(ctx, t, db, "arrhenatherion", "AA01")
+	assertSyntaxonAuthorAndRank(ctx, t, db, "arrhenatherion", "Koch 1926 emend.", "AA01", "alliance", "Arrhenatherion elatioris")
 }
 
 func TestCrosswalksTo_ReturnsOnlyCrosswalksToTheGivenTypology(t *testing.T) {
@@ -650,10 +652,10 @@ func TestIngestTx_MethodsWrapErrorsOnAClosedTransaction(t *testing.T) {
 		},
 		"UpsertSyntaxon": func() error { return tx.UpsertSyntaxon(domain.Syntaxon{ID: "x", Rank: "class", Name: "x"}) },
 		"UpsertSyntaxonAuthor(no parent)": func() error {
-			return tx.UpsertSyntaxonAuthor("x", "Koch 1926", "")
+			return tx.UpsertSyntaxonAuthor("x", "X", "Koch 1926", "")
 		},
 		"UpsertSyntaxonAuthor(with parent)": func() error {
-			return tx.UpsertSyntaxonAuthor("x", "Koch 1926", "AA01")
+			return tx.UpsertSyntaxonAuthor("x", "X", "Koch 1926", "AA01")
 		},
 		"LinkSyntaxon": func() error { return tx.LinkSyntaxon(key, "x") },
 		"UpsertSpeciesRole": func() error {

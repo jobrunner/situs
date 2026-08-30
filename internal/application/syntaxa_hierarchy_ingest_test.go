@@ -63,8 +63,46 @@ func TestIngestSyntaxaHierarchy_MatchesLongestAlliancePrefixAndSetsAuthorParent(
 		t.Fatalf("authorUpdates = %+v, want exactly one", repo.authorUpdates)
 	}
 	got := repo.authorUpdates[0]
-	if got.id != "CAK-01C" || got.author != "Br.-Bl. 1931" || got.parentID != "AA01" {
-		t.Errorf("authorUpdate = %+v, want {CAK-01C, Br.-Bl. 1931, AA01}", got)
+	if got.id != "CAK-01C" || got.name != "Cakilion edentulae" || got.author != "Br.-Bl. 1931" || got.parentID != "AA01" {
+		t.Errorf("authorUpdate = %+v, want {CAK-01C, Cakilion edentulae, Br.-Bl. 1931, AA01}", got)
+	}
+	// The matched EUNIS alliance loses its embedded-author combi-string name in
+	// favor of FloraVeg's clean name — this is the behavior the OLD code did
+	// NOT have: UpsertSyntaxonAuthor used to take only (id, author, parentID)
+	// and never touched Name, so this assertion would fail against it.
+	for _, s := range repo.syntaxa {
+		if s.ID == "CAK-01C" && s.Name != "Cakilion edentulae" {
+			t.Errorf("syntaxon %s Name = %q, want FloraVeg's clean name %q", s.ID, s.Name, "Cakilion edentulae")
+		}
+	}
+}
+
+// A FloraVeg candidate name that is a raw string-prefix of the EUNIS name but
+// does NOT end at a word boundary must not match. "Salicion alba" is a
+// literal string-prefix of "Salicion albae Soó 1930" (they share every byte
+// up to "alba"), but the two are different taxa — the character right after
+// the prefix is "e", not a space, so this must be reported as unmatched, not
+// as a match. Before the word-boundary check this test would have failed:
+// strings.HasPrefix alone accepts it.
+func TestIngestSyntaxaHierarchy_PrefixMatchRequiresWordBoundary(t *testing.T) {
+	repo := newFakeRepo()
+	repo.syntaxa = append(repo.syntaxa, domain.Syntaxon{
+		ID: "SAL-01", Rank: "alliance", Name: "Salicion albae Soó 1930",
+	})
+	dir := t.TempDir()
+	path := writeHierarchyCSV(t, dir,
+		"code,rank,name,author,parent_code\n"+
+			"AA01A,alliance,Salicion alba,Br.-Bl. 1926,AA01\n")
+
+	rep, err := IngestSyntaxaHierarchy(context.Background(), repo, path)
+	if err != nil {
+		t.Fatalf("IngestSyntaxaHierarchy: %v", err)
+	}
+	if rep.AlliancesMatched != 0 || rep.AlliancesUnmatched != 1 {
+		t.Errorf("AlliancesMatched/Unmatched = %d/%d, want 0/1 (mid-word prefix must not match)", rep.AlliancesMatched, rep.AlliancesUnmatched)
+	}
+	if len(repo.authorUpdates) != 0 {
+		t.Errorf("authorUpdates = %+v, want none for a mid-word prefix", repo.authorUpdates)
 	}
 }
 

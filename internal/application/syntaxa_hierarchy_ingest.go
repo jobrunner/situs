@@ -18,8 +18,8 @@ import (
 type SyntaxaHierarchyReport struct {
 	ClassesWritten     int
 	OrdersWritten      int
-	AlliancesMatched   int // EUNIS-Verbände mit gefundenem FloraVeg-Elternteil
-	AlliancesUnmatched int // EUNIS-Verbände ohne Treffer (ParentID bleibt leer)
+	AlliancesMatched   int // EUNIS alliances with a found FloraVeg parent
+	AlliancesUnmatched int // EUNIS alliances without a match (ParentID stays empty)
 	AmbiguousMatches   []string
 }
 
@@ -56,7 +56,7 @@ func IngestSyntaxaHierarchy(ctx context.Context, repo output.Repository, csvPath
 		return SyntaxaHierarchyReport{}, fmt.Errorf("statting %s: %w", csvPath, err)
 	}
 
-	rows, skipped, err := readHierarchyRows(csvPath)
+	rows, skipped, err := readHierarchyRows(ctx, csvPath)
 	if err != nil {
 		return SyntaxaHierarchyReport{}, err
 	}
@@ -91,12 +91,12 @@ func IngestSyntaxaHierarchy(ctx context.Context, repo output.Repository, csvPath
 // readHierarchyRows parses csvPath's data rows, skipping (and counting) any
 // row with the wrong field count or an unrecognized rank, same tolerance as
 // every other ingest file in this package.
-func readHierarchyRows(csvPath string) ([]hierarchyRow, int, error) {
+func readHierarchyRows(ctx context.Context, csvPath string) ([]hierarchyRow, int, error) {
 	dir, file := filepath.Split(csvPath)
 	var rows []hierarchyRow
 	skipped := 0
 	skip := newRowSkipper(&skipped, file, "syntaxon hierarchy")
-	err := readAll(context.Background(), dir, file,
+	err := readAll(ctx, dir, file,
 		[]string{"code", "rank", colName, "author", "parent_code"}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			rank := row[idx["rank"]]
@@ -159,7 +159,7 @@ func ingestHierarchyRows(tx output.IngestTx, rows []hierarchyRow, existing []dom
 			rep.AlliancesUnmatched++
 			continue
 		}
-		if err := tx.UpsertSyntaxonAuthor(e.ID, match.author, match.parentCode); err != nil {
+		if err := tx.UpsertSyntaxonAuthor(e.ID, match.name, match.author, match.parentCode); err != nil {
 			return SyntaxaHierarchyReport{}, fmt.Errorf("setting author of %s: %w", e.ID, err)
 		}
 		rep.AlliancesMatched++
@@ -171,6 +171,9 @@ func ingestHierarchyRows(tx output.IngestTx, rows []hierarchyRow, existing []dom
 // longestPrefixMatch finds the FloraVeg alliance whose name is the longest
 // prefix of eunisName. Two candidates tied at the same longest length are
 // reported as ambiguous (match == nil, ambiguous == true) — never guessed.
+// The prefix must end at a word boundary: either c.name is the whole string,
+// or the next rune in eunisName is a space — a raw string-prefix match
+// (e.g. "Salicion alba" inside "Salicion albae Soó 1930") is not a name match.
 func longestPrefixMatch(eunisName string, candidates []hierarchyRow) (match *hierarchyRow, ambiguous bool) {
 	bestLen := -1
 	var best *hierarchyRow
@@ -178,6 +181,9 @@ func longestPrefixMatch(eunisName string, candidates []hierarchyRow) (match *hie
 	for i := range candidates {
 		c := &candidates[i]
 		if c.name == "" || !strings.HasPrefix(eunisName, c.name) {
+			continue
+		}
+		if len(eunisName) > len(c.name) && eunisName[len(c.name)] != ' ' {
 			continue
 		}
 		l := len(c.name)

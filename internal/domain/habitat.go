@@ -29,9 +29,11 @@ type Crosswalk struct {
 }
 
 type Syntaxon struct {
-	ID       string
-	Rank     string // "class" | "order" | "alliance"
-	Name     string // syntaxon name only, without authorship
+	ID   string
+	Rank string // "class" | "order" | "alliance"
+	Name string // syntaxon name only, without authorship; FloraVeg's clean
+	// name on a FloraVeg-sourced/matched row, else the historical EUNIS
+	// combi-string (author embedded) for an unmatched EUNIS alliance
 	Author   string // author citation; "" if no clean split is known
 	ParentID string
 }
