@@ -239,6 +239,118 @@ func TestIngestTx_UpsertsCrosswalkSyntaxonSpeciesRoleAndLocalization(t *testing.
 	assertNoDuplicateRows(ctx, t, db)
 }
 
+func TestIngestTx_UpsertSyntaxonRoundTripsAuthor(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	s := domain.Syntaxon{ID: "arrhenatherion", Rank: "alliance", Name: "Arrhenatherion", Author: "Koch 1926"}
+	if err := tx.UpsertSyntaxon(s); err != nil {
+		t.Fatalf("UpsertSyntaxon: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.Syntaxon(ctx, "arrhenatherion")
+	if err != nil {
+		t.Fatalf("Syntaxon: %v", err)
+	}
+	if got.Author != "Koch 1926" {
+		t.Errorf("Author = %q, want %q", got.Author, "Koch 1926")
+	}
+}
+
+// withTx begins a transaction on db, runs fn, and commits — the shared shape
+// of every ingest step in this test, so a caller states only what changes.
+func withTx(ctx context.Context, t *testing.T, db *DB, fn func(tx output.IngestTx) error) {
+	t.Helper()
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := fn(tx); err != nil {
+		t.Fatalf("ingest step: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+}
+
+// assertSyntaxonAuthorAndRank fetches id and checks that UpsertSyntaxonAuthor
+// set Name/Author/ParentID as wanted without touching Rank.
+func assertSyntaxonAuthorAndRank(ctx context.Context, t *testing.T, db *DB, id, wantAuthor, wantParentID, wantRank, wantName string) {
+	t.Helper()
+	got, err := db.Syntaxon(ctx, id)
+	if err != nil {
+		t.Fatalf("Syntaxon: %v", err)
+	}
+	if got.Author != wantAuthor || got.ParentID != wantParentID || got.Name != wantName {
+		t.Errorf("got = %+v, want Author=%q ParentID=%q Name=%q", got, wantAuthor, wantParentID, wantName)
+	}
+	if got.Rank != wantRank {
+		t.Errorf("got = %+v, want Rank untouched (%q)", got, wantRank)
+	}
+}
+
+// assertSyntaxonParentID fetches id and checks only ParentID — used for the
+// empty-parentID call, which must leave a previously set ParentID untouched.
+func assertSyntaxonParentID(ctx context.Context, t *testing.T, db *DB, id, wantParentID string) {
+	t.Helper()
+	got, err := db.Syntaxon(ctx, id)
+	if err != nil {
+		t.Fatalf("Syntaxon: %v", err)
+	}
+	if got.ParentID != wantParentID {
+		t.Errorf("ParentID = %q after empty-parentID call, want it untouched (%q)", got.ParentID, wantParentID)
+	}
+}
+
+func TestIngestTx_UpsertSyntaxonAuthor(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	withTx(ctx, t, db, func(tx output.IngestTx) error {
+		return tx.UpsertSyntaxon(domain.Syntaxon{ID: "arrhenatherion", Rank: "alliance", Name: "Arrhenatherion"})
+	})
+
+	withTx(ctx, t, db, func(tx output.IngestTx) error {
+		return tx.UpsertSyntaxonAuthor("arrhenatherion", "Arrhenatherion elatioris", "Koch 1926", "AA01")
+	})
+	assertSyntaxonAuthorAndRank(ctx, t, db, "arrhenatherion", "Koch 1926", "AA01", "alliance", "Arrhenatherion elatioris")
+
+	// A second call with an empty parentID must not clear the one just set,
+	// but name/author DO update on every call.
+	withTx(ctx, t, db, func(tx output.IngestTx) error {
+		return tx.UpsertSyntaxonAuthor("arrhenatherion", "Arrhenatherion elatioris", "Koch 1926 emend.", "")
+	})
+	assertSyntaxonParentID(ctx, t, db, "arrhenatherion", "AA01")
+	assertSyntaxonAuthorAndRank(ctx, t, db, "arrhenatherion", "Koch 1926 emend.", "AA01", "alliance", "Arrhenatherion elatioris")
+}
+
+// UpsertSyntaxonAuthor only ever enriches a row its caller just read back
+// from the index — an id matching zero rows means the index changed under
+// the ingest or the caller drifted out of sync, and must surface as an
+// error rather than a silent no-op.
+func TestIngestTx_UpsertSyntaxonAuthor_UnknownIDIsAnError(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertSyntaxonAuthor("does-not-exist", "X", "Koch 1926", "AA01"); err == nil {
+		t.Fatal("UpsertSyntaxonAuthor(unknown id) = nil error, want an error")
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+}
+
 func TestCrosswalksTo_ReturnsOnlyCrosswalksToTheGivenTypology(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
@@ -559,7 +671,13 @@ func TestIngestTx_MethodsWrapErrorsOnAClosedTransaction(t *testing.T) {
 			return tx.UpsertCrosswalk(domain.Crosswalk{From: key, To: key, Qualifier: domain.QualifierSame})
 		},
 		"UpsertSyntaxon": func() error { return tx.UpsertSyntaxon(domain.Syntaxon{ID: "x", Rank: "class", Name: "x"}) },
-		"LinkSyntaxon":   func() error { return tx.LinkSyntaxon(key, "x") },
+		"UpsertSyntaxonAuthor(no parent)": func() error {
+			return tx.UpsertSyntaxonAuthor("x", "X", "Koch 1926", "")
+		},
+		"UpsertSyntaxonAuthor(with parent)": func() error {
+			return tx.UpsertSyntaxonAuthor("x", "X", "Koch 1926", "AA01")
+		},
+		"LinkSyntaxon": func() error { return tx.LinkSyntaxon(key, "x") },
 		"UpsertSpeciesRole": func() error {
 			return tx.UpsertSpeciesRole(domain.SpeciesRole{Key: key, VerbatimName: "x", Role: "diagnostic"})
 		},

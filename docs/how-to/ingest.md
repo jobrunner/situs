@@ -8,11 +8,13 @@ situs ingest --csv-dir pipelines/eunis/out --db situs.sqlite
 Liest die von `pipelines/eunis/xlsx_to_csv.py` erzeugten CSVs
 (`typologies.csv`, `habitat_types.csv`, `crosswalks.csv`, `syntaxa.csv`,
 `habitat_type_syntaxa.csv`, `species_roles.csv`, optional
-`localizations.csv`) sowie, ebenfalls optional, die drei Zeigerwert-CSVs
+`localizations.csv`) plus, ebenfalls optional, `syntaxa_hierarchy.csv` von
+`pipelines/eurovegchecklist/xlsx_to_csv.py` und die drei Zeigerwert-CSVs
 (`eive_traits.csv`, `tichy_traits.csv`, `midolo_traits.csv` — erzeugt von
-`pipelines/{eive,tichy,midolo}`) aus `--csv-dir` und schreibt in die
-SQLite-Datei `--db`. Die Ausgabe ist ein JSON-Report mit den Zeilenzählern je
-Entität plus dem Artenrollen-Report und dem Trait-Report (siehe unten).
+`pipelines/{eive,tichy,midolo}`) — alle Pipelines schreiben in denselben
+`--csv-dir` — aus `--csv-dir` und schreibt in die SQLite-Datei `--db`. Die
+Ausgabe ist ein JSON-Report mit den Zeilenzählern je Entität plus dem
+Artenrollen-Report und dem Trait-Report (siehe unten).
 
 `--crosswalk`/`--aggregate-members` sind optional und fallen auf
 `<csv-dir>/eurosl_crosswalk.csv` bzw. `<csv-dir>/aggregate_members.csv`
@@ -24,6 +26,10 @@ ist Absicht: `serve` kennt kein `--db`, und ein Index, in den ingestiert
 wurde, während ein anderer serviert wird, ergibt einen leeren, aber
 `/health/ready`-grünen Dienst. Wird `--db` gesetzt, gewinnt das Flag über die
 Konfiguration, wie überall in diesem Dienst.
+
+Ein Index, der vor der Syntaxa-Hierarchie-Erweiterung gebaut wurde (ohne die
+Spalte `syntaxon.author`), muss gelöscht und per frischem `situs ingest` neu
+aufgebaut werden — ein erneuter Ingest in einen alten Index ist nicht sicher.
 
 Der Index gehört **nicht** ins Repo. `.gitignore` ignoriert `*.sqlite`
 (plus `-wal`/`-shm`), aber keine anderen Endungen — eine Datei namens
@@ -52,21 +58,34 @@ Am gepinnten Datenstand sind beide gemessen **0**. Siehe
 `ingest` läuft in mehreren Schritten, jeder mit eigener Transaktion:
 
 1. `IngestCSV` — Typologien, Habitattypen, Crosswalks, Syntaxa.
-2. `IngestSpeciesRoles` — Artenrollen, aufgelöst gegen eine lokale
+2. `IngestSyntaxaHierarchy` — liest optional `syntaxa_hierarchy.csv` (FloraVeg.EU
+   EuroVegChecklist, siehe `../reference/measured-index.md#syntaxa-tiefe-offener-punkt-1`)
+   und reichert die gerade ingestierten EUNIS-Verbände um Klasse/Ordnung/Autorschaft
+   an, soweit ein eindeutiger Namenstreffer existiert. Läuft direkt nach
+   `IngestCSV` und vor Artenrollen/Verbreitung/Zeigerwerten/Label-Overlay, von
+   denen keiner davon abhängt.
+3. `IngestSpeciesRoles` — Artenrollen, aufgelöst gegen eine lokale
    Crosswalk-Datei (`eurosl_crosswalk.csv`), plus abgeleitete
    Mitgliedsarten-Zeilen für Sammelarten (`aggregate_members.csv`). Kein
    hostus-Aufruf mehr in diesem Schritt.
-3. `IngestDistribution` — die Verbreitung der aufgelösten Konzepte (siehe unten).
-4. `IngestTraits` — die Zeigerwerte (EIVE, Tichý, Midolo) der aufgelösten
+4. `IngestDistribution` — die Verbreitung der aufgelösten Konzepte (siehe unten).
+5. `IngestTraits` — die Zeigerwerte (EIVE, Tichý, Midolo) der aufgelösten
    Konzepte, gelesen aus `eive_traits.csv`, `tichy_traits.csv` und
    `midolo_traits.csv` im `--csv-dir`, ebenfalls über hostus-Namensauflösung.
-5. `IngestLocalizations` und `DeriveGermanLabels` — der Label-Overlay.
+6. `IngestLocalizations` und `DeriveGermanLabels` — der Label-Overlay.
 
-Fehlt `eurosl_crosswalk.csv`, bricht `ingest` beim zweiten Schritt mit einem
-Fehler ab — aber der **erste** Schritt ist zu diesem Zeitpunkt bereits
-committed (Typologien/Habitattypen/Crosswalks/Syntaxa, aber keine
-Artenrollen). Das ist kein Datenverlust: jeder `Upsert*` ist idempotent, ein
-erneuter Lauf holt den fehlenden Schritt nach.
+Fehlt `eurosl_crosswalk.csv`, bricht `ingest` beim **dritten** Schritt
+(`IngestSpeciesRoles`) mit einem Fehler ab — aber die **ersten beiden**
+Schritte sind zu diesem Zeitpunkt bereits committed
+(Typologien/Habitattypen/Crosswalks/Syntaxa inklusive der
+FloraVeg-Hierarchie-Anreicherung, aber keine Artenrollen). hostus wird
+dabei gar nicht erst kontaktiert: die Namensauflösung ist seit der
+Aggregat-Mitgliedsarten-Erweiterung rein dateibasiert, hostus kommt erst ab
+Schritt 4 (`IngestDistribution`) ins Spiel. Ein fehlgeschlagener dritter
+Schritt ist kein Datenverlust: jeder `Upsert*` ist idempotent, ein erneuter
+`situs ingest`-Lauf gegen denselben Index holt ihn einfach nach. Ein
+Operator, der nach einem fehlgeschlagenen Lauf den Index inspiziert, sollte
+diese Teilbefüllung nicht als Bug lesen.
 
 ## Namensauflösung und Mitgliedsarten-Ableitung
 

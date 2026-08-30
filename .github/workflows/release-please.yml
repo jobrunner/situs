@@ -25,11 +25,46 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
+      # Mint a short-lived installation token for the "release-please-fieldworksdiary"
+      # GitHub App (Contents + Pull requests, both read/write) instead of a
+      # long-lived PAT: release-please's commits on the release PR need to
+      # TRIGGER required-status-check workflows, which commits pushed with the
+      # default GITHUB_TOKEN do NOT (GitHub's workflow loop-prevention) — that
+      # leaves the release PR permanently BLOCKED once checks are required. An
+      # App token has the same effect as a PAT here but is scoped to this repo,
+      # short-lived, and revoked automatically at the end of the job.
+      - name: Generate release-please App token
+        id: app-token
+        # continue-on-error is what makes the `|| secrets.GITHUB_TOKEN` fallback
+        # below real: without it, a missing/invalid App secret fails this step
+        # and the whole job stops before release-please ever runs — the "falls
+        # back to GITHUB_TOKEN" claim would be false.
+        continue-on-error: true
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_KEY }}
+          # Narrow the minted token to exactly what release-please needs,
+          # rather than inheriting the App's whole installation grant
+          # (zizmor github-app finding).
+          permission-contents: write
+          permission-pull-requests: write
+
+      # continue-on-error keeps a misconfigured App secret from silently
+      # passing as green: the step above is allowed to fail, but this one
+      # makes that failure a visible, annotated warning on the run instead of
+      # nothing at all — the run still falls back to GITHUB_TOKEN, but an
+      # operator sees why the release PR risks going blocked.
+      - name: Warn if the App token could not be minted
+        if: steps.app-token.outcome == 'failure'
+        run: echo "::warning::release-please App token minting failed (check RELEASE_PLEASE_APP_ID/RELEASE_PLEASE_APP_KEY) — falling back to GITHUB_TOKEN, which does not trigger required-status-check workflows on the release PR."
+
       - uses: googleapis/release-please-action@v4
         id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
 
   goreleaser:
     needs: release-please

@@ -95,6 +95,15 @@ type SyntaxonRef struct {
 	ID   string `json:"id"`
 	Rank string `json:"rank"`
 	Name string `json:"name"`
+	// Author is the authorship citation, taken verbatim from FloraVeg.EU's own
+	// already-separated column — absent when no FloraVeg match was found, never
+	// a guessed split of Name.
+	Author string `json:"author,omitempty"`
+	// ParentID references a FloraVeg order code (class -> order -> alliance
+	// hierarchy) — absent when unknown. A plain string reference, not a
+	// schema-bound foreign key: two id schemes (EUNIS alliance codes, FloraVeg
+	// class/order codes) coexist here.
+	ParentID string `json:"parent_id,omitempty"`
 }
 
 // CrosswalkRef is the far side of a correspondence, seen from the queried type.

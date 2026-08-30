@@ -218,7 +218,7 @@ func (q *QueryService) syntaxaOf(ctx context.Context, key domain.HabitatTypeKey)
 	}
 	out := make([]input.SyntaxonRef, 0, len(syntaxa))
 	for _, s := range syntaxa {
-		out = append(out, input.SyntaxonRef{ID: s.ID, Rank: s.Rank, Name: s.Name})
+		out = append(out, input.SyntaxonRef{ID: s.ID, Rank: s.Rank, Name: s.Name, Author: s.Author, ParentID: s.ParentID})
 	}
 	return out, nil
 }

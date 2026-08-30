@@ -55,3 +55,4 @@ __pycache__/
 *.cc.json.gz
 coverage.info
 coverage.out
+.worktrees/

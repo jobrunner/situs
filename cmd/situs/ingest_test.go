@@ -378,6 +378,35 @@ func TestIngestCommandLoadsCSVsAndPrintsTheReport(t *testing.T) {
 	}
 }
 
+func TestIngestCommandRunsSyntaxaHierarchyIngestAfterEUNISSyntaxa(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t)
+	// Overwrite syntaxa.csv/habitat_type_syntaxa.csv with one real EUNIS
+	// alliance so the hierarchy step has something to match against.
+	writeIngestCSV(t, dir, "syntaxa.csv", "id,rank,name,parent_id\nCAK-01C,alliance,Cakilion edentulae Br.-Bl. 1931,\n")
+	writeIngestCSV(t, dir, "habitat_type_syntaxa.csv", "typology_id,code,syntaxon_id\neunis@2021,R22,CAK-01C\n")
+	writeIngestCSV(t, dir, "syntaxa_hierarchy.csv",
+		"code,rank,name,author,parent_code\n"+
+			"AA01,order,Cakiletalia,Tüxen 1950,AA\n"+
+			"AA01A,alliance,Cakilion edentulae,Br.-Bl. 1931,AA01\n")
+	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", dbPath})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("executing ingest: %v", err)
+	}
+	if !strings.Contains(out.String(), `"AlliancesMatched": 1`) {
+		t.Errorf("output = %q, want the report to show one matched alliance", out.String())
+	}
+	if !strings.Contains(out.String(), `"OrdersWritten": 1`) {
+		t.Errorf("output = %q, want the report to show one FloraVeg order written", out.String())
+	}
+}
+
 func TestIngestCommand_ReportIncludesTraits(t *testing.T) {
 	stubHostus(t)
 	csvDir := seedIngestDir(t)
@@ -415,6 +444,46 @@ func TestIngestCommand_ReportIncludesTraits(t *testing.T) {
 	skipped, ok := traits["Skipped"].([]any)
 	if !ok || len(skipped) != 2 {
 		t.Errorf("Traits.Skipped = %v, want the two missing vocab files (tichy2023, midolo2023)", traits["Skipped"])
+	}
+}
+
+func TestIngestCommandRunsWithoutASyntaxaHierarchyFile(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t) // no syntaxa_hierarchy.csv written
+	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", dbPath})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("executing ingest without syntaxa_hierarchy.csv: %v", err)
+	}
+	if !strings.Contains(out.String(), `"ClassesWritten": 0`) {
+		t.Errorf("output = %q, want a present-but-zero SyntaxaHierarchy report", out.String())
+	}
+}
+
+// A malformed syntaxa_hierarchy.csv (missing a required column) must fail
+// the whole ingest run, wrapped with the "ingesting syntaxa hierarchy" text
+// this command adds — this is the run's own error-wrapping branch, not
+// application.IngestSyntaxaHierarchy's.
+func TestIngestCommandFailsOnAMalformedSyntaxaHierarchyCSV(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t)
+	writeIngestCSV(t, dir, "syntaxa_hierarchy.csv", "code,rank,name,parent_code\nAA,class,X,\n") // missing "author"
+
+	root := newRootCmd()
+	root.SetOut(&bytes.Buffer{})
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", filepath.Join(t.TempDir(), "situs.sqlite")})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("executing ingest with a malformed syntaxa_hierarchy.csv = nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "ingesting syntaxa hierarchy") {
+		t.Errorf("error = %q, want it to name the syntaxa hierarchy ingest step", err)
 	}
 }
 

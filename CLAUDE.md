@@ -119,6 +119,7 @@ internal/
   app/              # composition root
   config/           # SITUS_-prefixed config
 pipelines/eunis/    # XLSX -> normalized CSV (python3, stdlib only)
+pipelines/eurovegchecklist/ # FloraVeg.EU XLSX -> syntaxa_hierarchy.csv (python3, stdlib only)
 ```
 
 Boundaries are enforced by depguard in the linter (`make arch`), not convention.

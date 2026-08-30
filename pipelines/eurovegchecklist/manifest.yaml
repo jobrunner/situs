@@ -1,0 +1,21 @@
+# Pinned source artifact for the EuroVegChecklist hierarchy-ingest pipeline.
+#
+# Plain text like pipelines/eunis/manifest.yaml — no YAML parser needed, no
+# YAML parser used.
+#
+# Not committed: pipelines/eurovegchecklist/artifacts/ is gitignored. Run the
+# curl command in README.md to re-download before running the pipeline.
+
+sources:
+  - id: eurovegchecklist-v4
+    file: List_of_European_vegetation_units_version_4.xlsx
+    description: >
+      Mucina et al. 2016 EuroVegChecklist, version 4 (2025-06-17 update) —
+      the full vegetation-unit hierarchy (class/order/alliance) with codes
+      and authorship, published by FloraVeg.EU.
+    dataset_record: https://floraveg.eu/download/
+    url: "https://files.ibot.cas.cz/cevs/downloads/floraveg/List_of_European_vegetation_units_version_4.xlsx"
+    license: "FloraVeg.EU terms of use — https://floraveg.eu/about/ (free download, no registration)"
+    retrieved: "2026-08-30"
+    sha256: 2d0c1410b44c93cd1170c705212d5a47cfddd1a5c4fdd4a14b65a04771527e95
+    size_bytes: 182910
