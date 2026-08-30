@@ -54,6 +54,44 @@ func TestHabitatType_ReturnsGermanNameAdditively(t *testing.T) {
 	}
 }
 
+func TestHabitatType_SyntaxonAuthorAndParentIDAreOmittedWhenEmpty(t *testing.T) {
+	q := seededQueryService()
+	detail := q.types["eunis@2021:R22"]
+	detail.Syntaxa = []input.SyntaxonRef{
+		{ID: "CAK-01C", Rank: "alliance", Name: "Cakilion edentulae Br.-Bl. 1931", Author: "Br.-Bl. 1931", ParentID: "AA01"},
+		{ID: "XYZ-01", Rank: "alliance", Name: "Nomatchion nowhereii"}, // no FloraVeg match
+	}
+	q.types["eunis@2021:R22"] = detail
+	srv := newTestServer(t, q)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/habitat-type/eunis@2021/R22", nil)
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got struct {
+		Syntaxa []struct {
+			ID       string `json:"id"`
+			Author   string `json:"author"`
+			ParentID string `json:"parent_id"`
+		} `json:"syntaxa"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if len(got.Syntaxa) != 2 {
+		t.Fatalf("syntaxa = %+v, want 2 entries", got.Syntaxa)
+	}
+	if got.Syntaxa[0].Author != "Br.-Bl. 1931" || got.Syntaxa[0].ParentID != "AA01" {
+		t.Errorf("matched syntaxon = %+v, want Author=%q ParentID=%q", got.Syntaxa[0], "Br.-Bl. 1931", "AA01")
+	}
+	if !strings.Contains(rec.Body.String(), `"id":"XYZ-01","rank":"alliance","name":"Nomatchion nowhereii"}`) {
+		t.Errorf("body = %s, want the unmatched syntaxon's object to omit author/parent_id entirely", rec.Body)
+	}
+}
+
 func TestHabitatType_CrosswalksAreEmptyNotNullWhenNoneExist(t *testing.T) {
 	srv := newTestServer(t, seededQueryService())
 
