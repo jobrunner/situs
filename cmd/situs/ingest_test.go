@@ -381,6 +381,28 @@ func TestIngestCommandRunsWithoutASyntaxaHierarchyFile(t *testing.T) {
 	}
 }
 
+// A malformed syntaxa_hierarchy.csv (missing a required column) must fail
+// the whole ingest run, wrapped with the "ingesting syntaxa hierarchy" text
+// this command adds — this is the run's own error-wrapping branch, not
+// application.IngestSyntaxaHierarchy's.
+func TestIngestCommandFailsOnAMalformedSyntaxaHierarchyCSV(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t)
+	writeIngestCSV(t, dir, "syntaxa_hierarchy.csv", "code,rank,name,parent_code\nAA,class,X,\n") // missing "author"
+
+	root := newRootCmd()
+	root.SetOut(&bytes.Buffer{})
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", filepath.Join(t.TempDir(), "situs.sqlite")})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("executing ingest with a malformed syntaxa_hierarchy.csv = nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "ingesting syntaxa hierarchy") {
+		t.Errorf("error = %q, want it to name the syntaxa hierarchy ingest step", err)
+	}
+}
+
 func TestIngestCommandFailsOnAMissingCSVDirectory(t *testing.T) {
 	root := newRootCmd()
 	root.SetOut(&bytes.Buffer{})

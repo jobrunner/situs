@@ -649,7 +649,13 @@ func TestIngestTx_MethodsWrapErrorsOnAClosedTransaction(t *testing.T) {
 			return tx.UpsertCrosswalk(domain.Crosswalk{From: key, To: key, Qualifier: domain.QualifierSame})
 		},
 		"UpsertSyntaxon": func() error { return tx.UpsertSyntaxon(domain.Syntaxon{ID: "x", Rank: "class", Name: "x"}) },
-		"LinkSyntaxon":   func() error { return tx.LinkSyntaxon(key, "x") },
+		"UpsertSyntaxonAuthor(no parent)": func() error {
+			return tx.UpsertSyntaxonAuthor("x", "Koch 1926", "")
+		},
+		"UpsertSyntaxonAuthor(with parent)": func() error {
+			return tx.UpsertSyntaxonAuthor("x", "Koch 1926", "AA01")
+		},
+		"LinkSyntaxon": func() error { return tx.LinkSyntaxon(key, "x") },
 		"UpsertSpeciesRole": func() error {
 			return tx.UpsertSpeciesRole(domain.SpeciesRole{Key: key, VerbatimName: "x", Role: "diagnostic"})
 		},

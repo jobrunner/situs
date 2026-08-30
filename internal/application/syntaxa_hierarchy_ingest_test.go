@@ -2,8 +2,10 @@ package application
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jobrunner/situs/internal/domain"
@@ -153,5 +155,176 @@ func TestIngestSyntaxaHierarchy_AllSyntaxaErrorIsReturned(t *testing.T) {
 
 	if _, err := IngestSyntaxaHierarchy(context.Background(), repo, path); err == nil {
 		t.Fatal("IngestSyntaxaHierarchy = nil error, want the AllSyntaxa error surfaced")
+	}
+}
+
+// A stat error that is not os.IsNotExist (here: ENOTDIR, because a path
+// component is a plain file, not a directory) must be returned, not silently
+// treated as "no hierarchy file yet".
+func TestIngestSyntaxaHierarchy_StatErrorOtherThanNotExistIsReturned(t *testing.T) {
+	repo := newFakeRepo()
+	dir := t.TempDir()
+	notADir := filepath.Join(dir, "not-a-directory")
+	if err := os.WriteFile(notADir, []byte("x"), 0o600); err != nil {
+		t.Fatalf("writing %s: %v", notADir, err)
+	}
+	path := filepath.Join(notADir, "syntaxa_hierarchy.csv")
+
+	if _, err := IngestSyntaxaHierarchy(context.Background(), repo, path); err == nil {
+		t.Fatal("IngestSyntaxaHierarchy = nil error, want the stat error surfaced")
+	}
+}
+
+// A CSV missing a required column fails readHierarchyRows, and that error
+// must surface from IngestSyntaxaHierarchy unwrapped-but-reported, not be
+// mistaken for the "no file" case.
+func TestIngestSyntaxaHierarchy_MalformedCSVHeaderIsReturned(t *testing.T) {
+	repo := newFakeRepo()
+	dir := t.TempDir()
+	path := writeHierarchyCSV(t, dir, "code,rank,name,parent_code\nAA,class,X,\n") // missing "author"
+
+	if _, err := IngestSyntaxaHierarchy(context.Background(), repo, path); err == nil {
+		t.Fatal("IngestSyntaxaHierarchy = nil error, want the missing-column error surfaced")
+	}
+}
+
+// A row with a rank this file does not recognize is skipped, not fatal — the
+// well-formed rows around it are still ingested.
+func TestIngestSyntaxaHierarchy_SkipsRowsWithAnUnknownRank(t *testing.T) {
+	repo := newFakeRepo()
+	dir := t.TempDir()
+	path := writeHierarchyCSV(t, dir,
+		"code,rank,name,author,parent_code\n"+
+			"AA,class,Salicetea purpureae,Moor 1958,\n"+
+			"AAF,family,Salicaceae,,\n") // unknown rank, must be skipped not fatal
+
+	rep, err := IngestSyntaxaHierarchy(context.Background(), repo, path)
+	if err != nil {
+		t.Fatalf("IngestSyntaxaHierarchy: %v", err)
+	}
+	if rep.ClassesWritten != 1 {
+		t.Errorf("ClassesWritten = %d, want 1 (the unknown-rank row must not be counted or abort)", rep.ClassesWritten)
+	}
+	if len(repo.syntaxa) != 1 {
+		t.Errorf("syntaxa = %+v, want only the class row written", repo.syntaxa)
+	}
+}
+
+// An existing syntaxon whose rank is not "alliance" (e.g. one of the class
+// rows this very file just wrote) must be skipped by the matching pass, not
+// fed into longestPrefixMatch.
+func TestIngestSyntaxaHierarchy_MatchingPassSkipsNonAllianceExistingSyntaxa(t *testing.T) {
+	repo := newFakeRepo()
+	repo.syntaxa = append(repo.syntaxa,
+		domain.Syntaxon{ID: "AA", Rank: "class", Name: "Cakilion edentulae"}, // not an alliance: must be skipped
+		domain.Syntaxon{ID: "CAK-01C", Rank: "alliance", Name: "Cakilion edentulae Br.-Bl. 1931"},
+	)
+	dir := t.TempDir()
+	path := writeHierarchyCSV(t, dir,
+		"code,rank,name,author,parent_code\n"+
+			"AA01A,alliance,Cakilion edentulae,Br.-Bl. 1931,AA01\n")
+
+	rep, err := IngestSyntaxaHierarchy(context.Background(), repo, path)
+	if err != nil {
+		t.Fatalf("IngestSyntaxaHierarchy: %v", err)
+	}
+	if rep.AlliancesMatched != 1 {
+		t.Errorf("AlliancesMatched = %d, want 1 (only the alliance-ranked entry may match)", rep.AlliancesMatched)
+	}
+	for _, u := range repo.authorUpdates {
+		if u.id == "AA" {
+			t.Errorf("authorUpdates = %+v, want the class-ranked entry AA never touched", repo.authorUpdates)
+		}
+	}
+}
+
+// A malformed row (skipped > 0) must not abort the run — the warning is
+// logged and the well-formed rows are still committed.
+func TestIngestSyntaxaHierarchy_LogsAndContinuesOnSkippedRows(t *testing.T) {
+	repo := newFakeRepo()
+	dir := t.TempDir()
+	path := writeHierarchyCSV(t, dir,
+		"code,rank,name,author,parent_code\n"+
+			"AA,class,Salicetea purpureae,Moor 1958,\n"+
+			"AAF,family,Salicaceae,,\n") // skipped: unknown rank
+
+	rep, err := IngestSyntaxaHierarchy(context.Background(), repo, path)
+	if err != nil {
+		t.Fatalf("IngestSyntaxaHierarchy: %v", err)
+	}
+	if !repo.committed {
+		t.Error("committed = false, want the transaction committed despite the skipped row")
+	}
+	if rep.ClassesWritten != 1 {
+		t.Errorf("ClassesWritten = %d, want 1", rep.ClassesWritten)
+	}
+}
+
+// ingestHierarchyRows failing (here: UpsertSyntaxon) must roll the
+// transaction back and surface the original error, when the rollback itself
+// succeeds.
+func TestIngestSyntaxaHierarchy_UpsertSyntaxonErrorRollsBackAndReturnsTheError(t *testing.T) {
+	repo := newFakeRepo()
+	repo.failOn = "UpsertSyntaxon"
+	dir := t.TempDir()
+	path := writeHierarchyCSV(t, dir, "code,rank,name,author,parent_code\nAA,class,X,,\n")
+
+	if _, err := IngestSyntaxaHierarchy(context.Background(), repo, path); err == nil {
+		t.Fatal("IngestSyntaxaHierarchy = nil error, want the UpsertSyntaxon error surfaced")
+	}
+	if !repo.rolledBack {
+		t.Error("rolledBack = false, want the transaction rolled back")
+	}
+	if repo.committed {
+		t.Error("committed = true, want the failed ingest never committed")
+	}
+}
+
+// When the rollback itself also fails, both errors must be reported (the
+// rollback failure wrapped alongside the original cause), not silently
+// dropped.
+func TestIngestSyntaxaHierarchy_RollbackFailureIsReportedAlongsideTheOriginalError(t *testing.T) {
+	repo := newFakeRepo()
+	repo.failOn = "UpsertSyntaxon"
+	repo.rollbackErr = fmt.Errorf("connection lost")
+	dir := t.TempDir()
+	path := writeHierarchyCSV(t, dir, "code,rank,name,author,parent_code\nAA,class,X,,\n")
+
+	_, err := IngestSyntaxaHierarchy(context.Background(), repo, path)
+	if err == nil {
+		t.Fatal("IngestSyntaxaHierarchy = nil error, want the combined error surfaced")
+	}
+	if !strings.Contains(err.Error(), "rollback also failed") {
+		t.Errorf("error = %q, want it to mention the rollback failure too", err)
+	}
+}
+
+// A Commit failure on an otherwise-successful ingest must be returned.
+func TestIngestSyntaxaHierarchy_CommitErrorIsReturned(t *testing.T) {
+	repo := newFakeRepo()
+	repo.commitErr = fmt.Errorf("disk full")
+	dir := t.TempDir()
+	path := writeHierarchyCSV(t, dir, "code,rank,name,author,parent_code\nAA,class,X,,\n")
+
+	if _, err := IngestSyntaxaHierarchy(context.Background(), repo, path); err == nil {
+		t.Fatal("IngestSyntaxaHierarchy = nil error, want the Commit error surfaced")
+	}
+}
+
+// UpsertSyntaxonAuthor failing during the matching pass must abort and roll
+// back, same as any other write in this transaction.
+func TestIngestSyntaxaHierarchy_UpsertSyntaxonAuthorErrorIsReturned(t *testing.T) {
+	repo := newFakeRepo()
+	repo.failOn = "UpsertSyntaxonAuthor"
+	repo.syntaxa = append(repo.syntaxa, domain.Syntaxon{
+		ID: "CAK-01C", Rank: "alliance", Name: "Cakilion edentulae Br.-Bl. 1931",
+	})
+	dir := t.TempDir()
+	path := writeHierarchyCSV(t, dir,
+		"code,rank,name,author,parent_code\n"+
+			"AA01A,alliance,Cakilion edentulae,Br.-Bl. 1931,AA01\n")
+
+	if _, err := IngestSyntaxaHierarchy(context.Background(), repo, path); err == nil {
+		t.Fatal("IngestSyntaxaHierarchy = nil error, want the UpsertSyntaxonAuthor error surfaced")
 	}
 }
