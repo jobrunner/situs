@@ -35,6 +35,11 @@ jobs:
       # short-lived, and revoked automatically at the end of the job.
       - name: Generate release-please App token
         id: app-token
+        # continue-on-error is what makes the `|| secrets.GITHUB_TOKEN` fallback
+        # below real: without it, a missing/invalid App secret fails this step
+        # and the whole job stops before release-please ever runs — the "falls
+        # back to GITHUB_TOKEN" claim would be false.
+        continue-on-error: true
         uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
