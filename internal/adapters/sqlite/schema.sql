@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS syntaxon (
   id        TEXT PRIMARY KEY,
   rank      TEXT NOT NULL,
   name      TEXT NOT NULL,
+  author    TEXT NOT NULL DEFAULT '',
   parent_id TEXT NOT NULL DEFAULT ''
 );
 

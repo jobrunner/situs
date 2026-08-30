@@ -9,8 +9,7 @@
       "_query_note": "query.go is the read side's whole use-case layer: five endpoint methods plus IndexInfo and the area/backbone helpers. It is at 100% coverage and 100% mutation efficacy, so the complexity is watched, not unguarded. It said 'split it before letting this number grow', and that is what happened: the German-label overlay pushed it 78 -> 81, the gate refused, and preferredLabel moved to label.go instead of the baseline being raised. 78 -> 73 on the way back. Split it again before letting this grow.",
       "internal/application/query.go": 73,
       "_ingest_note": "ingest.go carries one reader per CSV source; each new source adds a block. Also 100% coverage and 100% mutation efficacy.",
-      "internal/application/ingest.go": 64,
-      "internal/adapters/sqlite/read.go": 64
+      "internal/application/ingest.go": 64
     }
   },
   "function_complexity": {

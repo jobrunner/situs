@@ -448,6 +448,16 @@ components:
           enum: [class, order, alliance]
         name:
           type: string
+        author:
+          type: string
+          description: >-
+            Autorschafts-Zitat, direkt aus FloraVeg.EU übernommen; fehlt, wenn
+            kein FloraVeg-Treffer gefunden wurde.
+        parent_id:
+          type: string
+          description: >-
+            Verweist auf einen FloraVeg-Klasse-/Ordnungscode (reine
+            String-Referenz, kein Fremdschlüssel); fehlt, wenn unbekannt.
     TraitValue:
       type: object
       required: [dim, value]
