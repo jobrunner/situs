@@ -10,3 +10,11 @@ Quelle: Zenodo-Record 10.5281/zenodo.7427088, Datei
 
 Erzeugt `output/tichy-canonical.csv`, kanonisches Format wie bei `eive`
 (siehe dessen README). `niche_width`/`n_systems` sind bei Tichý nie gefüllt.
+
+Voraussetzung: `openpyxl` (`pip install openpyxl`) — `convert.py` liest die
+XLSX-Quelldatei damit. Das ist eine bewusste, dokumentierte Abweichung von
+der sonst stdlib-only-Pipeline-Konvention (siehe `CLAUDE.md`): der Konverter
+wurde unverändert aus hostus übernommen.
+
+Die Ausgabe muss vor `situs ingest` nach `<csv-dir>/tichy_traits.csv`
+kopiert werden.

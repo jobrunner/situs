@@ -25,6 +25,16 @@ func (t *ingestTx) UpsertTraitValue(conceptID string, tv domain.TraitValue) erro
 	return nil
 }
 
+// DeleteTraitValuesForVocab removes every trait_value row for vocab, across
+// every vocab_version — the step that keeps a version bump from leaving the
+// old version's rows next to the new one.
+func (t *ingestTx) DeleteTraitValuesForVocab(vocab string) error {
+	if _, err := t.tx.ExecContext(t.ctx, `DELETE FROM trait_value WHERE vocab = ?`, vocab); err != nil {
+		return fmt.Errorf("sqlite: deleting trait values for vocab %s: %w", vocab, err)
+	}
+	return nil
+}
+
 // UpsertTraitVocabulary records that vocab/version was (re-)ingested. Pure
 // ingest metadata, no factual content for the reader.
 func (t *ingestTx) UpsertTraitVocabulary(vocab, version string) error {
@@ -97,22 +107,6 @@ func (d *DB) Traits(ctx context.Context, conceptID string, vocabs []string) ([]d
 // A ?vocab= filter is validated against this, same role as KnownAreaCodes
 // plays for ?area=.
 func (d *DB) KnownVocabs(ctx context.Context) ([]string, error) {
-	rows, err := d.QueryContext(ctx, `SELECT DISTINCT vocab FROM trait_vocabulary ORDER BY vocab`)
-	if err != nil {
-		return nil, fmt.Errorf("sqlite: reading known vocabs: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	out := []string{}
-	for rows.Next() {
-		var vocab string
-		if err := rows.Scan(&vocab); err != nil {
-			return nil, fmt.Errorf("sqlite: scanning vocab: %w", err)
-		}
-		out = append(out, vocab)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("sqlite: iterating known vocabs: %w", err)
-	}
-	return out, nil
+	return d.queryStrings(ctx, "known vocabs",
+		`SELECT DISTINCT vocab FROM trait_vocabulary ORDER BY vocab`)
 }

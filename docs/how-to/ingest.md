@@ -148,6 +148,20 @@ Wie viele Gebiete am Ende tatsächlich im Index stehen, sagt `areas_with_data` i
 Taxonnamen in **einem** gemeinsamen `hostus.Resolve()`-Aufruf über alle drei
 Dateien auf, bevor die Werte geschrieben werden.
 
+Die drei Pipelines (`pipelines/{eive,tichy,midolo}`) schreiben ihre Ausgabe
+unter einem eigenen Dateinamen nach `output/`, nicht direkt unter dem Namen,
+den `situs ingest` erwartet — dieser Kopierschritt ist manuell:
+
+```bash
+cp pipelines/eive/output/eive-canonical.csv "$CSV_DIR/eive_traits.csv"
+cp pipelines/tichy/output/tichy-canonical.csv "$CSV_DIR/tichy_traits.csv"
+cp pipelines/midolo/output/midolo-canonical.csv "$CSV_DIR/midolo_traits.csv"
+```
+
+Ein fehlendes Ziel-File wird von `IngestTraits` still als „übersprungen"
+gezählt (siehe unten) statt als Fehler gemeldet — der Kopierschritt oben ist
+also nötig, nicht nur bequem.
+
 Jede der drei Dateien ist für sich **optional**: fehlt eine, wird ihr
 Vokabular im Report als übersprungen (`Skipped`) gezählt statt den Ingest
 abzubrechen — dieselbe Haltung wie bei `localizations.csv`. Ist hostus für

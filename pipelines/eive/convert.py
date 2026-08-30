@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """EIVE_Paper_1.0_SM_08.xlsx (sheet mainTable) -> canonical trait CSV.
 
-Columns per PoC P6: name col TaxonConcept, dims EIVEres-{M,N,R,L,T}, niche
-width EIVEres-{dim}.nw3, source-system count EIVEres-{dim}.n. Both niche
-width and n are always present for EIVE (unlike Tichy/Midolo), so they are
-never empty in the emitted rows.
+Columns: name col TaxonConcept, dims EIVEres-{M,N,R,L,T}, niche width
+EIVEres-{dim}.nw3, source-system count EIVEres-{dim}.n. Both niche width and
+n are always present for EIVE (unlike Tichy/Midolo), so they are never
+empty in the emitted rows.
 """
 import csv
 import sys

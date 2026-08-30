@@ -61,12 +61,25 @@ func parseFloat(s string) (float64, error) {
 // readTraitRows parses one canonical pipe-delimited trait CSV, skipping
 // (and counting) any row with the wrong field count or an unparseable
 // value — the same tolerance as every other ingest file in this package.
-func readTraitRows(ctx context.Context, csvPath string, skip rowSkipper) ([]traitRow, error) {
+// expectedVocab is the vocabulary this file is filed under (the csvPaths map
+// key); a row whose own "vocab" column disagrees is skipped rather than
+// trusted, since the two are otherwise synchronized only by convention.
+func readTraitRows(ctx context.Context, csvPath, expectedVocab string, skip rowSkipper) ([]traitRow, error) {
 	dir, file := filepath.Split(csvPath)
 	var rows []traitRow
 	err := readAll(ctx, dir, file, pipeDelim,
 		[]string{"taxon", "vocab", "vocab_version", "dim", "value", "niche_width", "n_systems"}, skip,
 		func(idx map[string]int, row []string, line int) error {
+			vocab := row[idx["vocab"]]
+			if vocab != expectedVocab {
+				skip(line, fmt.Errorf("vocab column %q does not match file's vocabulary %q", vocab, expectedVocab))
+				return nil
+			}
+			dim, perr := domain.ParseTraitDim(row[idx["dim"]])
+			if perr != nil {
+				skip(line, perr)
+				return nil
+			}
 			value, perr := parseFloat(row[idx["value"]])
 			if perr != nil {
 				skip(line, perr)
@@ -86,7 +99,7 @@ func readTraitRows(ctx context.Context, csvPath string, skip rowSkipper) ([]trai
 				taxon:        row[idx["taxon"]],
 				vocab:        row[idx["vocab"]],
 				vocabVersion: row[idx["vocab_version"]],
-				dim:          row[idx["dim"]],
+				dim:          string(dim),
 				value:        value,
 				nicheWidth:   nicheWidth,
 				nSystems:     nSystems,
@@ -142,7 +155,7 @@ func IngestTraits(ctx context.Context, repo output.Repository, resolver output.N
 		}
 		_, file := filepath.Split(path)
 		skip := newRowSkipper(&skipped, file, "trait value")
-		rows, err := readTraitRows(ctx, path, skip)
+		rows, err := readTraitRows(ctx, path, vocab, skip)
 		if err != nil {
 			return TraitReport{}, fmt.Errorf("reading %s trait CSV: %w", vocab, err)
 		}
@@ -165,7 +178,7 @@ func IngestTraits(ctx context.Context, repo output.Repository, resolver output.N
 		if !ok {
 			continue
 		}
-		vr, verr := upsertTraitRows(tx, vocab, rows, resolved)
+		vr, verr := writeVocab(tx, vocab, rows, resolved)
 		if verr != nil {
 			if rbErr := tx.Rollback(); rbErr != nil {
 				return TraitReport{}, fmt.Errorf("%w (rollback also failed: %w)", verr, rbErr)
@@ -184,12 +197,29 @@ func IngestTraits(ctx context.Context, repo output.Repository, resolver output.N
 	return rep, nil
 }
 
+// writeVocab clears vocab's prior rows and writes rows in their place. A
+// repinned vocabulary (e.g. EIVE 1.0 -> 1.1) must not leave the old version's
+// rows behind: trait_value's primary key includes vocab_version, so without
+// this delete the two versions would sit side by side and Traits() would
+// report both.
+func writeVocab(tx output.IngestTx, vocab string, rows []traitRow, resolved map[string]string) (VocabReport, error) {
+	if err := tx.DeleteTraitValuesForVocab(vocab); err != nil {
+		return VocabReport{}, fmt.Errorf("clearing prior %s trait values: %w", vocab, err)
+	}
+	return upsertTraitRows(tx, vocab, rows, resolved)
+}
+
 // upsertTraitRows writes vocab's rows via tx, tallying vr accordingly, and
 // records the vocabulary once (with the version its own rows carry) so
 // trait_vocabulary reflects a file that was processed even if every single
 // taxon in it failed to resolve.
 func upsertTraitRows(tx output.IngestTx, vocab string, rows []traitRow, resolved map[string]string) (VocabReport, error) {
 	vr := VocabReport{Rows: len(rows)}
+	// version is deliberately overwritten by every row, keeping only the
+	// last one seen: in practice each canonical file carries exactly one
+	// vocab_version throughout, so this never loses information. A file with
+	// genuinely mixed versions would need UpsertTraitVocabulary called once
+	// per version instead — not implemented, because the case does not occur.
 	var version string
 	for _, r := range rows {
 		version = r.vocabVersion

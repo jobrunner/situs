@@ -1,6 +1,8 @@
 package sqlite
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/jobrunner/situs/internal/domain"
@@ -205,5 +207,106 @@ func TestTraits_UnknownConceptReturnsEmpty(t *testing.T) {
 	}
 	if len(sets) != 0 {
 		t.Errorf("sets = %+v, want empty", sets)
+	}
+}
+
+// A repinned vocabulary (e.g. EIVE 1.0 -> 1.1) must not leave the old
+// version's rows behind: DeleteTraitValuesForVocab is what IngestTraits calls
+// before writing the new version, and it must drop every version of the
+// named vocabulary, not just one.
+func TestDeleteTraitValuesForVocab_RemovesEveryVersion(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertTraitValue("wcvp:6", domain.TraitValue{Vocab: "eive", VocabVersion: "1.0", Dim: "M", Value: 4.2}); err != nil {
+		t.Fatalf("UpsertTraitValue 1.0: %v", err)
+	}
+	if err := tx.UpsertTraitValue("wcvp:6", domain.TraitValue{Vocab: "eive", VocabVersion: "1.1", Dim: "M", Value: 4.3}); err != nil {
+		t.Fatalf("UpsertTraitValue 1.1: %v", err)
+	}
+	if err := tx.UpsertTraitValue("wcvp:6", domain.TraitValue{Vocab: "tichy2023", VocabVersion: "2.0", Dim: "T", Value: 5.0}); err != nil {
+		t.Fatalf("UpsertTraitValue tichy2023: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	tx2, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx2.DeleteTraitValuesForVocab("eive"); err != nil {
+		t.Fatalf("DeleteTraitValuesForVocab: %v", err)
+	}
+	if err := tx2.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	sets, err := db.Traits(ctx, "wcvp:6", nil)
+	if err != nil {
+		t.Fatalf("Traits: %v", err)
+	}
+	if len(sets) != 1 || sets[0].Vocab != "tichy2023" {
+		t.Fatalf("sets = %+v, want only tichy2023 left (both eive versions deleted)", sets)
+	}
+}
+
+// Every read must surface a query failure instead of an empty answer, same
+// contract as the rest of the read side.
+func TestTraitReads_QueryErrorsAreReturned(t *testing.T) {
+	db := openTestDB(t)
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	ctx := context.Background()
+
+	cases := map[string]func() error{
+		"Traits":      func() error { _, err := db.Traits(ctx, "wcvp:1", nil); return err },
+		"KnownVocabs": func() error { _, err := db.KnownVocabs(ctx); return err },
+	}
+	for name, call := range cases {
+		if err := call(); err == nil {
+			t.Errorf("%s on a closed database = nil error, want an error", name)
+		} else if !strings.HasPrefix(err.Error(), "sqlite: ") {
+			t.Errorf("%s error = %q, want the adapter's own context prefixed", name, err)
+		}
+	}
+}
+
+// The rows.Err()/Scan paths, exercised deterministically with the stub driver
+// instead of racing a cancellation against row iteration — same technique as
+// read_test.go's TestReads_RowsIterationAndScanErrorsAreReturned.
+func TestTraitReads_RowsIterationAndScanErrorsAreReturned(t *testing.T) {
+	ctx := context.Background()
+	cases := map[string]struct {
+		call func(db *DB) error
+		rows string
+		scan string
+	}{
+		"Traits": {
+			call: func(db *DB) error { _, err := db.Traits(ctx, "wcvp:1", nil); return err },
+			rows: "iterating traits", scan: "scanning trait value",
+		},
+		"KnownVocabs": {
+			call: func(db *DB) error { _, err := db.KnownVocabs(ctx); return err },
+			rows: "known vocabs", scan: "known vocabs",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			for mode, want := range map[stubMode]string{stubModeRowsErr: tc.rows, stubModeScanErr: tc.scan} {
+				err := tc.call(&DB{DB: newStubDB(t, mode)})
+				if err == nil {
+					t.Fatalf("%s in mode %v = nil error, want an error", name, mode)
+				}
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("%s error = %q, want it to name %q", name, err, want)
+				}
+			}
+		})
 	}
 }

@@ -338,6 +338,12 @@ func TestIngestCommandLoadsCSVsAndPrintsTheReport(t *testing.T) {
 func TestIngestCommand_ReportIncludesTraits(t *testing.T) {
 	stubHostus(t)
 	csvDir := seedIngestDir(t)
+	// One real trait row, so the report below carries actual numbers instead
+	// of only an empty "Traits" object — stubHostus resolves nothing, so the
+	// row is expected to be counted but Unresolved, not Resolved.
+	writeIngestCSV(t, csvDir, "eive_traits.csv",
+		"taxon|vocab|vocab_version|dim|value|niche_width|n_systems\n"+
+			"Inula hirta|eive|1.0|M|4.22|2.47|1\n")
 	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
 
 	root := newRootCmd()
@@ -353,8 +359,19 @@ func TestIngestCommand_ReportIncludesTraits(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &parsed); err != nil {
 		t.Fatalf("unmarshaling report: %v", err)
 	}
-	if _, ok := parsed["Traits"]; !ok {
-		t.Errorf("report %s has no \"Traits\" field", out.String())
+	traits, ok := parsed["Traits"].(map[string]any)
+	if !ok {
+		t.Fatalf("report %s has no \"Traits\" object", out.String())
+	}
+	if got := traits["Rows"]; got != float64(1) {
+		t.Errorf("Traits.Rows = %v, want 1 (the one eive_traits.csv row)", got)
+	}
+	if got := traits["Unresolved"]; got != float64(1) {
+		t.Errorf("Traits.Unresolved = %v, want 1 (stubHostus resolves nothing)", got)
+	}
+	skipped, ok := traits["Skipped"].([]any)
+	if !ok || len(skipped) != 2 {
+		t.Errorf("Traits.Skipped = %v, want the two missing vocab files (tichy2023, midolo2023)", traits["Skipped"])
 	}
 }
 

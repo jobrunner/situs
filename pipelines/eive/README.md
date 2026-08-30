@@ -16,3 +16,11 @@ im kanonischen, **pipe-getrennten** Format
 `taxon|vocab|vocab_version|dim|value|niche_width|n_systems`, das
 `situs ingest` einliest. `niche_width`/`n_systems` sind bei EIVE immer
 gefüllt.
+
+Voraussetzung: `openpyxl` (`pip install openpyxl`) — `convert.py` liest die
+XLSX-Quelldatei damit. Das ist eine bewusste, dokumentierte Abweichung von
+der sonst stdlib-only-Pipeline-Konvention (siehe `CLAUDE.md`): der Konverter
+wurde unverändert aus hostus übernommen.
+
+Die Ausgabe muss vor `situs ingest` nach `<csv-dir>/eive_traits.csv`
+kopiert werden.

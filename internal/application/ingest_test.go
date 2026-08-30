@@ -475,6 +475,11 @@ type fakeRepo struct {
 	areasErr error
 	// conceptIDsErr fails ConceptIDs, exercising IngestDistribution's error path.
 	conceptIDsErr error
+	// knownVocabsErr fails KnownVocabs, exercising QueryService.Traits' ?vocab=
+	// validation error path.
+	knownVocabsErr error
+	// traitsErr fails Traits, exercising QueryService.Traits' data-fetch error path.
+	traitsErr error
 }
 
 // fakeDistribution is one recorded UpsertDistribution call.
@@ -612,6 +617,22 @@ func (r *fakeRepo) UpsertTraitValue(conceptID string, tv domain.TraitValue) erro
 	return nil
 }
 
+// DeleteTraitValuesForVocab drops every recorded traitValue for vocab,
+// mirroring the sqlite adapter's DELETE FROM trait_value WHERE vocab = ?.
+func (r *fakeRepo) DeleteTraitValuesForVocab(vocab string) error {
+	if err := r.failIfNamed("DeleteTraitValuesForVocab"); err != nil {
+		return err
+	}
+	kept := r.traitValues[:0]
+	for _, tv := range r.traitValues {
+		if tv.Value.Vocab != vocab {
+			kept = append(kept, tv)
+		}
+	}
+	r.traitValues = kept
+	return nil
+}
+
 func (r *fakeRepo) UpsertTraitVocabulary(vocab, version string) error {
 	if err := r.failIfNamed("UpsertTraitVocabulary"); err != nil {
 		return err
@@ -621,6 +642,9 @@ func (r *fakeRepo) UpsertTraitVocabulary(vocab, version string) error {
 }
 
 func (r *fakeRepo) Traits(_ context.Context, conceptID string, vocabs []string) ([]domain.TraitSet, error) {
+	if r.traitsErr != nil {
+		return nil, r.traitsErr
+	}
 	sets := map[string]*domain.TraitSet{}
 	var order []string
 	for _, tv := range r.traitValues {
@@ -647,6 +671,9 @@ func (r *fakeRepo) Traits(_ context.Context, conceptID string, vocabs []string) 
 }
 
 func (r *fakeRepo) KnownVocabs(_ context.Context) ([]string, error) {
+	if r.knownVocabsErr != nil {
+		return nil, r.knownVocabsErr
+	}
 	seen := map[string]bool{}
 	out := []string{}
 	for _, tv := range r.traitVocabs {

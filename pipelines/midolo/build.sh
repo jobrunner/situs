@@ -3,7 +3,7 @@
 #
 # Source: Zenodo record 10.5281/zenodo.7116957 (v3, Dec 2022), main index
 # file disturbance_indicator_values.csv (already CSV -- no xlsx conversion
-# needed) per poc/P06-findings.md. CC-BY-4.0 -- any redistribution of
+# needed). CC-BY-4.0 -- any redistribution of
 # derived data must retain attribution to Midolo et al. (2023), Global
 # Ecology and Biogeography 32(1): 24-34, https://doi.org/10.1111/geb.13603.
 #
@@ -15,7 +15,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 VOCAB="midolo2023"
 VOCAB_VERSION="3"
@@ -32,9 +31,6 @@ SUMMARY_PATH="${SCRIPT_DIR}/midolo.summary.txt"
 
 if [[ -f "${SRC_PATH}" ]]; then
   echo "Midolo: using cached ${SRC_PATH}"
-elif [[ -f "${REPO_ROOT}/poc/data/${SOURCE_FILE}" ]]; then
-  echo "Midolo: reusing PoC P6 download ${REPO_ROOT}/poc/data/${SOURCE_FILE}"
-  cp "${REPO_ROOT}/poc/data/${SOURCE_FILE}" "${SRC_PATH}"
 else
   echo "Midolo: downloading ${SOURCE_URL}"
   curl -sSL "${SOURCE_URL}" -o "${SRC_PATH}"

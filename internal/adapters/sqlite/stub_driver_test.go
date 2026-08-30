@@ -86,6 +86,10 @@ func (c *stubConn) QueryContext(_ context.Context, query string, _ []driver.Name
 		return &stubRows{cols: []string{"concept_id", "area_code"}, mode: c.mode}, nil
 	case strings.Contains(query, "DISTINCT area_code FROM species_distribution"):
 		return &stubRows{cols: []string{"area_code"}, mode: c.mode}, nil
+	case strings.Contains(query, "FROM trait_value"):
+		return &stubRows{cols: []string{"vocab", "vocab_version", "dim", "value", "niche_width", "n_systems"}, mode: c.mode}, nil
+	case strings.Contains(query, "DISTINCT vocab FROM trait_vocabulary"):
+		return &stubRows{cols: []string{"vocab"}, mode: c.mode}, nil
 	default:
 		return nil, fmt.Errorf("stub: unexpected query %q", query)
 	}

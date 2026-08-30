@@ -28,6 +28,13 @@ type IngestTx interface {
 	// like every other Upsert here: a repinned vocabulary is simply
 	// re-ingested.
 	UpsertTraitValue(conceptID string, tv domain.TraitValue) error
+	// DeleteTraitValuesForVocab removes every trait_value row for vocab,
+	// across every vocab_version. Called once per file before its rows are
+	// (re-)written, so a version bump (e.g. EIVE 1.0 -> 1.1) does not leave
+	// the old version's rows sitting next to the new one — trait_value's
+	// primary key includes vocab_version, so an Upsert alone cannot replace
+	// them.
+	DeleteTraitValuesForVocab(vocab string) error
 	// UpsertTraitVocabulary records that vocab/version was (re-)ingested —
 	// pure ingest metadata for later drift detection, no factual content for
 	// the reader. Idempotent.
