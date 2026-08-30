@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -331,6 +332,29 @@ func TestIngestCommandLoadsCSVsAndPrintsTheReport(t *testing.T) {
 	}
 	if _, err := os.Stat(dbPath); err != nil {
 		t.Errorf("sqlite index was not created: %v", err)
+	}
+}
+
+func TestIngestCommand_ReportIncludesTraits(t *testing.T) {
+	stubHostus(t)
+	csvDir := seedIngestDir(t)
+	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"ingest", "--csv-dir", csvDir, "--db", dbPath})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("executing ingest: %v", err)
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal(out.Bytes(), &parsed); err != nil {
+		t.Fatalf("unmarshaling report: %v", err)
+	}
+	if _, ok := parsed["Traits"]; !ok {
+		t.Errorf("report %s has no \"Traits\" field", out.String())
 	}
 }
 
