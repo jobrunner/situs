@@ -144,8 +144,25 @@ func TestIngestSpeciesRoles_DerivesMemberRowsFromAnAggregate(t *testing.T) {
 	if len(repo.speciesRoles) != 3 {
 		t.Fatalf("stored %d roles, want 3 (1 explicit + 2 derived)", len(repo.speciesRoles))
 	}
+	// Two members, checked together: each derived row's *ConceptID must be
+	// its OWN member's id, never the other's — this is what would break if
+	// deriveAggregateMembers' per-iteration memberID were ever hoisted
+	// outside the loop and its address taken (a real bug elsewhere would
+	// leave every derived row pointing at whichever member's id happened to
+	// be assigned last).
+	wantConceptID := map[string]string{
+		"Rubus caesius":  "wcvp:concept:100",
+		"Rubus plicatus": "wcvp:concept:101",
+	}
 	var sawCaesius bool
 	for _, r := range repo.speciesRoles {
+		want, isDerived := wantConceptID[r.VerbatimName]
+		if !isDerived {
+			continue
+		}
+		if r.ConceptID == nil || *r.ConceptID != want {
+			t.Errorf("%s ConceptID = %v, want a pointer to %s", r.VerbatimName, r.ConceptID, want)
+		}
 		if r.VerbatimName != "Rubus caesius" {
 			continue
 		}

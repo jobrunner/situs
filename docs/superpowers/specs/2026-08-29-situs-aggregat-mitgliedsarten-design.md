@@ -136,7 +136,7 @@ type SpeciesReport struct {
 	DerivedRows          int      // zusätzlich geschriebene Mitgliedsarten-Zeilen
 	SuppressedByExplicit int      // abgeleitete Zeilen, die wegen einer expliziten
 	                              // CSV-Zeile NICHT geschrieben wurden
-	AmbiguousCrosswalk  []string  // Namen mit >1 Concept-ID in der Crosswalk-Tabelle
+	AmbiguousCrosswalk  int       // Zeilen mit >1 Concept-ID in der Crosswalk-Tabelle
 }
 ```
 

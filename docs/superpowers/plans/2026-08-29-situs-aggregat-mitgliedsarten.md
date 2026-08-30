@@ -2,6 +2,17 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Historical note (post-execution):** two details below were corrected
+> during implementation and are left unedited here as the execution record
+> — do not copy these snippets. `SpeciesReport.AmbiguousCrosswalk` is
+> documented below as `[]string` (a list of ambiguous names); it shipped as
+> an `int` counter instead (logged per occurrence via `slog.Warn`, not
+> accumulated into a list). `AggregateSource.Name` is documented below as a
+> required `json:"name"` field; the DTO ships it `omitempty` and the
+> service currently never populates it (only the concept id is persisted).
+> See `internal/application/species_ingest.go` and
+> `internal/ports/input/services.go` for the authoritative shapes.
+
 **Goal:** `IngestSpeciesRoles` löst Artnamen nicht mehr live gegen hostus auf,
 sondern gegen eine lokale, deterministische Crosswalk-Datei
 (`eurosl_crosswalk.csv`), und leitet für jede aufgelöste Sammelart
