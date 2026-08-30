@@ -41,7 +41,7 @@ if [[ -f "${SRC_PATH}" ]]; then
   echo "Tichy: using cached ${SRC_PATH}"
 else
   echo "Tichy: downloading ${SOURCE_URL}"
-  curl -sSL "${SOURCE_URL}" -o "${SRC_PATH}"
+  curl -fsSL "${SOURCE_URL}" -o "${SRC_PATH}"
 fi
 
 python3 "${SCRIPT_DIR}/convert.py" "${SRC_PATH}" "${OUT_PATH}" "${VOCAB}" "${VOCAB_VERSION}" | tee "${SUMMARY_PATH}"
