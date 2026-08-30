@@ -79,7 +79,9 @@ func (c *stubConn) QueryContext(_ context.Context, query string, _ []driver.Name
 	case strings.Contains(query, "FROM species_role"):
 		return &stubRows{cols: []string{"concept_id", "verbatim_name", "role", "fidelity", "constancy"}, mode: c.mode}, nil
 	case strings.Contains(query, "JOIN syntaxon"):
-		return &stubRows{cols: []string{"id", "rank", "name", "parent_id"}, mode: c.mode}, nil
+		return &stubRows{cols: []string{"id", "rank", "name", "author", "parent_id"}, mode: c.mode}, nil
+	case strings.Contains(query, "FROM syntaxon ORDER BY id"):
+		return &stubRows{cols: []string{"id", "rank", "name", "author", "parent_id"}, mode: c.mode}, nil
 	case strings.Contains(query, "FROM habitat_type_syntaxon"):
 		return &stubRows{cols: []string{"typology_id", "code"}, mode: c.mode}, nil
 	case strings.Contains(query, "concept_id, area_code FROM species_distribution"):

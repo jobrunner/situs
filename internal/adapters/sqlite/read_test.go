@@ -63,7 +63,7 @@ func seedReadFixture(t *testing.T, db *DB) {
 			t.Fatalf("UpsertCrosswalk: %v", err)
 		}
 	}
-	if err := tx.UpsertSyntaxon(domain.Syntaxon{ID: "BRO-01A", Rank: "alliance", Name: "Bromion erecti"}); err != nil {
+	if err := tx.UpsertSyntaxon(domain.Syntaxon{ID: "BRO-01A", Rank: "alliance", Name: "Bromion erecti", Author: "Rivas-Martínez 1978"}); err != nil {
 		t.Fatalf("UpsertSyntaxon: %v", err)
 	}
 	if err := tx.UpsertSyntaxon(domain.Syntaxon{ID: "UNLINKED", Rank: "order", Name: "Nothing links here"}); err != nil {
@@ -217,6 +217,9 @@ func TestSyntaxonAndSyntaxa(t *testing.T) {
 	if s.Rank != "alliance" || s.Name != "Bromion erecti" {
 		t.Errorf("Syntaxon = %+v, want the seeded alliance", s)
 	}
+	if s.Author != "Rivas-Martínez 1978" {
+		t.Errorf("Author = %q, want %q", s.Author, "Rivas-Martínez 1978")
+	}
 	if _, err := db.Syntaxon(t.Context(), "NOPE"); !errors.Is(err, output.ErrNotFound) {
 		t.Errorf("Syntaxon(NOPE) error = %v, want it to wrap output.ErrNotFound", err)
 	}
@@ -234,6 +237,21 @@ func TestSyntaxonAndSyntaxa(t *testing.T) {
 	}
 	if none == nil || len(none) != 0 {
 		t.Errorf("Syntaxa(R99) = %+v, want an empty, non-nil slice", none)
+	}
+}
+
+// seedReadFixture seeds two syntaxa (BRO-01A linked to R22, and UNLINKED
+// linked to nothing), so AllSyntaxa must return both, in id order — it lists
+// every vegetation unit the index holds, not just the linked ones.
+func TestAllSyntaxa(t *testing.T) {
+	db := openSeededDB(t)
+
+	got, err := db.AllSyntaxa(t.Context())
+	if err != nil {
+		t.Fatalf("AllSyntaxa: %v", err)
+	}
+	if len(got) != 2 || got[0].ID != "BRO-01A" || got[1].ID != "UNLINKED" {
+		t.Errorf("AllSyntaxa = %+v, want [BRO-01A, UNLINKED] in id order", got)
 	}
 }
 
@@ -280,6 +298,7 @@ func TestReads_QueryErrorsAreReturned(t *testing.T) {
 			return err
 		},
 		"KnownAreaCodes": func() error { _, err := db.KnownAreaCodes(ctx, domain.SchemeWGSRPDL3); return err },
+		"AllSyntaxa":     func() error { _, err := db.AllSyntaxa(ctx); return err },
 	}
 	for name, call := range cases {
 		if err := call(); err == nil {
@@ -329,6 +348,10 @@ func TestReads_RowsIterationAndScanErrorsAreReturned(t *testing.T) {
 		"HabitatTypeKeysForSyntaxon": {
 			call: func(db *DB) error { _, err := db.HabitatTypeKeysForSyntaxon(ctx, "BRO-01A"); return err },
 			rows: "reading habitat types of syntaxon", scan: "scanning habitat types of syntaxon",
+		},
+		"AllSyntaxa": {
+			call: func(db *DB) error { _, err := db.AllSyntaxa(ctx); return err },
+			rows: "reading all syntaxa", scan: "scanning syntaxon",
 		},
 	}
 	for name, tc := range cases {

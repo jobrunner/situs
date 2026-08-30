@@ -128,8 +128,8 @@ func (d *DB) SpeciesRolesByConcept(ctx context.Context, conceptID string) ([]dom
 // Syntaxon returns one vegetation unit, or output.ErrNotFound.
 func (d *DB) Syntaxon(ctx context.Context, id string) (domain.Syntaxon, error) {
 	s := domain.Syntaxon{ID: id}
-	row := d.QueryRowContext(ctx, `SELECT rank, name, parent_id FROM syntaxon WHERE id = ?`, id)
-	if err := row.Scan(&s.Rank, &s.Name, &s.ParentID); err != nil {
+	row := d.QueryRowContext(ctx, `SELECT rank, name, author, parent_id FROM syntaxon WHERE id = ?`, id)
+	if err := row.Scan(&s.Rank, &s.Name, &s.Author, &s.ParentID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Syntaxon{}, fmt.Errorf("sqlite: syntaxon %q: %w", id, output.ErrNotFound)
 		}
@@ -141,7 +141,7 @@ func (d *DB) Syntaxon(ctx context.Context, id string) (domain.Syntaxon, error) {
 // Syntaxa returns the vegetation units linked to a habitat type.
 func (d *DB) Syntaxa(ctx context.Context, key domain.HabitatTypeKey) ([]domain.Syntaxon, error) {
 	rows, err := d.QueryContext(ctx,
-		`SELECT s.id, s.rank, s.name, s.parent_id
+		`SELECT s.id, s.rank, s.name, s.author, s.parent_id
 		 FROM habitat_type_syntaxon l JOIN syntaxon s ON s.id = l.syntaxon_id
 		 WHERE l.typology_id = ? AND l.code = ?
 		 ORDER BY s.id`,
@@ -154,13 +154,37 @@ func (d *DB) Syntaxa(ctx context.Context, key domain.HabitatTypeKey) ([]domain.S
 	out := []domain.Syntaxon{}
 	for rows.Next() {
 		var s domain.Syntaxon
-		if err := rows.Scan(&s.ID, &s.Rank, &s.Name, &s.ParentID); err != nil {
+		if err := rows.Scan(&s.ID, &s.Rank, &s.Name, &s.Author, &s.ParentID); err != nil {
 			return nil, fmt.Errorf("sqlite: scanning syntaxa of %s: %w", key, err)
 		}
 		out = append(out, s)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("sqlite: reading syntaxa of %s: %w", key, err)
+	}
+	return out, nil
+}
+
+// AllSyntaxa returns every vegetation unit the index holds, in id order. Used
+// by the FloraVeg hierarchy-matching pass to find every already-ingested
+// EUNIS alliance to match its own names against.
+func (d *DB) AllSyntaxa(ctx context.Context) ([]domain.Syntaxon, error) {
+	rows, err := d.QueryContext(ctx, `SELECT id, rank, name, author, parent_id FROM syntaxon ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: reading all syntaxa: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := []domain.Syntaxon{}
+	for rows.Next() {
+		var s domain.Syntaxon
+		if err := rows.Scan(&s.ID, &s.Rank, &s.Name, &s.Author, &s.ParentID); err != nil {
+			return nil, fmt.Errorf("sqlite: scanning syntaxon: %w", err)
+		}
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite: reading all syntaxa: %w", err)
 	}
 	return out, nil
 }

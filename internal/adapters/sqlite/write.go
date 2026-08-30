@@ -58,13 +58,32 @@ func (t *ingestTx) UpsertCrosswalk(c domain.Crosswalk) error {
 
 func (t *ingestTx) UpsertSyntaxon(s domain.Syntaxon) error {
 	_, err := t.tx.ExecContext(t.ctx,
-		`INSERT INTO syntaxon (id, rank, name, parent_id)
-		 VALUES (?, ?, ?, ?)
+		`INSERT INTO syntaxon (id, rank, name, author, parent_id)
+		 VALUES (?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
-		   rank=excluded.rank, name=excluded.name, parent_id=excluded.parent_id`,
-		s.ID, s.Rank, s.Name, s.ParentID)
+		   rank=excluded.rank, name=excluded.name, author=excluded.author, parent_id=excluded.parent_id`,
+		s.ID, s.Rank, s.Name, s.Author, s.ParentID)
 	if err != nil {
 		return fmt.Errorf("sqlite: upserting syntaxon %s: %w", s.ID, err)
+	}
+	return nil
+}
+
+// UpsertSyntaxonAuthor sets author on an already-upserted syntaxon. An empty
+// parentID leaves the stored parent_id untouched — a repeated hierarchy-ingest
+// pass without a fresh match must not erase a previous one.
+func (t *ingestTx) UpsertSyntaxonAuthor(id, author, parentID string) error {
+	if parentID == "" {
+		_, err := t.tx.ExecContext(t.ctx, `UPDATE syntaxon SET author = ? WHERE id = ?`, author, id)
+		if err != nil {
+			return fmt.Errorf("sqlite: setting author of syntaxon %s: %w", id, err)
+		}
+		return nil
+	}
+	_, err := t.tx.ExecContext(t.ctx,
+		`UPDATE syntaxon SET author = ?, parent_id = ? WHERE id = ?`, author, parentID, id)
+	if err != nil {
+		return fmt.Errorf("sqlite: setting author/parent of syntaxon %s: %w", id, err)
 	}
 	return nil
 }

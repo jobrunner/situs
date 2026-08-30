@@ -239,6 +239,91 @@ func TestIngestTx_UpsertsCrosswalkSyntaxonSpeciesRoleAndLocalization(t *testing.
 	assertNoDuplicateRows(ctx, t, db)
 }
 
+func TestIngestTx_UpsertSyntaxonRoundTripsAuthor(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	s := domain.Syntaxon{ID: "arrhenatherion", Rank: "alliance", Name: "Arrhenatherion", Author: "Koch 1926"}
+	if err := tx.UpsertSyntaxon(s); err != nil {
+		t.Fatalf("UpsertSyntaxon: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.Syntaxon(ctx, "arrhenatherion")
+	if err != nil {
+		t.Fatalf("Syntaxon: %v", err)
+	}
+	if got.Author != "Koch 1926" {
+		t.Errorf("Author = %q, want %q", got.Author, "Koch 1926")
+	}
+}
+
+func TestIngestTx_UpsertSyntaxonAuthor(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	seed := func() {
+		tx, err := db.Begin(ctx)
+		if err != nil {
+			t.Fatalf("Begin: %v", err)
+		}
+		if err := tx.UpsertSyntaxon(domain.Syntaxon{ID: "arrhenatherion", Rank: "alliance", Name: "Arrhenatherion"}); err != nil {
+			t.Fatalf("UpsertSyntaxon: %v", err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("Commit: %v", err)
+		}
+	}
+	seed()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertSyntaxonAuthor("arrhenatherion", "Koch 1926", "AA01"); err != nil {
+		t.Fatalf("UpsertSyntaxonAuthor: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.Syntaxon(ctx, "arrhenatherion")
+	if err != nil {
+		t.Fatalf("Syntaxon: %v", err)
+	}
+	if got.Author != "Koch 1926" || got.ParentID != "AA01" {
+		t.Errorf("got = %+v, want Author=%q ParentID=%q", got, "Koch 1926", "AA01")
+	}
+	if got.Rank != "alliance" || got.Name != "Arrhenatherion" {
+		t.Errorf("got = %+v, want Rank/Name untouched", got)
+	}
+
+	// A second call with an empty parentID must not clear the one just set.
+	tx2, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx2.UpsertSyntaxonAuthor("arrhenatherion", "Koch 1926 emend.", ""); err != nil {
+		t.Fatalf("UpsertSyntaxonAuthor: %v", err)
+	}
+	if err := tx2.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	got2, err := db.Syntaxon(ctx, "arrhenatherion")
+	if err != nil {
+		t.Fatalf("Syntaxon: %v", err)
+	}
+	if got2.ParentID != "AA01" {
+		t.Errorf("ParentID = %q after empty-parentID call, want it untouched (%q)", got2.ParentID, "AA01")
+	}
+}
+
 func TestCrosswalksTo_ReturnsOnlyCrosswalksToTheGivenTypology(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()

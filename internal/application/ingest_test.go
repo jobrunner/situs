@@ -555,6 +555,22 @@ func (r *fakeRepo) UpsertSyntaxon(s domain.Syntaxon) error {
 	return nil
 }
 
+func (r *fakeRepo) UpsertSyntaxonAuthor(id, author, parentID string) error {
+	if err := r.failIfNamed("UpsertSyntaxonAuthor"); err != nil {
+		return err
+	}
+	for i, s := range r.syntaxa {
+		if s.ID == id {
+			r.syntaxa[i].Author = author
+			if parentID != "" {
+				r.syntaxa[i].ParentID = parentID
+			}
+			return nil
+		}
+	}
+	return nil
+}
+
 func (r *fakeRepo) LinkSyntaxon(key domain.HabitatTypeKey, syntaxonID string) error {
 	if err := r.failIfNamed("LinkSyntaxon"); err != nil {
 		return err

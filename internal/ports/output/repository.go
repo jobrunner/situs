@@ -18,6 +18,11 @@ type IngestTx interface {
 	UpsertHabitatType(h domain.HabitatType) error
 	UpsertCrosswalk(c domain.Crosswalk) error
 	UpsertSyntaxon(s domain.Syntaxon) error
+	// UpsertSyntaxonAuthor sets Author on an already-upserted syntaxon and, if
+	// parentID is non-empty, its ParentID — used ONLY by the hierarchy-matching
+	// pass to enrich an existing EUNIS alliance row without re-declaring its
+	// Rank/Name (die bleiben EUNIS-eigen bei fehlendem FloraVeg-Treffer).
+	UpsertSyntaxonAuthor(id, author, parentID string) error
 	LinkSyntaxon(key domain.HabitatTypeKey, syntaxonID string) error
 	UpsertSpeciesRole(r domain.SpeciesRole) error
 	UpsertLocalization(l domain.Localization) error
@@ -49,6 +54,10 @@ type Repository interface {
 	Syntaxon(ctx context.Context, id string) (domain.Syntaxon, error)
 	// Syntaxa returns the vegetation units linked to a habitat type.
 	Syntaxa(ctx context.Context, key domain.HabitatTypeKey) ([]domain.Syntaxon, error)
+	// AllSyntaxa returns every vegetation unit the index holds, in id order.
+	// Used by the FloraVeg hierarchy-matching pass to find every
+	// already-ingested EUNIS alliance to match its own names against.
+	AllSyntaxa(ctx context.Context) ([]domain.Syntaxon, error)
 	// HabitatTypeKeysForSyntaxon returns the habitat types a syntaxon is linked
 	// to — the m:n direction.
 	HabitatTypeKeysForSyntaxon(ctx context.Context, syntaxonID string) ([]domain.HabitatTypeKey, error)
