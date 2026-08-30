@@ -97,11 +97,19 @@ der Abgleich sie finden kann) und VOR den Localization-/Derivation-Schritten
 `IngestTx` (`internal/ports/output/repository.go`) bekommt:
 
 ```go
-// UpsertSyntaxonAuthor sets Author on an already-upserted syntaxon and, if
-// parentID is non-empty, its ParentID — used ONLY by the hierarchy-matching
-// pass to enrich an existing EUNIS alliance row without re-declaring its
-// Rank/Name (die bleiben EUNIS-eigen bei fehlendem FloraVeg-Treffer).
-UpsertSyntaxonAuthor(id, author, parentID string) error
+// UpsertSyntaxonAuthor sets Name and Author on an already-upserted syntaxon
+// and, if parentID is non-empty, its ParentID — used ONLY by the
+// hierarchy-matching pass to enrich an existing EUNIS alliance row on a
+// FloraVeg match. name is FloraVeg's own clean name, replacing the
+// historical EUNIS combi-string; it is always set (a match always has a
+// real FloraVeg name), unlike parentID, which can legitimately be empty.
+//
+// Implementation note (post-review): the port ended up taking name too
+// (id, name, author, parentID) — the Rank/Name-stays-EUNIS-owned framing
+// above was the spec's original intent, superseded once the implementation
+// showed a FloraVeg match should also correct Name. See
+// internal/ports/output/repository.go for the authoritative signature.
+UpsertSyntaxonAuthor(id, name, author, parentID string) error
 ```
 
 ## 4. Read-API

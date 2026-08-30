@@ -591,9 +591,12 @@ func (r *fakeRepo) UpsertSyntaxonAuthor(id, name, author, parentID string) error
 			if parentID != "" {
 				r.syntaxa[i].ParentID = parentID
 			}
+			return nil
 		}
 	}
-	return nil
+	// Mirrors the sqlite adapter: an id the index does not carry is an error,
+	// not a silent no-op — a test seeding the wrong id must fail loudly.
+	return fmt.Errorf("fakeRepo: syntaxon %s not found for author update", id)
 }
 
 func (r *fakeRepo) AllSyntaxa(_ context.Context) ([]domain.Syntaxon, error) {

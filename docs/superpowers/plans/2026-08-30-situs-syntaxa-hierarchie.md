@@ -2,6 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Historical note (post-execution):** every `UpsertSyntaxonAuthor(id, author, parentID string)`
+> snippet below is the plan's original 3-argument design. The final
+> whole-branch review found it inconsistent with this same plan's
+> architecture section (a FloraVeg match should also correct `Name`, not
+> just `Author`/`ParentID`) and the port shipped as
+> `UpsertSyntaxonAuthor(id, name, author, parentID string) error` instead —
+> see `internal/ports/output/repository.go` for the authoritative signature.
+> Left unedited below as the execution record; do not copy these snippets.
+
 **Goal:** situs führt die volle Syntaxa-Hierarchie (Klasse → Ordnung → Verband)
 mit Codes, ergänzt um eine von der EUNIS-Quelle unabhängige Autorschafts-Spalte,
 gespeist aus FloraVeg.EU.
