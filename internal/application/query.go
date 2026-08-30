@@ -108,14 +108,21 @@ func (q *QueryService) SpeciesHabitatTypes(ctx context.Context, conceptID, lang 
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, input.HabitatTypeRole{
+		htr := input.HabitatTypeRole{
 			HabitatTypeSummary: summary,
 			Role:               r.Role,
 			Fidelity:           r.Fidelity,
 			Constancy:          r.Constancy,
 			Syntaxa:            syntaxa,
 			InArea:             inA,
-		})
+		}
+		if r.Provenance == "derived_from_aggregate" {
+			htr.Provenance = r.Provenance
+			if r.DerivedFrom != nil {
+				htr.DerivedFrom = &input.AggregateSource{ConceptID: *r.DerivedFrom}
+			}
+		}
+		out = append(out, htr)
 	}
 	return out, nil
 }
@@ -264,6 +271,12 @@ func speciesEntry(r domain.SpeciesRole) input.SpeciesEntry {
 	}
 	if r.ConceptID != nil {
 		e.ConceptID = *r.ConceptID
+	}
+	if r.Provenance == "derived_from_aggregate" {
+		e.Provenance = r.Provenance
+		if r.DerivedFrom != nil {
+			e.DerivedFrom = &input.AggregateSource{ConceptID: *r.DerivedFrom}
+		}
 	}
 	return e
 }

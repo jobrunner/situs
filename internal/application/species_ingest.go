@@ -100,10 +100,10 @@ func loadCrosswalk(ctx context.Context, csvPath string) (map[string][]string, in
 	dir, file := filepath.Split(csvPath)
 	crosswalk := map[string][]string{}
 	skipped := 0
-	err := readAll(ctx, dir, file, []string{"name", "concept_id"},
+	err := readAll(ctx, dir, file, []string{nameField, "concept_id"},
 		newRowSkipper(&skipped, file, "crosswalk entry"),
 		func(idx map[string]int, r []string, line int) error {
-			name := r[idx["name"]]
+			name := r[idx[nameField]]
 			id := r[idx["concept_id"]]
 			crosswalk[name] = append(crosswalk[name], id)
 			return nil

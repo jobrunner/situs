@@ -245,6 +245,61 @@ func TestQueryService_SpeciesHabitatTypes(t *testing.T) {
 	}
 }
 
+// A derived species role must surface as Provenance/DerivedFrom on both read
+// paths — the concept's own habitat-type list (HabitatTypeRole) and the
+// habitat type's species list (SpeciesEntry, via speciesEntry).
+func TestQueryService_SpeciesHabitatTypesCarriesProvenanceForADerivedRole(t *testing.T) {
+	repo := seedQueryRepo()
+	member := "wcvp-100"
+	aggregate := "wcvp-99"
+	repo.speciesRoles = append(repo.speciesRoles, domain.SpeciesRole{
+		Key: queryR22, ConceptID: &member, VerbatimName: "Rubus caesius", Role: "diagnostic",
+		Provenance: "derived_from_aggregate", DerivedFrom: &aggregate,
+	})
+
+	got, err := NewQueryService(repo).SpeciesHabitatTypes(context.Background(), member, "en", input.AreaFilter{})
+	if err != nil {
+		t.Fatalf("SpeciesHabitatTypes: %v", err)
+	}
+	if len(got) != 1 || got[0].Provenance != "derived_from_aggregate" {
+		t.Fatalf("got %+v, want one derived habitat-type role", got)
+	}
+	if got[0].DerivedFrom == nil || got[0].DerivedFrom.ConceptID != aggregate {
+		t.Errorf("DerivedFrom = %+v, want ConceptID %q", got[0].DerivedFrom, aggregate)
+	}
+}
+
+func TestQueryService_HabitatTypeSpeciesCarriesProvenanceForADerivedRole(t *testing.T) {
+	repo := seedQueryRepo()
+	member := "wcvp-100"
+	aggregate := "wcvp-99"
+	repo.speciesRoles = append(repo.speciesRoles, domain.SpeciesRole{
+		Key: queryR22, ConceptID: &member, VerbatimName: "Rubus caesius", Role: "diagnostic",
+		Provenance: "derived_from_aggregate", DerivedFrom: &aggregate,
+	})
+
+	got, err := NewQueryService(repo).HabitatTypeSpecies(context.Background(), queryR22, "", input.AreaFilter{})
+	if err != nil {
+		t.Fatalf("HabitatTypeSpecies: %v", err)
+	}
+	var found bool
+	for _, e := range got {
+		if e.VerbatimName != "Rubus caesius" {
+			continue
+		}
+		found = true
+		if e.Provenance != "derived_from_aggregate" {
+			t.Errorf("Provenance = %q, want derived_from_aggregate", e.Provenance)
+		}
+		if e.DerivedFrom == nil || e.DerivedFrom.ConceptID != aggregate {
+			t.Errorf("DerivedFrom = %+v, want ConceptID %q", e.DerivedFrom, aggregate)
+		}
+	}
+	if !found {
+		t.Fatal("derived species entry (Rubus caesius) not found")
+	}
+}
+
 func TestQueryService_UnknownConceptIsNotFound(t *testing.T) {
 	q := NewQueryService(seedQueryRepo())
 

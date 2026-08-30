@@ -178,6 +178,49 @@ func TestHabitatType_SpeciesCarriesEveryRoleBucket(t *testing.T) {
 	}
 }
 
+// provenance/derived_from must appear only on a derived entry — the common
+// observed shape stays byte-identical to before, for existing clients.
+func TestHabitatTypeSpecies_ProvenanceAndDerivedFromAreOmittedForObservedRows(t *testing.T) {
+	q := seededQueryService()
+	detail := q.types["eunis@2021:R22"]
+	detail.Species[input.RoleDiagnostic] = []input.SpeciesEntry{
+		{ConceptID: "wcvp-1", VerbatimName: "Bromus erectus", Role: input.RoleDiagnostic},
+		{
+			ConceptID: "wcvp-2", VerbatimName: "Rubus caesius", Role: input.RoleDiagnostic,
+			Provenance:  "derived_from_aggregate",
+			DerivedFrom: &input.AggregateSource{ConceptID: "wcvp-99", Name: "Rubus fruticosus aggr."},
+		},
+	}
+	q.types["eunis@2021:R22"] = detail
+	srv := newTestServer(t, q)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/habitat-type/eunis@2021/R22", nil)
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"concept_id":"wcvp-2","verbatim_name":"Rubus caesius","role":"diagnostic","provenance":"derived_from_aggregate","derived_from":{"concept_id":"wcvp-99","name":"Rubus fruticosus aggr."}`) {
+		t.Errorf("body = %s, want the derived entry's provenance/derived_from present in this exact shape", body)
+	}
+	var got struct {
+		Species map[string][]struct {
+			VerbatimName string `json:"verbatim_name"`
+			Provenance   string `json:"provenance"`
+		} `json:"species"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	for _, e := range got.Species[input.RoleDiagnostic] {
+		if e.VerbatimName == "Bromus erectus" && e.Provenance != "" {
+			t.Errorf("observed entry Provenance = %q, want empty (omitted)", e.Provenance)
+		}
+	}
+}
+
 func TestHabitatTypeSpecies_FiltersByRole(t *testing.T) {
 	q := seededQueryService()
 	srv := newTestServer(t, q)

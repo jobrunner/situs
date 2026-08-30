@@ -101,8 +101,14 @@ type CrosswalkRef struct {
 	Qualifier domain.Qualifier  `json:"qualifier"`
 }
 
+// AggregateSource lets a caller ask "what aggregate produced this match?".
+type AggregateSource struct {
+	ConceptID string `json:"concept_id"`
+	Name      string `json:"name"`
+}
+
 // SpeciesEntry is one species in its role. VerbatimName is always set;
-// ConceptID is absent when the name did not resolve against hostus.
+// ConceptID is absent when the name did not resolve against the crosswalk.
 type SpeciesEntry struct {
 	ConceptID    string   `json:"concept_id,omitempty"`
 	VerbatimName string   `json:"verbatim_name"`
@@ -112,6 +118,11 @@ type SpeciesEntry struct {
 	// InArea is nil when unknowable: no concept id, or a concept without
 	// distribution rows. It is absent from the wire without an area filter.
 	InArea *bool `json:"in_area,omitempty"`
+	// Provenance is "observed" (default, omitted) or "derived_from_aggregate"
+	// — present only in the derived case, so the common (observed) response
+	// shape is unchanged for existing clients.
+	Provenance  string           `json:"provenance,omitempty"`
+	DerivedFrom *AggregateSource `json:"derived_from,omitempty"`
 }
 
 // AreaFilter is the caller's view on a species list. Code is a WGSRPD level 3
@@ -147,6 +158,10 @@ type HabitatTypeRole struct {
 	// InArea is nil when unknowable: no concept id, or a concept without
 	// distribution rows. It is absent from the wire without an area filter.
 	InArea *bool `json:"in_area,omitempty"`
+	// Provenance/DerivedFrom mirror SpeciesEntry's: present only when this
+	// role hit was derived from an aggregate's membership list.
+	Provenance  string           `json:"provenance,omitempty"`
+	DerivedFrom *AggregateSource `json:"derived_from,omitempty"`
 }
 
 // ConceptResolution is one entry of the batch answer. Known is false and

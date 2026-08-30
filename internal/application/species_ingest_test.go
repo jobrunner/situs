@@ -328,3 +328,64 @@ func TestIngestSpeciesRoles_CommitErrorIsReturned(t *testing.T) {
 		t.Fatal("IngestSpeciesRoles with a Commit error = nil error, want an error")
 	}
 }
+
+// A non-"does not exist" failure while checking aggregate_members.csv (e.g. a
+// broken path component) must abort the ingest — only ENOENT is tolerated.
+func TestIngestSpeciesRoles_AggregateMembersStatErrorIsAHardError(t *testing.T) {
+	dir := t.TempDir()
+	writeCSV(t, dir, "species_roles.csv",
+		"typology_id,code,verbatim_name,role,fidelity,constancy\neunis@2021,R22,Inula hirta,diagnostic,0.8,\n")
+	writeCSV(t, dir, "eurosl_crosswalk.csv", "name,concept_id\nInula hirta,wcvp:concept:1\n")
+	species := filepath.Join(dir, "species_roles.csv")
+	crosswalk := filepath.Join(dir, "eurosl_crosswalk.csv")
+	// aggregate_members.csv is not a directory — treating it as one makes
+	// os.Stat fail with something other than "not exist" (ENOTDIR).
+	notADir := filepath.Join(dir, "eurosl_crosswalk.csv", "aggregate_members.csv")
+
+	repo := newFakeRepo()
+	if _, err := IngestSpeciesRoles(context.Background(), repo, species, crosswalk, notADir); err == nil {
+		t.Fatal("IngestSpeciesRoles with an unstatable aggregate-members path = nil error, want an error")
+	}
+}
+
+// A malformed aggregate_members.csv (missing a required column) aborts the
+// ingest — the file exists, so this is not the "no derivation" case.
+func TestIngestSpeciesRoles_MalformedAggregateMembersFileIsAHardError(t *testing.T) {
+	dir := t.TempDir()
+	writeCSV(t, dir, "species_roles.csv",
+		"typology_id,code,verbatim_name,role,fidelity,constancy\neunis@2021,R22,Inula hirta,diagnostic,0.8,\n")
+	writeCSV(t, dir, "eurosl_crosswalk.csv", "name,concept_id\nInula hirta,wcvp:concept:1\n")
+	writeCSV(t, dir, "aggregate_members.csv", "not_the_right_header\n")
+	species, crosswalk, aggregates := speciesRolesPaths(t, dir)
+
+	repo := newFakeRepo()
+	if _, err := IngestSpeciesRoles(context.Background(), repo, species, crosswalk, aggregates); err == nil {
+		t.Fatal("IngestSpeciesRoles with a malformed aggregate_members.csv = nil error, want an error")
+	}
+}
+
+// A repository failure while writing a derived row must roll back and
+// surface the error, exactly like an explicit-row failure does.
+func TestIngestSpeciesRoles_DerivedRowRepositoryErrorRollsBack(t *testing.T) {
+	dir := t.TempDir()
+	writeCSV(t, dir, "species_roles.csv",
+		"typology_id,code,verbatim_name,role,fidelity,constancy\n"+
+			"eunis@2021,R22,Rubus fruticosus aggr.,diagnostic,0.7,\n")
+	writeCSV(t, dir, "eurosl_crosswalk.csv",
+		"name,concept_id\nRubus fruticosus aggr.,wcvp:concept:99\n")
+	writeCSV(t, dir, "aggregate_members.csv",
+		"aggregate_concept_id,member_concept_id,member_name\nwcvp:concept:99,wcvp:concept:100,Rubus caesius\n")
+	species, crosswalk, aggregates := speciesRolesPaths(t, dir)
+
+	repo := newFakeRepo()
+	repo.failOn = "UpsertDerivedSpeciesRole"
+	if _, err := IngestSpeciesRoles(context.Background(), repo, species, crosswalk, aggregates); err == nil {
+		t.Fatal("IngestSpeciesRoles with a derived-row repository error = nil error, want an error")
+	}
+	if repo.committed {
+		t.Error("ingest committed despite a derived-row repository error")
+	}
+	if !repo.rolledBack {
+		t.Error("ingest did not roll back after a derived-row repository error")
+	}
+}

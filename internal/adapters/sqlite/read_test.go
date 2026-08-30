@@ -207,6 +207,38 @@ func TestSpeciesRolesByConcept_ReturnsEveryRoleAndKey(t *testing.T) {
 	}
 }
 
+// SpeciesRolesByConcept must round-trip DerivedFrom too, the same way
+// SpeciesRoles already does.
+func TestSpeciesRolesByConcept_ReturnsDerivedFromWhenSet(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	member := "wcvp:concept:100"
+	aggregate := "wcvp:concept:99"
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertSpeciesRole(domain.SpeciesRole{
+		Key: key, ConceptID: &member, VerbatimName: "Rubus caesius", Role: "diagnostic",
+		Provenance: "derived_from_aggregate", DerivedFrom: &aggregate,
+	}); err != nil {
+		t.Fatalf("UpsertSpeciesRole: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.SpeciesRolesByConcept(ctx, member)
+	if err != nil {
+		t.Fatalf("SpeciesRolesByConcept: %v", err)
+	}
+	if len(got) != 1 || got[0].DerivedFrom == nil || *got[0].DerivedFrom != aggregate {
+		t.Errorf("SpeciesRolesByConcept = %+v, want one row with DerivedFrom = %q", got, aggregate)
+	}
+}
+
 func TestSyntaxonAndSyntaxa(t *testing.T) {
 	db := openSeededDB(t)
 
