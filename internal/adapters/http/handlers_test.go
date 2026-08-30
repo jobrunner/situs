@@ -87,8 +87,25 @@ func TestHabitatType_SyntaxonAuthorAndParentIDAreOmittedWhenEmpty(t *testing.T) 
 	if got.Syntaxa[0].Author != "Br.-Bl. 1931" || got.Syntaxa[0].ParentID != "AA01" {
 		t.Errorf("matched syntaxon = %+v, want Author=%q ParentID=%q", got.Syntaxa[0], "Br.-Bl. 1931", "AA01")
 	}
-	if !strings.Contains(rec.Body.String(), `"id":"XYZ-01","rank":"alliance","name":"Nomatchion nowhereii"}`) {
-		t.Errorf("body = %s, want the unmatched syntaxon's object to omit author/parent_id entirely", rec.Body)
+
+	// Decode into raw objects to check field ABSENCE, not just an empty string —
+	// a substring match on the body would be brittle to field-ordering changes
+	// in SyntaxonRef or a future encoder change.
+	var raw struct {
+		Syntaxa []map[string]any `json:"syntaxa"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decoding body as raw objects: %v", err)
+	}
+	if len(raw.Syntaxa) != 2 {
+		t.Fatalf("syntaxa = %+v, want 2 entries", raw.Syntaxa)
+	}
+	unmatched := raw.Syntaxa[1]
+	if _, ok := unmatched["author"]; ok {
+		t.Errorf("unmatched syntaxon = %+v, want no \"author\" key", unmatched)
+	}
+	if _, ok := unmatched["parent_id"]; ok {
+		t.Errorf("unmatched syntaxon = %+v, want no \"parent_id\" key", unmatched)
 	}
 }
 

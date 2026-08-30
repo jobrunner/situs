@@ -1,12 +1,10 @@
 # pipelines/eurovegchecklist/test_xlsx_to_csv.py
-import io
-import json
 import os
 import tempfile
 import unittest
 import zipfile
 
-from xlsx_to_csv import CSV_HEADERS, HeaderError, convert, primary_code, rank_and_parent
+from xlsx_to_csv import HeaderError, convert, primary_code, rank_and_parent
 
 
 def _xml_escape(value):

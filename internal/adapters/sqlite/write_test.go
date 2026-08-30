@@ -331,6 +331,26 @@ func TestIngestTx_UpsertSyntaxonAuthor(t *testing.T) {
 	assertSyntaxonAuthorAndRank(ctx, t, db, "arrhenatherion", "Koch 1926 emend.", "AA01", "alliance", "Arrhenatherion elatioris")
 }
 
+// UpsertSyntaxonAuthor only ever enriches a row its caller just read back
+// from the index — an id matching zero rows means the index changed under
+// the ingest or the caller drifted out of sync, and must surface as an
+// error rather than a silent no-op.
+func TestIngestTx_UpsertSyntaxonAuthor_UnknownIDIsAnError(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertSyntaxonAuthor("does-not-exist", "X", "Koch 1926", "AA01"); err == nil {
+		t.Fatal("UpsertSyntaxonAuthor(unknown id) = nil error, want an error")
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+}
+
 func TestCrosswalksTo_ReturnsOnlyCrosswalksToTheGivenTypology(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()

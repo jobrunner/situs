@@ -36,9 +36,9 @@ _NON_DATA_SHEETS = {"read me", "legend"}
 _REQUIRED_HEADERS = ["Code", "Name", "Author"]
 # The real FloraVeg export (Step 6, measured against the pinned v4 file, not
 # guessed) spells the name/author columns after the two parallel EVC versions
-# it carries (original Mucina et al. 2016 vs. the 2025-06-12 update). The
-# 2025-06-12 columns are listed first because that is the version the
-# manifest pins; the "original" columns are the fallback so an older export
+# it carries (original Mucina et al. 2016 vs. an update dated 2025-06-12 in
+# the column headers themselves). The updated columns are listed first and
+# preferred; the "original" columns are the fallback so an older export
 # without the update columns still parses.
 _HEADER_ALIASES = {
     "Name": [
