@@ -158,6 +158,16 @@ An `.xlsx` is a zip of XML that the Python stdlib reads. Keeping it in
 list narrow. The Go ingest reads **only CSV**. This mirrors hostus'
 `pipelines/floraveg/`.
 
+`pipelines/eive` and `pipelines/tichy` are a **documented, deliberate
+exception**: their `convert.py` imports `openpyxl`, carried over unchanged
+from hostus (see
+`docs/superpowers/specs/2026-08-29-situs-trait-modul-design.md`). Rewriting
+them onto a stdlib-only XLSX reader was judged too risky for the trait-module
+fix round given they are unmodified, working converters. `build.sh` in both
+guards the `openpyxl` import up front with a clear error instead of a raw
+traceback. `pipelines/midolo` (plain CSV, no XLSX) and `pipelines/eunis`
+remain stdlib-only.
+
 ### Invariants that reviewers must check
 - **Localization is overlay, never replacement.** `habitat_type.name_en` stays
   the identity; `name_de` is additive. `provenance` ∈ `official` | `curated` |

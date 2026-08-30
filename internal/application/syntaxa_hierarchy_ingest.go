@@ -96,7 +96,7 @@ func readHierarchyRows(ctx context.Context, csvPath string) ([]hierarchyRow, int
 	var rows []hierarchyRow
 	skipped := 0
 	skip := newRowSkipper(&skipped, file, "syntaxon hierarchy")
-	err := readAll(ctx, dir, file,
+	err := readAll(ctx, dir, file, ',',
 		[]string{"code", "rank", colName, "author", "parent_code"}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			rank := row[idx["rank"]]

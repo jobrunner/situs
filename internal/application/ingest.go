@@ -124,7 +124,7 @@ func ingestAll(ctx context.Context, tx output.IngestTx, dir string) (IngestRepor
 //
 // os.OpenRoot confines the open to dir: name can never escape it via "..",
 // so this stays safe even though dir is a caller-supplied path.
-func csvReader(dir, name string) (*csv.Reader, *os.File, error) {
+func csvReader(dir, name string, delim rune) (*csv.Reader, *os.File, error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("opening ingest directory %s: %w", dir, err)
@@ -135,7 +135,9 @@ func csvReader(dir, name string) (*csv.Reader, *os.File, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("opening %s: %w", filepath.Join(dir, name), err)
 	}
-	return csv.NewReader(f), f, nil
+	r := csv.NewReader(f)
+	r.Comma = delim
+	return r, f, nil
 }
 
 func headerIndex(header []string, required ...string) (map[string]int, error) {
@@ -156,13 +158,13 @@ func headerIndex(header []string, required ...string) (map[string]int, error) {
 // truncated or hand-edited row takes) is reported through skip and the read
 // continues; every other reader error (unterminated quote, I/O) aborts, as
 // does an fn error.
-func readAll(ctx context.Context, dir, name string, required []string, skip rowSkipper,
+func readAll(ctx context.Context, dir, name string, delim rune, required []string, skip rowSkipper,
 	fn func(idx map[string]int, row []string, line int) error) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("ingesting %s: %w", name, err)
 	}
 
-	r, f, err := csvReader(dir, name)
+	r, f, err := csvReader(dir, name, delim)
 	if err != nil {
 		return err
 	}
@@ -232,7 +234,7 @@ func parseOptionalBool(s string) (*bool, error) {
 func ingestTypologies(ctx context.Context, tx output.IngestTx, dir string) (skipped int, err error) {
 	const file = "typologies.csv"
 	skip := newRowSkipper(&skipped, file, "typology")
-	err = readAll(ctx, dir, file, []string{"id", "scheme", "version", colName, "source_ref"}, skip,
+	err = readAll(ctx, dir, file, ',', []string{"id", "scheme", "version", colName, "source_ref"}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			id, perr := domain.ParseTypologyID(row[idx["id"]])
 			if perr != nil {
@@ -256,7 +258,7 @@ func ingestTypologies(ctx context.Context, tx output.IngestTx, dir string) (skip
 func ingestHabitatTypes(ctx context.Context, tx output.IngestTx, dir string) (count, skipped int, err error) {
 	const file = "habitat_types.csv"
 	skip := newRowSkipper(&skipped, file, "habitat type")
-	err = readAll(ctx, dir, file,
+	err = readAll(ctx, dir, file, ',',
 		[]string{colTypologyID, colCode, "level", "name_en", "parent_code", "priority"}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			typologyID, perr := domain.ParseTypologyID(row[idx[colTypologyID]])
@@ -293,7 +295,7 @@ func ingestHabitatTypes(ctx context.Context, tx output.IngestTx, dir string) (co
 func ingestCrosswalks(ctx context.Context, tx output.IngestTx, dir string) (count, skipped int, err error) {
 	const file = "crosswalks.csv"
 	skip := newRowSkipper(&skipped, file, "crosswalk")
-	err = readAll(ctx, dir, file,
+	err = readAll(ctx, dir, file, ',',
 		[]string{"from_typology", "from_code", "to_typology", "to_code", "qualifier"}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			fromTypology, perr := domain.ParseTypologyID(row[idx["from_typology"]])
@@ -328,7 +330,7 @@ func ingestCrosswalks(ctx context.Context, tx output.IngestTx, dir string) (coun
 func ingestSyntaxa(ctx context.Context, tx output.IngestTx, dir string) (count, skipped int, err error) {
 	const file = "syntaxa.csv"
 	skip := newRowSkipper(&skipped, file, "syntaxon")
-	err = readAll(ctx, dir, file, []string{"id", "rank", colName, "parent_id"}, skip,
+	err = readAll(ctx, dir, file, ',', []string{"id", "rank", colName, "parent_id"}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			s := domain.Syntaxon{
 				ID:       row[idx["id"]],
@@ -362,7 +364,7 @@ func parseOptionalFloat(s string) (*float64, error) {
 func ingestSyntaxonLinks(ctx context.Context, tx output.IngestTx, dir string) (count, skipped int, err error) {
 	const file = "habitat_type_syntaxa.csv"
 	skip := newRowSkipper(&skipped, file, "syntaxon link")
-	err = readAll(ctx, dir, file, []string{colTypologyID, colCode, "syntaxon_id"}, skip,
+	err = readAll(ctx, dir, file, ',', []string{colTypologyID, colCode, "syntaxon_id"}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			typologyID, perr := domain.ParseTypologyID(row[idx[colTypologyID]])
 			if perr != nil {

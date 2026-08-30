@@ -43,6 +43,10 @@ var (
 	// answered with a list of "does not occur": a typo and a genuine absence
 	// would look the same -> INVALID_QUERY.
 	ErrUnknownArea = errors.New("unknown area")
+	// ErrUnknownVocab is a trait vocabulary the index has no data for. Same
+	// treatment as ErrUnknownArea: a typo and a genuine absence must not
+	// look the same -> INVALID_QUERY.
+	ErrUnknownVocab = errors.New("unknown trait vocabulary")
 )
 
 // The role vocabulary of species_role, closed for this foundation.
@@ -177,6 +181,22 @@ const (
 	ReasonUnknownConcept  = "unknown_concept"
 )
 
+// TraitValueView is the wire shape of one domain.TraitValue.
+type TraitValueView struct {
+	Dim        string   `json:"dim"`
+	Value      float64  `json:"value"`
+	NicheWidth *float64 `json:"niche_width,omitempty"`
+	NSystems   *int     `json:"n_systems,omitempty"`
+}
+
+// TraitSetView groups every TraitValueView one vocabulary contributes for one
+// concept — never merged across vocabularies.
+type TraitSetView struct {
+	Vocab        string           `json:"vocab"`
+	VocabVersion string           `json:"vocab_version"`
+	Values       []TraitValueView `json:"values"`
+}
+
 // IndexInfo is the index's self-description, so a client can check up front
 // whether its concept ids can match at all instead of discovering a backbone
 // mismatch through empty answers. Every field is measured from the index, never
@@ -217,4 +237,9 @@ type QueryService interface {
 	// SpeciesSetHabitatTypes answers a whole field record at once: one entry per
 	// input concept id, in input order, duplicates included.
 	SpeciesSetHabitatTypes(ctx context.Context, conceptIDs []string, lang string, filter AreaFilter) ([]ConceptResolution, error)
+	// Traits returns a concept's indicator values, grouped per vocabulary,
+	// never merged. vocab filters to one vocabulary; empty means every
+	// ingested vocabulary. An unresolvable vocab is INVALID_QUERY; a
+	// concept with no trait data is a normal empty answer, not NOT_FOUND.
+	Traits(ctx context.Context, conceptID, vocab string) ([]TraitSetView, error)
 }

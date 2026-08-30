@@ -178,6 +178,43 @@ Warum das den Aufwand wert war, an `eunis@2021/R15` mit `?area=GER` gemessen:
 Artenliste ohne Gebietsfilter schickt einen Nutzer im Gelände also in etwa jedem
 zweiten Fall hinter eine Pflanze, die dort nicht wachsen kann.
 
+## Zeigerwerte (trait_value)
+
+Drei Vokabulare (EIVE 1.0, Tichý 2023 v2.0, Midolo 2023 v3), ein
+`hostus.Resolve()`-Aufruf über alle drei Dateien zusammen.
+
+!!! warning "Nur die Zeilenzahlen sind in dieser Umgebung gemessen — Auflösung nicht"
+
+    In dieser Sandbox war kein erreichbarer hostus-Dienst vorhanden (siehe
+    `../how-to/ingest.md`): `curl http://localhost:8080/v1/info` traf zwar
+    einen laufenden HTTP-Dienst, aber dessen `/v1/info`-Route antwortete 404 —
+    es ist nicht hostus. Ein realer `situs ingest`-Lauf über
+    `--csv-dir` mit den drei Trait-Dateien (`eive_traits.csv`,
+    `tichy_traits.csv`, `midolo_traits.csv`) und einem erreichbaren
+    hostus-Index war deshalb nicht möglich. Die Spalten „Zeilen" unten sind
+    echte, direkt aus den kanonischen Pipeline-Ausgaben gezählte Zahlen
+    (`wc -l pipelines/{eive,tichy,midolo}/output/*-canonical.csv`, minus
+    Kopfzeile). Die Spalten „Aufgelöst"/„Nicht aufgelöst" brauchen einen
+    echten Ingest-Lauf gegen einen laufenden hostus und wurden hier bewusst
+    **nicht** erfunden — ein Operator sollte sie nach dem ersten echten
+    `situs ingest`-Lauf mit den drei Trait-CSVs aus dem JSON-`Traits`-Feld
+    der Ausgabe ergänzen.
+
+| Vokabular | Zeilen (kanonische CSV, gemessen) | Aufgelöst | Nicht aufgelöst |
+|---|---|---|---|
+| eive | **71266** | noch zu messen (`situs ingest`) | noch zu messen (`situs ingest`) |
+| tichy2023 | **45592** | noch zu messen (`situs ingest`) | noch zu messen (`situs ingest`) |
+| midolo2023 | **31910** | noch zu messen (`situs ingest`) | noch zu messen (`situs ingest`) |
+
+Zeilenzahlen gemessen am 2026-08-30 aus
+`pipelines/eive/output/eive-canonical.csv`,
+`pipelines/tichy/output/tichy-canonical.csv` und
+`pipelines/midolo/output/midolo-canonical.csv` (jeweils Gesamtzeilen minus
+Kopfzeile, Pipe-delimitiert). Nicht dasselbe wie „Zeilen der Trait-CSVs im
+`--csv-dir`" — der Ingest liest die gleich benannten, aber ggf. anders
+platzierten `eive_traits.csv`/`tichy_traits.csv`/`midolo_traits.csv`; an den
+kanonischen Pipeline-Ausgaben ändert das nichts, sie sind identisch.
+
 ## Deutsche Labels (amtlich, aus EUR-Lex)
 
 Gemessen am 2026-08-24 gegen CELEX `01992L0043-20130701` (deutsche

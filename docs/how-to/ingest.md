@@ -8,11 +8,13 @@ situs ingest --csv-dir pipelines/eunis/out --db situs.sqlite
 Liest die von `pipelines/eunis/xlsx_to_csv.py` erzeugten CSVs
 (`typologies.csv`, `habitat_types.csv`, `crosswalks.csv`, `syntaxa.csv`,
 `habitat_type_syntaxa.csv`, `species_roles.csv`, optional
-`localizations.csv`) plus, optional, `syntaxa_hierarchy.csv` von
-`pipelines/eurovegchecklist/xlsx_to_csv.py` — beide Pipelines schreiben in
-denselben `--csv-dir` — aus `--csv-dir` und schreibt in die SQLite-Datei
-`--db`. Die Ausgabe ist ein JSON-Report mit den Zeilenzählern je Entität
-plus dem Artenrollen-Report (siehe unten).
+`localizations.csv`) plus, ebenfalls optional, `syntaxa_hierarchy.csv` von
+`pipelines/eurovegchecklist/xlsx_to_csv.py` und die drei Zeigerwert-CSVs
+(`eive_traits.csv`, `tichy_traits.csv`, `midolo_traits.csv` — erzeugt von
+`pipelines/{eive,tichy,midolo}`) — alle Pipelines schreiben in denselben
+`--csv-dir` — aus `--csv-dir` und schreibt in die SQLite-Datei `--db`. Die
+Ausgabe ist ein JSON-Report mit den Zeilenzählern je Entität plus dem
+Artenrollen-Report und dem Trait-Report (siehe unten).
 
 `--db` ist **optional** und fällt auf `index.path` (`SITUS_INDEX_PATH`,
 Default `situs.sqlite`) zurück — dieselbe Datei, aus der `serve` liest. Das
@@ -56,11 +58,14 @@ Am gepinnten Datenstand sind beide gemessen **0**. Siehe
    EuroVegChecklist, siehe `../reference/measured-index.md#syntaxa-tiefe-offener-punkt-1`)
    und reichert die gerade ingestierten EUNIS-Verbände um Klasse/Ordnung/Autorschaft
    an, soweit ein eindeutiger Namenstreffer existiert. Läuft direkt nach
-   `IngestCSV` und vor Artenrollen/Verbreitung/Label-Overlay, von denen keiner
-   davon abhängt.
+   `IngestCSV` und vor Artenrollen/Verbreitung/Zeigerwerten/Label-Overlay, von
+   denen keiner davon abhängt.
 3. `IngestSpeciesRoles` — Artenrollen, inklusive hostus-Namensauflösung.
 4. `IngestDistribution` — die Verbreitung der aufgelösten Konzepte (siehe unten).
-5. `IngestLocalizations` und `DeriveGermanLabels` — der Label-Overlay.
+5. `IngestTraits` — die Zeigerwerte (EIVE, Tichý, Midolo) der aufgelösten
+   Konzepte, gelesen aus `eive_traits.csv`, `tichy_traits.csv` und
+   `midolo_traits.csv` im `--csv-dir`, ebenfalls über hostus-Namensauflösung.
+6. `IngestLocalizations` und `DeriveGermanLabels` — der Label-Overlay.
 
 Ist hostus beim **dritten** Schritt (`IngestSpeciesRoles`) nicht erreichbar,
 bricht `ingest` mit einem Fehler ab — aber die **ersten beiden** Schritte sind
@@ -148,3 +153,36 @@ den bestehenden.
 
 Wie viele Gebiete am Ende tatsächlich im Index stehen, sagt `areas_with_data` in
 `GET /v1/info`.
+
+## Der Trait-Schritt
+
+`IngestTraits` liest die drei Zeigerwert-CSVs (`eive_traits.csv`,
+`tichy_traits.csv`, `midolo_traits.csv`) aus `--csv-dir` und löst ihre
+Taxonnamen in **einem** gemeinsamen `hostus.Resolve()`-Aufruf über alle drei
+Dateien auf, bevor die Werte geschrieben werden.
+
+Die drei Pipelines (`pipelines/{eive,tichy,midolo}`) schreiben ihre Ausgabe
+unter einem eigenen Dateinamen nach `output/`, nicht direkt unter dem Namen,
+den `situs ingest` erwartet — dieser Kopierschritt ist manuell:
+
+```bash
+cp pipelines/eive/output/eive-canonical.csv "$CSV_DIR/eive_traits.csv"
+cp pipelines/tichy/output/tichy-canonical.csv "$CSV_DIR/tichy_traits.csv"
+cp pipelines/midolo/output/midolo-canonical.csv "$CSV_DIR/midolo_traits.csv"
+```
+
+Ein fehlendes Ziel-File wird von `IngestTraits` still als „übersprungen"
+gezählt (siehe unten) statt als Fehler gemeldet — der Kopierschritt oben ist
+also nötig, nicht nur bequem.
+
+Jede der drei Dateien ist für sich **optional**: fehlt eine, wird ihr
+Vokabular im Report als übersprungen (`Skipped`) gezählt statt den Ingest
+abzubrechen — dieselbe Haltung wie bei `localizations.csv`. Ist hostus für
+diesen Schritt dagegen nicht erreichbar, bricht `ingest` mit einem Fehler ab,
+so wie beim Artenrollen-Schritt: eine fehlgeschlagene Namensauflösung darf
+nicht stillschweigend als „keine Zeigerwerte" verbucht werden.
+
+Das Report-Objekt `Traits` trägt je Vokabular Zeilen- und
+Auflösungszahlen; siehe `../reference/measured-index.md` für die aus den
+kanonischen Pipeline-CSVs zählbaren Zeilenzahlen. Ein Konzept ohne
+Zeigerwerte ist der Normalfall, kein Fehler.

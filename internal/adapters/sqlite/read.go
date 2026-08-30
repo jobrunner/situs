@@ -186,51 +186,17 @@ func (d *DB) appendAreasForChunk(ctx context.Context, out map[string][]string, c
 // given scheme. The read side validates an area filter against this: an
 // unknown code becomes an error, not a silent "does not occur" answer.
 func (d *DB) KnownAreaCodes(ctx context.Context, scheme string) ([]string, error) {
-	rows, err := d.QueryContext(ctx,
+	return d.queryStrings(ctx, "area codes",
 		`SELECT DISTINCT area_code FROM species_distribution
 		 WHERE area_scheme = ? ORDER BY area_code`, scheme)
-	if err != nil {
-		return nil, fmt.Errorf("sqlite: reading area codes: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	out := []string{}
-	for rows.Next() {
-		var code string
-		if err := rows.Scan(&code); err != nil {
-			return nil, fmt.Errorf("sqlite: scanning area code: %w", err)
-		}
-		out = append(out, code)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("sqlite: iterating area codes: %w", err)
-	}
-	return out, nil
 }
 
 // ConceptIDs lists the distinct concept ids the index holds, so the
 // distribution step knows what to ask hostus for.
 func (d *DB) ConceptIDs(ctx context.Context) ([]string, error) {
-	rows, err := d.QueryContext(ctx,
+	return d.queryStrings(ctx, "concept ids",
 		`SELECT DISTINCT concept_id FROM species_role
 		 WHERE concept_id IS NOT NULL ORDER BY concept_id`)
-	if err != nil {
-		return nil, fmt.Errorf("sqlite: reading concept ids: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	out := []string{}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("sqlite: scanning concept id: %w", err)
-		}
-		out = append(out, id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("sqlite: iterating concept ids: %w", err)
-	}
-	return out, nil
 }
 
 // scanSpeciesRole reads the columns shared by the species queries. The

@@ -54,7 +54,7 @@ func IngestLocalizations(ctx context.Context, repo output.Repository, csvPath st
 
 	count, skipped := 0, 0
 	skip := newRowSkipper(&skipped, file, "localization")
-	err = readAll(ctx, dir, file,
+	err = readAll(ctx, dir, file, ',',
 		[]string{"entity_type", "entity_key", "lang", "field", "value", "source", "provenance"}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			provenance := row[idx["provenance"]]
