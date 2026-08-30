@@ -76,6 +76,10 @@ func seedIngestDir(t *testing.T) string {
 	writeIngestCSV(t, dir, "habitat_type_syntaxa.csv", "typology_id,code,syntaxon_id\n")
 	writeIngestCSV(t, dir, "species_roles.csv",
 		"typology_id,code,verbatim_name,role,fidelity,constancy\neunis@2021,R22,Inula hirta,diagnostic,0.8,\n")
+	writeIngestCSV(t, dir, "eurosl_crosswalk.csv",
+		"name,concept_id\nInula hirta,wcvp:concept:1\n")
+	writeIngestCSV(t, dir, "aggregate_members.csv",
+		"aggregate_concept_id,member_concept_id,member_name\n")
 	return dir
 }
 
@@ -286,6 +290,10 @@ func TestIngestCommand_ReportsFailedConceptsFromThePacedDecorator(t *testing.T) 
 		"typology_id,code,verbatim_name,role,fidelity,constancy\n"+
 			"eunis@2021,R22,Species A,diagnostic,0.8,\n"+
 			"eunis@2021,R22,Species B,diagnostic,0.8,\n")
+	writeIngestCSV(t, dir, "eurosl_crosswalk.csv",
+		"name,concept_id\nSpecies A,wcvp:concept:1\nSpecies B,wcvp:concept:2\n")
+	writeIngestCSV(t, dir, "aggregate_members.csv",
+		"aggregate_concept_id,member_concept_id,member_name\n")
 
 	root := newRootCmd()
 	var out bytes.Buffer
@@ -306,6 +314,41 @@ func TestIngestCommand_ReportsFailedConceptsFromThePacedDecorator(t *testing.T) 
 	}
 }
 
+func TestIngestCommandFailsOnAMissingCrosswalkFile(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t)
+	if err := os.Remove(filepath.Join(dir, "eurosl_crosswalk.csv")); err != nil {
+		t.Fatalf("removing eurosl_crosswalk.csv: %v", err)
+	}
+	root := newRootCmd()
+	root.SetOut(&bytes.Buffer{})
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", filepath.Join(t.TempDir(), "situs.sqlite")})
+	if err := root.Execute(); err == nil {
+		t.Fatal("executing ingest with a missing eurosl_crosswalk.csv = nil error, want an error")
+	}
+}
+
+func TestIngestCommandCrosswalkFlagOverridesTheDefaultPath(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t)
+	// Move the crosswalk file out of csv-dir entirely — only the flag finds it.
+	elsewhere := filepath.Join(t.TempDir(), "custom-crosswalk.csv")
+	if err := os.Rename(filepath.Join(dir, "eurosl_crosswalk.csv"), elsewhere); err != nil {
+		t.Fatalf("moving crosswalk file: %v", err)
+	}
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", filepath.Join(t.TempDir(), "situs.sqlite"),
+		"--crosswalk", elsewhere})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("executing ingest with --crosswalk: %v", err)
+	}
+	if !strings.Contains(out.String(), `"Resolved": 1`) {
+		t.Errorf("output = %q, want the row resolved via the flagged crosswalk path", out.String())
+	}
+}
+
 func TestIngestCommandLoadsCSVsAndPrintsTheReport(t *testing.T) {
 	stubHostus(t)
 	csvDir := seedIngestDir(t)
@@ -323,9 +366,9 @@ func TestIngestCommandLoadsCSVsAndPrintsTheReport(t *testing.T) {
 		t.Errorf("output = %q, want it to report one habitat type", out.String())
 	}
 	// WithAreas == 0 must be a visible statement in the printed report, not
-	// an absent field an "omitempty" could later drop unnoticed — the stub
-	// hostus server here resolves nothing, so the distribution step never
-	// finds a concept id and WithAreas is legitimately 0.
+	// an absent field an "omitempty" could later drop unnoticed — the resolved
+	// concept id's distribution comes from the stub hostus server, which
+	// answers every GET with an empty body, so WithAreas is legitimately 0.
 	if !strings.Contains(out.String(), `"WithAreas": 0`) {
 		t.Errorf("output = %q, want the Distribution report's WithAreas field present", out.String())
 	}
@@ -467,6 +510,10 @@ func TestIngestCommand_WarnsWhenTheIndexBackboneIsNotTheOneTheBatchRouteAccepts(
 	t.Setenv("SITUS_HOSTUS_ENTRY_BACKBONE", "gbif")
 
 	dir := seedIngestDir(t)
+	// Species resolution is now local, not hostus — so the mismatch has to
+	// come from the crosswalk file's own concept id, not from a stubbed
+	// /v1/match response.
+	writeIngestCSV(t, dir, "eurosl_crosswalk.csv", "name,concept_id\nInula hirta,gbif:concept:1\n")
 	root := newRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
