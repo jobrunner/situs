@@ -563,6 +563,10 @@ func TestIngestTx_MethodsWrapErrorsOnAClosedTransaction(t *testing.T) {
 		"UpsertSpeciesRole": func() error {
 			return tx.UpsertSpeciesRole(domain.SpeciesRole{Key: key, VerbatimName: "x", Role: "diagnostic"})
 		},
+		"UpsertDerivedSpeciesRole": func() error {
+			_, err := tx.UpsertDerivedSpeciesRole(domain.SpeciesRole{Key: key, VerbatimName: "x", Role: "diagnostic"})
+			return err
+		},
 		"UpsertLocalization": func() error {
 			return tx.UpsertLocalization(domain.Localization{EntityType: "habitat_type", EntityKey: "x", Lang: "de", Field: "name", Value: "x", Source: "x", Provenance: "official"})
 		},
@@ -698,5 +702,263 @@ func TestLocalization_OrdersTotallyAcrossFields(t *testing.T) {
 	}
 	if want := []string{"name", "vernacular"}; !slices.Equal(fields, want) {
 		t.Errorf("fields = %v, want %v (ordered by field within a provenance)", fields, want)
+	}
+}
+
+// UpsertSpeciesRole must round-trip Provenance and DerivedFrom the same way
+// it already round-trips ConceptID/Fidelity/Constancy.
+func TestIngestTx_UpsertSpeciesRoleRoundTripsProvenance(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	aggregate := "wcvp:concept:99"
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertSpeciesRole(domain.SpeciesRole{
+		Key: key, VerbatimName: "Rubus caesius", Role: "diagnostic",
+		Provenance: "derived_from_aggregate", DerivedFrom: &aggregate,
+	}); err != nil {
+		t.Fatalf("UpsertSpeciesRole: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.SpeciesRoles(ctx, key, "")
+	if err != nil {
+		t.Fatalf("SpeciesRoles: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("SpeciesRoles = %d rows, want 1", len(got))
+	}
+	if got[0].Provenance != "derived_from_aggregate" {
+		t.Errorf("Provenance = %q, want %q", got[0].Provenance, "derived_from_aggregate")
+	}
+	if got[0].DerivedFrom == nil || *got[0].DerivedFrom != aggregate {
+		t.Errorf("DerivedFrom = %v, want %q", got[0].DerivedFrom, aggregate)
+	}
+}
+
+// UpsertDerivedSpeciesRole writes the row when nothing occupies its key yet,
+// and reports suppressed=false.
+func TestIngestTx_UpsertDerivedSpeciesRole_WritesWhenAbsent(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	aggregate := "wcvp:concept:99"
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	suppressed, err := tx.UpsertDerivedSpeciesRole(domain.SpeciesRole{
+		Key: key, VerbatimName: "Rubus caesius", Role: "diagnostic",
+		Provenance: "derived_from_aggregate", DerivedFrom: &aggregate,
+	})
+	if err != nil {
+		t.Fatalf("UpsertDerivedSpeciesRole: %v", err)
+	}
+	if suppressed {
+		t.Error("suppressed = true, want false: nothing occupied this key yet")
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.SpeciesRoles(ctx, key, "")
+	if err != nil {
+		t.Fatalf("SpeciesRoles: %v", err)
+	}
+	if len(got) != 1 || got[0].Provenance != "derived_from_aggregate" {
+		t.Errorf("SpeciesRoles = %+v, want one derived row", got)
+	}
+}
+
+// UpsertDerivedSpeciesRole must never overwrite a row an explicit
+// species_roles.csv upsert already wrote for the same key — regardless of
+// which one ran first in this transaction.
+func TestIngestTx_UpsertDerivedSpeciesRole_NeverOverwritesAnExplicitRow(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	aggregate := "wcvp:concept:99"
+	fidelity := 0.9
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertSpeciesRole(domain.SpeciesRole{
+		Key: key, VerbatimName: "Rubus caesius", Role: "diagnostic",
+		Fidelity: &fidelity, Provenance: "observed",
+	}); err != nil {
+		t.Fatalf("UpsertSpeciesRole: %v", err)
+	}
+	suppressed, err := tx.UpsertDerivedSpeciesRole(domain.SpeciesRole{
+		Key: key, VerbatimName: "Rubus caesius", Role: "diagnostic",
+		Provenance: "derived_from_aggregate", DerivedFrom: &aggregate,
+	})
+	if err != nil {
+		t.Fatalf("UpsertDerivedSpeciesRole: %v", err)
+	}
+	if !suppressed {
+		t.Error("suppressed = false, want true: an explicit row already occupied this key")
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.SpeciesRoles(ctx, key, "")
+	if err != nil {
+		t.Fatalf("SpeciesRoles: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("SpeciesRoles = %d rows, want 1 (no derived row added)", len(got))
+	}
+	if got[0].Provenance != "observed" {
+		t.Errorf("Provenance = %q, want %q (explicit row must survive)", got[0].Provenance, "observed")
+	}
+	if got[0].Fidelity == nil || *got[0].Fidelity != fidelity {
+		t.Errorf("Fidelity = %v, want %v (explicit row's own value)", got[0].Fidelity, fidelity)
+	}
+}
+
+// An empty Provenance must never reach the table as an empty string — it has
+// to fall back to "observed", the same value species_role's own column
+// default carries, so an out-of-contract value can never enter the index.
+func TestIngestTx_UpsertSpeciesRoleNormalizesAnEmptyProvenanceToObserved(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertSpeciesRole(domain.SpeciesRole{
+		Key: key, VerbatimName: "Bromus erectus", Role: "diagnostic",
+	}); err != nil {
+		t.Fatalf("UpsertSpeciesRole: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.SpeciesRoles(ctx, key, "")
+	if err != nil {
+		t.Fatalf("SpeciesRoles: %v", err)
+	}
+	if len(got) != 1 || got[0].Provenance != "observed" {
+		t.Errorf("SpeciesRoles = %+v, want Provenance normalized to observed", got)
+	}
+}
+
+// UpsertDerivedSpeciesRole must normalize the same way, for the same reason.
+func TestIngestTx_UpsertDerivedSpeciesRoleNormalizesAnEmptyProvenanceToObserved(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if _, err := tx.UpsertDerivedSpeciesRole(domain.SpeciesRole{
+		Key: key, VerbatimName: "Bromus erectus", Role: "diagnostic",
+	}); err != nil {
+		t.Fatalf("UpsertDerivedSpeciesRole: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.SpeciesRoles(ctx, key, "")
+	if err != nil {
+		t.Fatalf("SpeciesRoles: %v", err)
+	}
+	if len(got) != 1 || got[0].Provenance != "observed" {
+		t.Errorf("SpeciesRoles = %+v, want Provenance normalized to observed", got)
+	}
+}
+
+// speciesRoleColumns/addMissingColumns wrap their driver errors instead of
+// swallowing them — exercised via an already-closed connection, the cheapest
+// way to force every query/exec on it to fail deterministically.
+func TestAddMissingColumns_WrapsErrorsOnAClosedConnection(t *testing.T) {
+	sqlDB, err := sql.Open(DriverName, ":memory:")
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	if _, err := sqlDB.Exec(schema); err != nil {
+		t.Fatalf("applying schema: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("closing: %v", err)
+	}
+
+	if _, err := speciesRoleColumns(context.Background(), sqlDB); err == nil {
+		t.Error("speciesRoleColumns on a closed connection = nil error, want an error")
+	}
+	if err := addMissingColumns(context.Background(), sqlDB); err == nil {
+		t.Error("addMissingColumns on a closed connection = nil error, want an error")
+	}
+}
+
+// The ALTER TABLE branches themselves must also wrap their error — pin this
+// with a connection whose species_role lacks the columns (so
+// speciesRoleColumns succeeds) but that is put into query_only mode first, so
+// the read succeeds and the write fails.
+func TestAddMissingColumns_WrapsAnAlterTableError(t *testing.T) {
+	ctx := context.Background()
+	sqlDB, err := sql.Open(DriverName, ":memory:")
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	if _, err := sqlDB.ExecContext(ctx, `CREATE TABLE species_role (
+		typology_id TEXT NOT NULL, code TEXT NOT NULL, concept_id TEXT,
+		verbatim_name TEXT NOT NULL, role TEXT NOT NULL, fidelity REAL, constancy REAL,
+		PRIMARY KEY (typology_id, code, verbatim_name, role)
+	)`); err != nil {
+		t.Fatalf("creating the pre-migration table: %v", err)
+	}
+	if _, err := sqlDB.ExecContext(ctx, `PRAGMA query_only = ON`); err != nil {
+		t.Fatalf("setting query_only: %v", err)
+	}
+
+	if err := addMissingColumns(ctx, sqlDB); err == nil {
+		t.Error("addMissingColumns on a read-only connection = nil error, want an error")
+	}
+}
+
+// The second ALTER TABLE (derived_from) has its own error-wrap branch,
+// reached only when provenance already exists — pin it separately so a
+// change to the first branch cannot silently leave this one uncovered.
+func TestAddMissingColumns_WrapsAnAlterTableErrorForDerivedFrom(t *testing.T) {
+	ctx := context.Background()
+	sqlDB, err := sql.Open(DriverName, ":memory:")
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	if _, err := sqlDB.ExecContext(ctx, `CREATE TABLE species_role (
+		typology_id TEXT NOT NULL, code TEXT NOT NULL, concept_id TEXT,
+		verbatim_name TEXT NOT NULL, role TEXT NOT NULL, fidelity REAL, constancy REAL,
+		provenance TEXT NOT NULL DEFAULT 'observed',
+		PRIMARY KEY (typology_id, code, verbatim_name, role)
+	)`); err != nil {
+		t.Fatalf("creating the pre-migration table (provenance already present): %v", err)
+	}
+	if _, err := sqlDB.ExecContext(ctx, `PRAGMA query_only = ON`); err != nil {
+		t.Fatalf("setting query_only: %v", err)
+	}
+
+	if err := addMissingColumns(ctx, sqlDB); err == nil {
+		t.Error("addMissingColumns on a read-only connection = nil error, want an error")
 	}
 }

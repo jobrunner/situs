@@ -574,6 +574,19 @@ func (r *fakeRepo) UpsertSpeciesRole(role domain.SpeciesRole) error {
 	return nil
 }
 
+func (r *fakeRepo) UpsertDerivedSpeciesRole(role domain.SpeciesRole) (bool, error) {
+	if err := r.failIfNamed("UpsertDerivedSpeciesRole"); err != nil {
+		return false, err
+	}
+	for _, existing := range r.speciesRoles {
+		if existing.Key == role.Key && existing.VerbatimName == role.VerbatimName && existing.Role == role.Role {
+			return true, nil
+		}
+	}
+	r.speciesRoles = append(r.speciesRoles, role)
+	return false, nil
+}
+
 func (r *fakeRepo) UpsertLocalization(l domain.Localization) error {
 	if err := r.failIfNamed("UpsertLocalization"); err != nil {
 		return err

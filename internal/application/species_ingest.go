@@ -3,8 +3,9 @@ package application
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"os"
 	"path/filepath"
-	"sort"
 
 	"github.com/jobrunner/situs/internal/domain"
 	"github.com/jobrunner/situs/internal/ports/output"
@@ -19,13 +20,26 @@ type SpeciesReport struct {
 	Resolved   int
 	Unresolved int
 	Skipped    int
+	// DerivedRows is the number of aggregate-member rows this run added.
+	DerivedRows int
+	// SuppressedByExplicit counts derived rows NOT written because their key
+	// was already occupied — usually by an explicit species_roles.csv row
+	// (which always wins), but the same INSERT ... ON CONFLICT DO NOTHING
+	// also fires for a duplicate aggregate_members.csv row or two aggregates
+	// naming the same member: the index cannot distinguish which case it
+	// was after the fact, so this counts "derivation lost the race", not
+	// specifically "an explicit row was the cause". Not a defect either way.
+	SuppressedByExplicit int
+	// AmbiguousCrosswalk counts verbatim names with more than one distinct
+	// concept id in eurosl_crosswalk.csv — never guessed, kept unresolved.
+	AmbiguousCrosswalk int
 }
 
 // ResolutionRate is the fraction of rows whose verbatim name resolved to a
-// hostus concept ID, measured against the total row count (not the distinct
-// name count) — the same population the design spec's open point 3 asks
-// for. This is row-weighted, a different population from the ESy spike's
-// ~57% distinct-name floor; the two are not directly comparable — see
+// concept ID, measured against the total row count (not the distinct name
+// count) — the same population the design spec's open point 3 asks for.
+// This is row-weighted, a different population from the ESy spike's ~57%
+// distinct-name floor; the two are not directly comparable — see
 // docs/how-to/ingest.md.
 func (r SpeciesReport) ResolutionRate() float64 {
 	if r.Rows == 0 {
@@ -34,9 +48,12 @@ func (r SpeciesReport) ResolutionRate() float64 {
 	return float64(r.Resolved) / float64(r.Rows)
 }
 
-// speciesRow is one parsed species_roles.csv row, held in memory only long
-// enough to collect the distinct verbatim names before the single Resolve
-// call and the subsequent upserts.
+const (
+	speciesProvenanceObserved             = "observed"
+	speciesProvenanceDerivedFromAggregate = "derived_from_aggregate"
+)
+
+// speciesRow is one parsed species_roles.csv row.
 type speciesRow struct {
 	key       domain.HabitatTypeKey
 	verbatim  string
@@ -79,58 +96,205 @@ func readSpeciesRows(ctx context.Context, dir, file string, skip rowSkipper) ([]
 	return rows, err
 }
 
-// distinctNames returns the deduplicated verbatim names across rows, sorted
-// so batch composition (and thus which names land in which /v1/match
-// request) is reproducible run to run, not dependent on map iteration
-// order — a hostus-side discrepancy must be reproducible to be debuggable.
-func distinctNames(rows []speciesRow) []string {
-	names := make(map[string]struct{}, len(rows))
-	for _, r := range rows {
-		names[r.verbatim] = struct{}{}
+// loadCrosswalk reads eurosl_crosswalk.csv (name,concept_id) into a
+// name -> concept-ids dictionary. More than one row for a name is not
+// malformed — it is how an ambiguous name is recorded — so every id is kept
+// for resolveRow to judge. A row with an empty name or concept_id is
+// malformed (skipped, counted): a blank concept_id sitting alongside a real
+// one would otherwise misclassify the name as ambiguous ({"", "wcvp:..."}
+// counts as two distinct ids) instead of simply unresolved.
+func loadCrosswalk(ctx context.Context, csvPath string) (map[string][]string, int, error) {
+	dir, file := filepath.Split(csvPath)
+	crosswalk := map[string][]string{}
+	skipped := 0
+	skip := newRowSkipper(&skipped, file, "crosswalk entry")
+	err := readAll(ctx, dir, file, []string{nameField, "concept_id"}, skip,
+		func(idx map[string]int, r []string, line int) error {
+			name := r[idx[nameField]]
+			id := r[idx["concept_id"]]
+			if name == "" || id == "" {
+				skip(line, fmt.Errorf("empty name or concept_id"))
+				return nil
+			}
+			crosswalk[name] = append(crosswalk[name], id)
+			return nil
+		})
+	if err != nil {
+		return nil, 0, err
 	}
-	distinct := make([]string, 0, len(names))
-	for n := range names {
-		distinct = append(distinct, n)
-	}
-	sort.Strings(distinct)
-	return distinct
+	return crosswalk, skipped, nil
 }
 
-// upsertSpeciesRows stores every row via tx, setting ConceptID only where
-// resolved has an entry for its verbatim name, and tallies rep accordingly.
-func upsertSpeciesRows(tx output.IngestTx, rows []speciesRow, resolved map[string]string) (SpeciesReport, error) {
+// aggregateMember is one member species of an aggregate, as read from
+// aggregate_members.csv.
+type aggregateMember struct {
+	conceptID string
+	name      string
+}
+
+// loadAggregateMembers reads aggregate_members.csv (aggregate_concept_id,
+// member_concept_id, member_name) into a dictionary keyed by the aggregate's
+// own concept id. A missing file is not an error — it just means no
+// derivation runs this pass, logged so the operator can tell "no aggregates"
+// apart from "forgot the file".
+func loadAggregateMembers(ctx context.Context, csvPath string) (map[string][]aggregateMember, int, error) {
+	if _, err := os.Stat(csvPath); err != nil {
+		if os.IsNotExist(err) {
+			slog.Warn("aggregate_members.csv not found: skipping aggregate-member derivation", "path", csvPath)
+			return map[string][]aggregateMember{}, 0, nil
+		}
+		return nil, 0, fmt.Errorf("checking %s: %w", csvPath, err)
+	}
+
+	dir, file := filepath.Split(csvPath)
+	members := map[string][]aggregateMember{}
+	skipped := 0
+	skip := newRowSkipper(&skipped, file, "aggregate member")
+	err := readAll(ctx, dir, file,
+		[]string{"aggregate_concept_id", "member_concept_id", "member_name"}, skip,
+		func(idx map[string]int, r []string, line int) error {
+			aggregateID := r[idx["aggregate_concept_id"]]
+			memberID := r[idx["member_concept_id"]]
+			memberName := r[idx["member_name"]]
+			if aggregateID == "" || memberID == "" || memberName == "" {
+				skip(line, fmt.Errorf("empty aggregate_concept_id, member_concept_id or member_name"))
+				return nil
+			}
+			members[aggregateID] = append(members[aggregateID], aggregateMember{
+				conceptID: memberID,
+				name:      memberName,
+			})
+			return nil
+		})
+	if err != nil {
+		return nil, 0, err
+	}
+	return members, skipped, nil
+}
+
+// tallyResolution classifies one row's resolution outcome into rep and
+// returns the concept id to store — nil unless the row resolved cleanly.
+// Two independent guard clauses, not an if-else chain: each is its own
+// mutation-coverable branch, unlike a three-way switch/if-else-if, whose
+// case-expression negation gremlins cannot distinguish from adjacent cases.
+func tallyResolution(verbatim, id string, ambiguous bool, rep *SpeciesReport) *string {
+	if ambiguous {
+		rep.AmbiguousCrosswalk++
+		rep.Unresolved++
+		slog.Warn("ambiguous crosswalk entry: more than one concept id, name stays unresolved",
+			"verbatim_name", verbatim)
+		return nil
+	}
+	if id == "" {
+		rep.Unresolved++
+		return nil
+	}
+	rep.Resolved++
+	return &id
+}
+
+// resolveRow looks verbatim up in crosswalk. More than one DISTINCT concept
+// id for the same name is a data find, not a guessing occasion: ambiguous is
+// true and conceptID stays empty. Repeated identical rows are not ambiguous.
+func resolveRow(verbatim string, crosswalk map[string][]string) (conceptID string, ambiguous bool) {
+	ids, ok := crosswalk[verbatim]
+	if !ok || len(ids) == 0 {
+		return "", false
+	}
+	distinct := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		distinct[id] = struct{}{}
+	}
+	if len(distinct) > 1 {
+		return "", true
+	}
+	return ids[0], false
+}
+
+// upsertSpeciesRows writes every explicit row first, then attempts aggregate
+// derivation — in that fixed order, never interleaved, so an explicit row
+// always exists (or does not) before its key is ever contested by a derived
+// one. That is what makes "explicit always wins" independent of csv row
+// order: derivation only ever sees a fully-written explicit layer.
+func upsertSpeciesRows(tx output.IngestTx, rows []speciesRow, crosswalk map[string][]string,
+	aggregates map[string][]aggregateMember) (SpeciesReport, error) {
 	rep := SpeciesReport{Rows: len(rows)}
+
 	for _, r := range rows {
-		var conceptID *string
-		if id, ok := resolved[r.verbatim]; ok {
-			conceptID = &id
-			rep.Resolved++
-		} else {
-			rep.Unresolved++
+		if err := upsertExplicitRow(tx, r, crosswalk, &rep); err != nil {
+			return SpeciesReport{}, err
 		}
-		sr := domain.SpeciesRole{
-			Key:          r.key,
-			ConceptID:    conceptID,
-			VerbatimName: r.verbatim,
-			Role:         r.role,
-			Fidelity:     r.fidelity,
-			Constancy:    r.constancy,
-		}
-		if err := tx.UpsertSpeciesRole(sr); err != nil {
+	}
+	for _, r := range rows {
+		if err := deriveAggregateMembers(tx, r, crosswalk, aggregates, &rep); err != nil {
 			return SpeciesReport{}, err
 		}
 	}
 	return rep, nil
 }
 
+// upsertExplicitRow writes one species_roles.csv row as-is, tallying its
+// resolution outcome into rep.
+func upsertExplicitRow(tx output.IngestTx, r speciesRow, crosswalk map[string][]string, rep *SpeciesReport) error {
+	id, ambiguous := resolveRow(r.verbatim, crosswalk)
+	conceptID := tallyResolution(r.verbatim, id, ambiguous, rep)
+	return tx.UpsertSpeciesRole(domain.SpeciesRole{
+		Key:          r.key,
+		ConceptID:    conceptID,
+		VerbatimName: r.verbatim,
+		Role:         r.role,
+		Fidelity:     r.fidelity,
+		Constancy:    r.constancy,
+		Provenance:   speciesProvenanceObserved,
+	})
+}
+
+// deriveAggregateMembers writes one derived row per member species, if r's
+// resolved concept id is itself a listed aggregate — a no-op otherwise.
+func deriveAggregateMembers(tx output.IngestTx, r speciesRow, crosswalk map[string][]string,
+	aggregates map[string][]aggregateMember, rep *SpeciesReport) error {
+	id, ambiguous := resolveRow(r.verbatim, crosswalk)
+	if ambiguous || id == "" {
+		return nil
+	}
+	members, isAggregate := aggregates[id]
+	if !isAggregate {
+		return nil
+	}
+	aggregateID := id
+	for _, m := range members {
+		memberID := m.conceptID
+		suppressed, err := tx.UpsertDerivedSpeciesRole(domain.SpeciesRole{
+			Key:          r.key,
+			ConceptID:    &memberID,
+			VerbatimName: m.name,
+			Role:         r.role,
+			Provenance:   speciesProvenanceDerivedFromAggregate,
+			DerivedFrom:  &aggregateID,
+		})
+		if err != nil {
+			return err
+		}
+		if suppressed {
+			rep.SuppressedByExplicit++
+		} else {
+			rep.DerivedRows++
+		}
+	}
+	return nil
+}
+
 // IngestSpeciesRoles loads csvPath (species_roles.csv, produced by
-// pipelines/eunis) into repo, crosswalking every distinct verbatim name to a
-// hostus concept ID in one Resolve call — the file's ~13800 rows carry far
-// fewer distinct names, and hostus is a network hop. A resolver error aborts
-// the ingest; it must never be recorded as "every name unresolvable". An
-// unresolved name is still stored, with ConceptID left nil.
-func IngestSpeciesRoles(ctx context.Context, repo output.Repository, resolver output.NameResolver,
-	csvPath string) (SpeciesReport, error) {
+// pipelines/eunis) into repo, resolving every row's verbatim name against
+// the local crosswalkPath dictionary — no network call, no hostus dependency
+// in this step. For every row whose resolved concept id is itself an
+// aggregate listed in aggregateMembersPath, it additionally writes one
+// derived row per member species, unless an explicit row already occupies
+// that member's key. A missing crosswalkPath aborts the ingest (nothing can
+// resolve without it); a missing aggregateMembersPath does not (derivation
+// is extra information).
+func IngestSpeciesRoles(ctx context.Context, repo output.Repository, csvPath, crosswalkPath,
+	aggregateMembersPath string) (SpeciesReport, error) {
 	dir, file := filepath.Split(csvPath)
 
 	skipped := 0
@@ -139,17 +303,24 @@ func IngestSpeciesRoles(ctx context.Context, repo output.Repository, resolver ou
 		return SpeciesReport{}, err
 	}
 
-	resolved, err := resolver.Resolve(ctx, distinctNames(rows))
+	crosswalk, crosswalkSkipped, err := loadCrosswalk(ctx, crosswalkPath)
 	if err != nil {
-		return SpeciesReport{}, fmt.Errorf("resolving species names via hostus: %w", err)
+		return SpeciesReport{}, fmt.Errorf("loading crosswalk %q: %w", crosswalkPath, err)
 	}
+	skipped += crosswalkSkipped
+
+	aggregates, aggregatesSkipped, err := loadAggregateMembers(ctx, aggregateMembersPath)
+	if err != nil {
+		return SpeciesReport{}, fmt.Errorf("loading aggregate members %q: %w", aggregateMembersPath, err)
+	}
+	skipped += aggregatesSkipped
 
 	tx, err := repo.Begin(ctx)
 	if err != nil {
 		return SpeciesReport{}, fmt.Errorf("beginning species-role ingest transaction: %w", err)
 	}
 
-	rep, err := upsertSpeciesRows(tx, rows, resolved)
+	rep, err := upsertSpeciesRows(tx, rows, crosswalk, aggregates)
 	if err != nil {
 		if rbErr := tx.Rollback(); rbErr != nil {
 			return SpeciesReport{}, fmt.Errorf("%w (rollback also failed: %w)", err, rbErr)

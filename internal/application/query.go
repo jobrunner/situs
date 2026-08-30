@@ -108,14 +108,16 @@ func (q *QueryService) SpeciesHabitatTypes(ctx context.Context, conceptID, lang 
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, input.HabitatTypeRole{
+		htr := input.HabitatTypeRole{
 			HabitatTypeSummary: summary,
 			Role:               r.Role,
 			Fidelity:           r.Fidelity,
 			Constancy:          r.Constancy,
 			Syntaxa:            syntaxa,
 			InArea:             inA,
-		})
+		}
+		htr.Provenance, htr.DerivedFrom = derivedProvenance(r)
+		out = append(out, htr)
 	}
 	return out, nil
 }
@@ -253,19 +255,6 @@ func groupByRole(roles []domain.SpeciesRole) map[string][]input.SpeciesEntry {
 		out[r.Role] = append(out[r.Role], speciesEntry(r))
 	}
 	return out
-}
-
-func speciesEntry(r domain.SpeciesRole) input.SpeciesEntry {
-	e := input.SpeciesEntry{
-		VerbatimName: r.VerbatimName,
-		Role:         r.Role,
-		Fidelity:     r.Fidelity,
-		Constancy:    r.Constancy,
-	}
-	if r.ConceptID != nil {
-		e.ConceptID = *r.ConceptID
-	}
-	return e
 }
 
 // translateNotFound maps the repository's ErrNotFound onto the driving port's

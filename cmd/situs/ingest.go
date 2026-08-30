@@ -107,7 +107,7 @@ func (p *pacedDistributionSource) Areas(ctx context.Context, conceptIDs []string
 func (p *pacedDistributionSource) FailedConcepts() int { return p.failed }
 
 func newIngestCmd() *cobra.Command {
-	var csvDir, dbPath string
+	var csvDir, dbPath, crosswalkPath, aggregateMembersPath string
 
 	cmd := &cobra.Command{
 		Use:   "ingest",
@@ -129,12 +129,22 @@ func newIngestCmd() *cobra.Command {
 			if dbPath == "" {
 				return fmt.Errorf("no index path: pass --db or set index.path (SITUS_INDEX_PATH)")
 			}
-			return runIngest(cmd, cfg, csvDir, dbPath)
+			if crosswalkPath == "" {
+				crosswalkPath = filepath.Join(csvDir, "eurosl_crosswalk.csv")
+			}
+			if aggregateMembersPath == "" {
+				aggregateMembersPath = filepath.Join(csvDir, "aggregate_members.csv")
+			}
+			return runIngest(cmd, cfg, csvDir, dbPath, crosswalkPath, aggregateMembersPath)
 		},
 	}
 	cmd.Flags().StringVar(&csvDir, "csv-dir", "", "directory holding the pipeline CSVs (required)")
 	cmd.Flags().StringVar(&dbPath, "db", "",
 		"path to the sqlite index file (default: index.path / SITUS_INDEX_PATH)")
+	cmd.Flags().StringVar(&crosswalkPath, "crosswalk", "",
+		"path to eurosl_crosswalk.csv (default: <csv-dir>/eurosl_crosswalk.csv)")
+	cmd.Flags().StringVar(&aggregateMembersPath, "aggregate-members", "",
+		"path to aggregate_members.csv (default: <csv-dir>/aggregate_members.csv)")
 	return cmd
 }
 
@@ -155,7 +165,7 @@ type ingestOutput struct {
 	DerivedLabels      int
 }
 
-func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath string) error {
+func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath, crosswalkPath, aggregateMembersPath string) error {
 	ctx := cmd.Context()
 
 	// A dropped row's only record is this log stream — route it through the
@@ -168,16 +178,26 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath string) er
 	}
 	defer func() { _ = db.Close() }()
 
+	// Ingest-only: a repinned index predating species_role.provenance/
+	// derived_from needs the column added before anything writes to it.
+	if err := db.Migrate(ctx); err != nil {
+		return fmt.Errorf("migrating sqlite index %q: %w", dbPath, err)
+	}
+
 	report, err := application.IngestCSV(ctx, db, csvDir)
 	if err != nil {
 		return fmt.Errorf("ingesting %q: %w", csvDir, err)
 	}
 
-	resolver := hostus.NewClient(cfg.Hostus.BaseURL, &http.Client{Timeout: cfg.Hostus.Timeout}, cfg.Hostus.BatchSize, cfg.Hostus.EntryBackbone)
-	speciesReport, err := application.IngestSpeciesRoles(ctx, db, resolver, filepath.Join(csvDir, "species_roles.csv"))
+	speciesReport, err := application.IngestSpeciesRoles(ctx, db,
+		filepath.Join(csvDir, "species_roles.csv"), crosswalkPath, aggregateMembersPath)
 	if err != nil {
 		return fmt.Errorf("ingesting species roles from %q: %w", csvDir, err)
 	}
+
+	// resolver stays needed for the distribution step below — Areas(), not
+	// Resolve(); species-name resolution no longer calls hostus at all.
+	resolver := hostus.NewClient(cfg.Hostus.BaseURL, &http.Client{Timeout: cfg.Hostus.Timeout}, cfg.Hostus.BatchSize, cfg.Hostus.EntryBackbone)
 
 	// Runs after IngestSpeciesRoles (it needs the indexed concept ids) and
 	// before the localization/derivation steps, which do not depend on it.
