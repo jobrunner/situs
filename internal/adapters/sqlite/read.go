@@ -69,7 +69,7 @@ func (d *DB) Crosswalks(ctx context.Context, key domain.HabitatTypeKey) ([]domai
 // the filter is a bound parameter, not appended SQL.
 func (d *DB) SpeciesRoles(ctx context.Context, key domain.HabitatTypeKey, role string) ([]domain.SpeciesRole, error) {
 	rows, err := d.QueryContext(ctx,
-		`SELECT concept_id, verbatim_name, role, fidelity, constancy FROM species_role
+		`SELECT concept_id, verbatim_name, role, fidelity, constancy, provenance, derived_from FROM species_role
 		 WHERE typology_id = ? AND code = ? AND (? = '' OR role = ?)
 		 ORDER BY role, verbatim_name`,
 		string(key.Typology), key.Code, role, role)
@@ -97,7 +97,7 @@ func (d *DB) SpeciesRoles(ctx context.Context, key domain.HabitatTypeKey, role s
 // because a species-role row carries it.
 func (d *DB) SpeciesRolesByConcept(ctx context.Context, conceptID string) ([]domain.SpeciesRole, error) {
 	rows, err := d.QueryContext(ctx,
-		`SELECT typology_id, code, concept_id, verbatim_name, role, fidelity, constancy
+		`SELECT typology_id, code, concept_id, verbatim_name, role, fidelity, constancy, provenance, derived_from
 		 FROM species_role WHERE concept_id = ?
 		 ORDER BY typology_id, code, role`,
 		conceptID)
@@ -110,13 +110,18 @@ func (d *DB) SpeciesRolesByConcept(ctx context.Context, conceptID string) ([]dom
 	for rows.Next() {
 		var typology string
 		var r domain.SpeciesRole
-		var concept sql.NullString
+		var concept, derivedFrom sql.NullString
 		var fidelity, constancy sql.NullFloat64
-		if err := rows.Scan(&typology, &r.Key.Code, &concept, &r.VerbatimName, &r.Role, &fidelity, &constancy); err != nil {
+		if err := rows.Scan(&typology, &r.Key.Code, &concept, &r.VerbatimName, &r.Role, &fidelity, &constancy,
+			&r.Provenance, &derivedFrom); err != nil {
 			return nil, fmt.Errorf("sqlite: scanning habitat types of concept %q: %w", conceptID, err)
 		}
 		r.Key.Typology = domain.TypologyID(typology)
 		applySpeciesNullables(&r, concept, fidelity, constancy)
+		if derivedFrom.Valid {
+			df := derivedFrom.String
+			r.DerivedFrom = &df
+		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
@@ -300,12 +305,16 @@ func (d *DB) ConceptIDs(ctx context.Context) ([]string, error) {
 // arrive as a nil ConceptID, never as an empty string, and a missing fidelity
 // must not become 0.0.
 func scanSpeciesRole(rows *sql.Rows, r *domain.SpeciesRole) error {
-	var concept sql.NullString
+	var concept, derivedFrom sql.NullString
 	var fidelity, constancy sql.NullFloat64
-	if err := rows.Scan(&concept, &r.VerbatimName, &r.Role, &fidelity, &constancy); err != nil {
+	if err := rows.Scan(&concept, &r.VerbatimName, &r.Role, &fidelity, &constancy, &r.Provenance, &derivedFrom); err != nil {
 		return err
 	}
 	applySpeciesNullables(r, concept, fidelity, constancy)
+	if derivedFrom.Valid {
+		df := derivedFrom.String
+		r.DerivedFrom = &df
+	}
 	return nil
 }
 

@@ -73,9 +73,9 @@ func seedReadFixture(t *testing.T, db *DB) {
 		t.Fatalf("LinkSyntaxon: %v", err)
 	}
 	for _, r := range []domain.SpeciesRole{
-		{Key: r22, ConceptID: &concept, VerbatimName: "Bromus erectus", Role: "diagnostic", Fidelity: &fidelity},
-		{Key: r22, VerbatimName: "Unresolvable dubia", Role: "constant"},
-		{Key: r99, ConceptID: &concept, VerbatimName: "Bromus erectus", Role: "dominant"},
+		{Key: r22, ConceptID: &concept, VerbatimName: "Bromus erectus", Role: "diagnostic", Fidelity: &fidelity, Provenance: "observed"},
+		{Key: r22, VerbatimName: "Unresolvable dubia", Role: "constant", Provenance: "observed"},
+		{Key: r99, ConceptID: &concept, VerbatimName: "Bromus erectus", Role: "dominant", Provenance: "observed"},
 	} {
 		if err := tx.UpsertSpeciesRole(r); err != nil {
 			t.Fatalf("UpsertSpeciesRole(%q): %v", r.VerbatimName, err)

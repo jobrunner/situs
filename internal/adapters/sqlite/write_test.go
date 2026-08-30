@@ -563,6 +563,10 @@ func TestIngestTx_MethodsWrapErrorsOnAClosedTransaction(t *testing.T) {
 		"UpsertSpeciesRole": func() error {
 			return tx.UpsertSpeciesRole(domain.SpeciesRole{Key: key, VerbatimName: "x", Role: "diagnostic"})
 		},
+		"UpsertDerivedSpeciesRole": func() error {
+			_, err := tx.UpsertDerivedSpeciesRole(domain.SpeciesRole{Key: key, VerbatimName: "x", Role: "diagnostic"})
+			return err
+		},
 		"UpsertLocalization": func() error {
 			return tx.UpsertLocalization(domain.Localization{EntityType: "habitat_type", EntityKey: "x", Lang: "de", Field: "name", Value: "x", Source: "x", Provenance: "official"})
 		},
@@ -698,5 +702,126 @@ func TestLocalization_OrdersTotallyAcrossFields(t *testing.T) {
 	}
 	if want := []string{"name", "vernacular"}; !slices.Equal(fields, want) {
 		t.Errorf("fields = %v, want %v (ordered by field within a provenance)", fields, want)
+	}
+}
+
+// UpsertSpeciesRole must round-trip Provenance and DerivedFrom the same way
+// it already round-trips ConceptID/Fidelity/Constancy.
+func TestIngestTx_UpsertSpeciesRoleRoundTripsProvenance(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	aggregate := "wcvp:concept:99"
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertSpeciesRole(domain.SpeciesRole{
+		Key: key, VerbatimName: "Rubus caesius", Role: "diagnostic",
+		Provenance: "derived_from_aggregate", DerivedFrom: &aggregate,
+	}); err != nil {
+		t.Fatalf("UpsertSpeciesRole: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.SpeciesRoles(ctx, key, "")
+	if err != nil {
+		t.Fatalf("SpeciesRoles: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("SpeciesRoles = %d rows, want 1", len(got))
+	}
+	if got[0].Provenance != "derived_from_aggregate" {
+		t.Errorf("Provenance = %q, want %q", got[0].Provenance, "derived_from_aggregate")
+	}
+	if got[0].DerivedFrom == nil || *got[0].DerivedFrom != aggregate {
+		t.Errorf("DerivedFrom = %v, want %q", got[0].DerivedFrom, aggregate)
+	}
+}
+
+// UpsertDerivedSpeciesRole writes the row when nothing occupies its key yet,
+// and reports suppressed=false.
+func TestIngestTx_UpsertDerivedSpeciesRole_WritesWhenAbsent(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	aggregate := "wcvp:concept:99"
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	suppressed, err := tx.UpsertDerivedSpeciesRole(domain.SpeciesRole{
+		Key: key, VerbatimName: "Rubus caesius", Role: "diagnostic",
+		Provenance: "derived_from_aggregate", DerivedFrom: &aggregate,
+	})
+	if err != nil {
+		t.Fatalf("UpsertDerivedSpeciesRole: %v", err)
+	}
+	if suppressed {
+		t.Error("suppressed = true, want false: nothing occupied this key yet")
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.SpeciesRoles(ctx, key, "")
+	if err != nil {
+		t.Fatalf("SpeciesRoles: %v", err)
+	}
+	if len(got) != 1 || got[0].Provenance != "derived_from_aggregate" {
+		t.Errorf("SpeciesRoles = %+v, want one derived row", got)
+	}
+}
+
+// UpsertDerivedSpeciesRole must never overwrite a row an explicit
+// species_roles.csv upsert already wrote for the same key — regardless of
+// which one ran first in this transaction.
+func TestIngestTx_UpsertDerivedSpeciesRole_NeverOverwritesAnExplicitRow(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	aggregate := "wcvp:concept:99"
+	fidelity := 0.9
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertSpeciesRole(domain.SpeciesRole{
+		Key: key, VerbatimName: "Rubus caesius", Role: "diagnostic",
+		Fidelity: &fidelity, Provenance: "observed",
+	}); err != nil {
+		t.Fatalf("UpsertSpeciesRole: %v", err)
+	}
+	suppressed, err := tx.UpsertDerivedSpeciesRole(domain.SpeciesRole{
+		Key: key, VerbatimName: "Rubus caesius", Role: "diagnostic",
+		Provenance: "derived_from_aggregate", DerivedFrom: &aggregate,
+	})
+	if err != nil {
+		t.Fatalf("UpsertDerivedSpeciesRole: %v", err)
+	}
+	if !suppressed {
+		t.Error("suppressed = false, want true: an explicit row already occupied this key")
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.SpeciesRoles(ctx, key, "")
+	if err != nil {
+		t.Fatalf("SpeciesRoles: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("SpeciesRoles = %d rows, want 1 (no derived row added)", len(got))
+	}
+	if got[0].Provenance != "observed" {
+		t.Errorf("Provenance = %q, want %q (explicit row must survive)", got[0].Provenance, "observed")
+	}
+	if got[0].Fidelity == nil || *got[0].Fidelity != fidelity {
+		t.Errorf("Fidelity = %v, want %v (explicit row's own value)", got[0].Fidelity, fidelity)
 	}
 }

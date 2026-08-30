@@ -20,6 +20,12 @@ type IngestTx interface {
 	UpsertSyntaxon(s domain.Syntaxon) error
 	LinkSyntaxon(key domain.HabitatTypeKey, syntaxonID string) error
 	UpsertSpeciesRole(r domain.SpeciesRole) error
+	// UpsertDerivedSpeciesRole writes a species role derived from an aggregate's
+	// membership list. Unlike UpsertSpeciesRole it never overwrites an existing
+	// row for the same (typology, code, verbatim_name, role) — an explicit
+	// species_roles.csv row always wins, regardless of ingest order. Returns
+	// suppressed=true when an existing row already occupied that key.
+	UpsertDerivedSpeciesRole(r domain.SpeciesRole) (suppressed bool, err error)
 	UpsertLocalization(l domain.Localization) error
 	// UpsertDistribution records that a concept occurs in an area. Idempotent:
 	// a repinned artifact is simply re-ingested.

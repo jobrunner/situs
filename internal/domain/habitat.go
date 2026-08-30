@@ -36,7 +36,8 @@ type Syntaxon struct {
 }
 
 // SpeciesRole is a species' role in a habitat type. VerbatimName is always
-// set; ConceptID is nil when the name could not be resolved via hostus.
+// set; ConceptID is nil when the name could not be resolved against the local
+// crosswalk.
 type SpeciesRole struct {
 	Key          HabitatTypeKey
 	ConceptID    *string
@@ -44,6 +45,14 @@ type SpeciesRole struct {
 	Role         string // "diagnostic" | "constant" | "dominant"
 	Fidelity     *float64
 	Constancy    *float64
+	// Provenance is "observed" (an explicit species_roles.csv row) or
+	// "derived_from_aggregate" (written because ConceptID's aggregate lists
+	// this species as a member). A derived row never carries Fidelity or
+	// Constancy — neither was ever measured for the member itself.
+	Provenance string
+	// DerivedFrom is the aggregate's concept id that produced this row; nil
+	// unless Provenance is "derived_from_aggregate".
+	DerivedFrom *string
 }
 
 // Localization is an additive label overlay. Provenance is "official",
