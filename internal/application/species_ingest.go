@@ -22,9 +22,13 @@ type SpeciesReport struct {
 	Skipped    int
 	// DerivedRows is the number of aggregate-member rows this run added.
 	DerivedRows int
-	// SuppressedByExplicit counts derived rows NOT written because an
-	// explicit species_roles.csv row already occupied that key — the
-	// explicit row always wins, so this is not a defect, only a measurement.
+	// SuppressedByExplicit counts derived rows NOT written because their key
+	// was already occupied — usually by an explicit species_roles.csv row
+	// (which always wins), but the same INSERT ... ON CONFLICT DO NOTHING
+	// also fires for a duplicate aggregate_members.csv row or two aggregates
+	// naming the same member: the index cannot distinguish which case it
+	// was after the fact, so this counts "derivation lost the race", not
+	// specifically "an explicit row was the cause". Not a defect either way.
 	SuppressedByExplicit int
 	// AmbiguousCrosswalk counts verbatim names with more than one distinct
 	// concept id in eurosl_crosswalk.csv — never guessed, kept unresolved.
@@ -95,16 +99,23 @@ func readSpeciesRows(ctx context.Context, dir, file string, skip rowSkipper) ([]
 // loadCrosswalk reads eurosl_crosswalk.csv (name,concept_id) into a
 // name -> concept-ids dictionary. More than one row for a name is not
 // malformed — it is how an ambiguous name is recorded — so every id is kept
-// for resolveRow to judge.
+// for resolveRow to judge. A row with an empty name or concept_id is
+// malformed (skipped, counted): a blank concept_id sitting alongside a real
+// one would otherwise misclassify the name as ambiguous ({"", "wcvp:..."}
+// counts as two distinct ids) instead of simply unresolved.
 func loadCrosswalk(ctx context.Context, csvPath string) (map[string][]string, int, error) {
 	dir, file := filepath.Split(csvPath)
 	crosswalk := map[string][]string{}
 	skipped := 0
-	err := readAll(ctx, dir, file, []string{nameField, "concept_id"},
-		newRowSkipper(&skipped, file, "crosswalk entry"),
+	skip := newRowSkipper(&skipped, file, "crosswalk entry")
+	err := readAll(ctx, dir, file, []string{nameField, "concept_id"}, skip,
 		func(idx map[string]int, r []string, line int) error {
 			name := r[idx[nameField]]
 			id := r[idx["concept_id"]]
+			if name == "" || id == "" {
+				skip(line, fmt.Errorf("empty name or concept_id"))
+				return nil
+			}
 			crosswalk[name] = append(crosswalk[name], id)
 			return nil
 		})
@@ -138,14 +149,20 @@ func loadAggregateMembers(ctx context.Context, csvPath string) (map[string][]agg
 	dir, file := filepath.Split(csvPath)
 	members := map[string][]aggregateMember{}
 	skipped := 0
+	skip := newRowSkipper(&skipped, file, "aggregate member")
 	err := readAll(ctx, dir, file,
-		[]string{"aggregate_concept_id", "member_concept_id", "member_name"},
-		newRowSkipper(&skipped, file, "aggregate member"),
+		[]string{"aggregate_concept_id", "member_concept_id", "member_name"}, skip,
 		func(idx map[string]int, r []string, line int) error {
 			aggregateID := r[idx["aggregate_concept_id"]]
+			memberID := r[idx["member_concept_id"]]
+			memberName := r[idx["member_name"]]
+			if aggregateID == "" || memberID == "" || memberName == "" {
+				skip(line, fmt.Errorf("empty aggregate_concept_id, member_concept_id or member_name"))
+				return nil
+			}
 			members[aggregateID] = append(members[aggregateID], aggregateMember{
-				conceptID: r[idx["member_concept_id"]],
-				name:      r[idx["member_name"]],
+				conceptID: memberID,
+				name:      memberName,
 			})
 			return nil
 		})

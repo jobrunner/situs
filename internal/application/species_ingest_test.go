@@ -319,6 +319,66 @@ func TestIngestSpeciesRoles_SkippedCountsRowsFromEveryFile(t *testing.T) {
 	}
 }
 
+// A crosswalk row with an empty concept_id must not be kept as if it were a
+// real (if unusual) id — sitting next to a real id for the same name it
+// would otherwise misclassify the name as ambiguous instead of unresolved.
+func TestIngestSpeciesRoles_SkipsCrosswalkRowsWithAnEmptyRequiredField(t *testing.T) {
+	dir := t.TempDir()
+	writeCSV(t, dir, "species_roles.csv",
+		"typology_id,code,verbatim_name,role,fidelity,constancy\n"+
+			"eunis@2021,R22,Inula hirta,diagnostic,0.8,\n")
+	writeCSV(t, dir, "eurosl_crosswalk.csv",
+		"name,concept_id\nInula hirta,wcvp:concept:1\nInula hirta,\n,wcvp:concept:2\n")
+	writeCSV(t, dir, "aggregate_members.csv", "aggregate_concept_id,member_concept_id,member_name\n")
+	species, crosswalk, aggregates := speciesRolesPaths(t, dir)
+
+	repo := newFakeRepo()
+	rep, err := IngestSpeciesRoles(context.Background(), repo, species, crosswalk, aggregates)
+	if err != nil {
+		t.Fatalf("IngestSpeciesRoles: %v", err)
+	}
+	if rep.Skipped != 2 {
+		t.Errorf("Skipped = %d, want 2 (the two crosswalk rows with an empty field)", rep.Skipped)
+	}
+	if rep.Resolved != 1 || rep.AmbiguousCrosswalk != 0 {
+		t.Errorf("report = %+v, want Resolved 1 / AmbiguousCrosswalk 0 — the empty-id row must not count as a second distinct id", rep)
+	}
+}
+
+// An aggregate_members.csv row with an empty required field must not derive
+// a species_role row that violates "VerbatimName always set" or carries a
+// nil ConceptID for what is supposed to be a resolved member.
+func TestIngestSpeciesRoles_SkipsAggregateMemberRowsWithAnEmptyRequiredField(t *testing.T) {
+	dir := t.TempDir()
+	writeCSV(t, dir, "species_roles.csv",
+		"typology_id,code,verbatim_name,role,fidelity,constancy\n"+
+			"eunis@2021,R22,Rubus fruticosus aggr.,diagnostic,0.7,\n")
+	writeCSV(t, dir, "eurosl_crosswalk.csv",
+		"name,concept_id\nRubus fruticosus aggr.,wcvp:concept:99\n")
+	writeCSV(t, dir, "aggregate_members.csv",
+		"aggregate_concept_id,member_concept_id,member_name\n"+
+			"wcvp:concept:99,wcvp:concept:100,Rubus caesius\n"+
+			"wcvp:concept:99,,Rubus plicatus\n")
+	species, crosswalk, aggregates := speciesRolesPaths(t, dir)
+
+	repo := newFakeRepo()
+	rep, err := IngestSpeciesRoles(context.Background(), repo, species, crosswalk, aggregates)
+	if err != nil {
+		t.Fatalf("IngestSpeciesRoles: %v", err)
+	}
+	if rep.Skipped != 1 {
+		t.Errorf("Skipped = %d, want 1 (the aggregate-member row with an empty concept id)", rep.Skipped)
+	}
+	if rep.DerivedRows != 1 {
+		t.Errorf("DerivedRows = %d, want 1 (only Rubus caesius)", rep.DerivedRows)
+	}
+	for _, r := range repo.speciesRoles {
+		if r.VerbatimName == "Rubus plicatus" {
+			t.Error("Rubus plicatus was derived despite its empty member_concept_id")
+		}
+	}
+}
+
 func TestIngestSpeciesRoles_MissingSpeciesRolesFileFails(t *testing.T) {
 	dir := t.TempDir()
 	writeCSV(t, dir, "eurosl_crosswalk.csv", "name,concept_id\n")

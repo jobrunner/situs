@@ -178,6 +178,12 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath, crosswalk
 	}
 	defer func() { _ = db.Close() }()
 
+	// Ingest-only: a repinned index predating species_role.provenance/
+	// derived_from needs the column added before anything writes to it.
+	if err := db.Migrate(ctx); err != nil {
+		return fmt.Errorf("migrating sqlite index %q: %w", dbPath, err)
+	}
+
 	report, err := application.IngestCSV(ctx, db, csvDir)
 	if err != nil {
 		return fmt.Errorf("ingesting %q: %w", csvDir, err)

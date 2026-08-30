@@ -36,20 +36,16 @@ func TestOpenUnreachablePathFails(t *testing.T) {
 	}
 }
 
-// A repinned index created before species_role.provenance/derived_from
-// existed must not fail ingest with "no such column" — Open must add the
-// missing columns to the existing table, not just declare them in
-// CREATE TABLE IF NOT EXISTS (which never touches an already-existing table).
-func TestOpenAddsSpeciesRoleProvenanceColumnsToAnOlderSchema(t *testing.T) {
-	ctx := t.Context()
-	path := filepath.Join(t.TempDir(), "pre-provenance.sqlite")
-
-	// Simulate the pre-this-feature schema directly, bypassing schema.sql.
+// createPreMigrationSpeciesRoleTable creates the species_role shape from
+// before provenance/derived_from existed, bypassing schema.sql, so a test
+// can simulate a repinned index.
+func createPreMigrationSpeciesRoleTable(t *testing.T, path string) {
+	t.Helper()
 	raw, err := sql.Open(sqlite.DriverName, path)
 	if err != nil {
 		t.Fatalf("opening raw connection: %v", err)
 	}
-	if _, err := raw.ExecContext(ctx, `CREATE TABLE species_role (
+	if _, err := raw.Exec(`CREATE TABLE species_role (
 		typology_id   TEXT NOT NULL,
 		code          TEXT NOT NULL,
 		concept_id    TEXT,
@@ -64,6 +60,15 @@ func TestOpenAddsSpeciesRoleProvenanceColumnsToAnOlderSchema(t *testing.T) {
 	if err := raw.Close(); err != nil {
 		t.Fatalf("closing raw connection: %v", err)
 	}
+}
+
+// Open alone must never write to the index — serve is read-only and may sit
+// on read-only media, so Open on a pre-migration index must still succeed;
+// only a query touching the new columns is expected to fail.
+func TestOpenAloneDoesNotMigrateAnOlderSchema(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "pre-provenance.sqlite")
+	createPreMigrationSpeciesRoleTable(t, path)
 
 	db, err := sqlite.Open(ctx, path)
 	if err != nil {
@@ -78,8 +83,37 @@ func TestOpenAddsSpeciesRoleProvenanceColumnsToAnOlderSchema(t *testing.T) {
 	}
 	if err := tx.UpsertSpeciesRole(domain.SpeciesRole{
 		Key: key, VerbatimName: "Bromus erectus", Role: "diagnostic", Provenance: "observed",
+	}); err == nil {
+		t.Error("UpsertSpeciesRole without Migrate = nil error, want 'no such column' — Open must not have migrated")
+	}
+}
+
+// Migrate, called explicitly (as cmd/situs ingest does right after Open),
+// adds the missing columns and makes the index usable again.
+func TestMigrateAddsSpeciesRoleProvenanceColumnsToAnOlderSchema(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "pre-provenance.sqlite")
+	createPreMigrationSpeciesRoleTable(t, path)
+
+	db, err := sqlite.Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate on a pre-migration index = %v, want no error", err)
+	}
+
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "R22"}
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertSpeciesRole(domain.SpeciesRole{
+		Key: key, VerbatimName: "Bromus erectus", Role: "diagnostic", Provenance: "observed",
 	}); err != nil {
-		t.Fatalf("UpsertSpeciesRole after migration = %v, want the new columns to exist", err)
+		t.Fatalf("UpsertSpeciesRole after Migrate = %v, want the new columns to exist", err)
 	}
 	if err := tx.Commit(); err != nil {
 		t.Fatalf("Commit: %v", err)
@@ -87,30 +121,29 @@ func TestOpenAddsSpeciesRoleProvenanceColumnsToAnOlderSchema(t *testing.T) {
 
 	got, err := db.SpeciesRoles(ctx, key, "")
 	if err != nil {
-		t.Fatalf("SpeciesRoles after migration: %v", err)
+		t.Fatalf("SpeciesRoles after Migrate: %v", err)
 	}
 	if len(got) != 1 || got[0].Provenance != "observed" {
 		t.Errorf("SpeciesRoles = %+v, want one row with Provenance observed", got)
 	}
 }
 
-// Open must be idempotent on an already-migrated index: calling it twice
-// against the same file must not fail on "duplicate column".
-func TestOpenTwiceOnTheSameFileDoesNotFailMigration(t *testing.T) {
+// Migrate must be idempotent on an already-migrated index — a second ingest
+// run against the same file must not fail on "duplicate column".
+func TestMigrateTwiceOnTheSameFileDoesNotFail(t *testing.T) {
 	ctx := t.Context()
 	path := filepath.Join(t.TempDir(), "reopened.sqlite")
 
-	db1, err := sqlite.Open(ctx, path)
+	db, err := sqlite.Open(ctx, path)
 	if err != nil {
-		t.Fatalf("first Open: %v", err)
+		t.Fatalf("Open: %v", err)
 	}
-	if err := db1.Close(); err != nil {
-		t.Fatalf("closing first connection: %v", err)
-	}
+	t.Cleanup(func() { _ = db.Close() })
 
-	db2, err := sqlite.Open(ctx, path)
-	if err != nil {
-		t.Fatalf("second Open = %v, want the already-present columns to be a no-op", err)
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("first Migrate: %v", err)
 	}
-	t.Cleanup(func() { _ = db2.Close() })
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("second Migrate = %v, want the already-present columns to be a no-op", err)
+	}
 }

@@ -28,7 +28,12 @@ type DB struct {
 }
 
 // Open opens the index at dsn, verifies it is reachable and applies the
-// schema. dsn is a file path or ":memory:".
+// schema. dsn is a file path or ":memory:". Open never writes beyond
+// CREATE TABLE IF NOT EXISTS (a no-op read on an already-current schema) —
+// it is used by serve too, and serve is read-only; opening an index whose
+// species_role predates provenance/derived_from does not fail here, but a
+// query touching those columns will. Call Migrate right after Open at
+// ingest time to add them.
 func Open(ctx context.Context, dsn string) (*DB, error) {
 	sqlDB, err := sql.Open(DriverName, dsn)
 	if err != nil {
@@ -45,20 +50,29 @@ func Open(ctx context.Context, dsn string) (*DB, error) {
 	if _, err := sqlDB.ExecContext(ctx, schema); err != nil {
 		return nil, errors.Join(fmt.Errorf("applying schema to %q: %w", dsn, err), sqlDB.Close())
 	}
-	if err := addMissingColumns(ctx, sqlDB); err != nil {
-		return nil, errors.Join(fmt.Errorf("migrating schema of %q: %w", dsn, err), sqlDB.Close())
-	}
 	return &DB{DB: sqlDB}, nil
 }
 
-// addMissingColumns adds the columns CREATE TABLE IF NOT EXISTS cannot add to
-// an already-existing table — sqlite has no "ADD COLUMN IF NOT EXISTS" in the
+// Migrate adds the columns CREATE TABLE IF NOT EXISTS cannot add to an
+// already-existing table — sqlite has no "ADD COLUMN IF NOT EXISTS" in the
 // version this driver embeds, so a repinned index (created before these
 // columns existed) has to be migrated explicitly, or ingest fails with
-// "no such column" on an index nobody rebuilt from scratch. Each ALTER TABLE
-// is a static string, same as every other statement in this package — the
-// table/column names are never interpolated, only the existence check runs
-// first via PRAGMA table_info.
+// "no such column" on an index nobody rebuilt from scratch. Ingest-only,
+// deliberately not part of Open: serve's index may sit on read-only media,
+// and serve reading an old index is a clear "no such column" error, not a
+// silent background write to a service documented as read-only.
+func (d *DB) Migrate(ctx context.Context) error {
+	if err := addMissingColumns(ctx, d.DB); err != nil {
+		return fmt.Errorf("migrating schema: %w", err)
+	}
+	return nil
+}
+
+// addMissingColumns is Migrate's implementation, taking a *sql.DB so its
+// error-path tests can drive it directly. Each ALTER TABLE is a static
+// string, same as every other statement in this package — the table/column
+// names are never interpolated, only the existence check runs first via
+// PRAGMA table_info.
 func addMissingColumns(ctx context.Context, db *sql.DB) error {
 	columns, err := speciesRoleColumns(ctx, db)
 	if err != nil {
