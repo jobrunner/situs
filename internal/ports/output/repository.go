@@ -21,7 +21,7 @@ type IngestTx interface {
 	// UpsertSyntaxonAuthor sets Author on an already-upserted syntaxon and, if
 	// parentID is non-empty, its ParentID — used ONLY by the hierarchy-matching
 	// pass to enrich an existing EUNIS alliance row without re-declaring its
-	// Rank/Name (die bleiben EUNIS-eigen bei fehlendem FloraVeg-Treffer).
+	// Rank/Name (remain EUNIS-owned in case of missing FloraVeg match).
 	UpsertSyntaxonAuthor(id, author, parentID string) error
 	LinkSyntaxon(key domain.HabitatTypeKey, syntaxonID string) error
 	UpsertSpeciesRole(r domain.SpeciesRole) error

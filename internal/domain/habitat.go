@@ -31,8 +31,8 @@ type Crosswalk struct {
 type Syntaxon struct {
 	ID       string
 	Rank     string // "class" | "order" | "alliance"
-	Name     string // reiner Syntaxon-Name, ohne Autorschaft
-	Author   string // Autorschafts-Zitat; "" wenn kein sauberer Split bekannt
+	Name     string // syntaxon name only, without authorship
+	Author   string // author citation; "" if no clean split is known
 	ParentID string
 }
 
