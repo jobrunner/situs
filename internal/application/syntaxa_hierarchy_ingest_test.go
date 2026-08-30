@@ -1,8 +1,10 @@
 package application
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +12,18 @@ import (
 
 	"github.com/jobrunner/situs/internal/domain"
 )
+
+// captureSlog redirects the default logger into a buffer for the duration of
+// the test and restores it afterward — used to assert on a warning's
+// presence/absence, not just that the code path ran.
+func captureSlog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return &buf
+}
 
 func writeHierarchyCSV(t *testing.T, dir, content string) string {
 	t.Helper()
@@ -279,6 +293,7 @@ func TestIngestSyntaxaHierarchy_MatchingPassSkipsNonAllianceExistingSyntaxa(t *t
 // A malformed row (skipped > 0) must not abort the run — the warning is
 // logged and the well-formed rows are still committed.
 func TestIngestSyntaxaHierarchy_LogsAndContinuesOnSkippedRows(t *testing.T) {
+	logs := captureSlog(t)
 	repo := newFakeRepo()
 	dir := t.TempDir()
 	path := writeHierarchyCSV(t, dir,
@@ -295,6 +310,26 @@ func TestIngestSyntaxaHierarchy_LogsAndContinuesOnSkippedRows(t *testing.T) {
 	}
 	if rep.ClassesWritten != 1 {
 		t.Errorf("ClassesWritten = %d, want 1", rep.ClassesWritten)
+	}
+	if !strings.Contains(logs.String(), "skipped malformed rows") {
+		t.Errorf("logs = %q, want a warning about the skipped row", logs.String())
+	}
+}
+
+// The counterpart to the test above: a run with nothing skipped must not log
+// the warning at all — proves the `skipped > 0` branch actually gates the
+// log call, not just that the log call exists somewhere in the function.
+func TestIngestSyntaxaHierarchy_NoWarningWhenNothingIsSkipped(t *testing.T) {
+	logs := captureSlog(t)
+	repo := newFakeRepo()
+	dir := t.TempDir()
+	path := writeHierarchyCSV(t, dir, "code,rank,name,author,parent_code\nAA,class,Salicetea purpureae,Moor 1958,\n")
+
+	if _, err := IngestSyntaxaHierarchy(context.Background(), repo, path); err != nil {
+		t.Fatalf("IngestSyntaxaHierarchy: %v", err)
+	}
+	if strings.Contains(logs.String(), "skipped malformed rows") {
+		t.Errorf("logs = %q, want no skipped-rows warning when nothing was skipped", logs.String())
 	}
 }
 
@@ -364,5 +399,94 @@ func TestIngestSyntaxaHierarchy_UpsertSyntaxonAuthorErrorIsReturned(t *testing.T
 
 	if _, err := IngestSyntaxaHierarchy(context.Background(), repo, path); err == nil {
 		t.Fatal("IngestSyntaxaHierarchy = nil error, want the UpsertSyntaxonAuthor error surfaced")
+	}
+}
+
+// TestLongestPrefixMatch exercises the matcher directly rather than only
+// through the full ingest, so every comparison (not just the outcomes the
+// end-to-end tests happen to need) has a case that would fail if it were
+// wrong — including bestLen's initial value, which only an end-to-end test
+// can never distinguish: any real FloraVeg name is longer than one
+// character, so nothing but a direct, single-character-candidate case can
+// tell "starts below the shortest possible match" apart from "starts at
+// the shortest possible match minus one more".
+func TestLongestPrefixMatch(t *testing.T) {
+	row := func(code, name string) hierarchyRow { return hierarchyRow{code: code, name: name} }
+
+	cases := []struct {
+		name          string
+		eunisName     string
+		candidates    []hierarchyRow
+		wantCode      string // "" means no match
+		wantAmbiguous bool
+	}{
+		{
+			name:       "a single one-character candidate matches at a word boundary",
+			eunisName:  "A Salicion",
+			candidates: []hierarchyRow{row("C1", "A")},
+			wantCode:   "C1",
+		},
+		{
+			name:       "the candidate name equals the whole EUNIS name (no trailing boundary character to check)",
+			eunisName:  "Cakilion edentulae",
+			candidates: []hierarchyRow{row("C1", "Cakilion edentulae")},
+			wantCode:   "C1",
+		},
+		{
+			name:      "a longer candidate beats a shorter one that also matches",
+			eunisName: "Cakilion edentulae Br.-Bl. 1931",
+			candidates: []hierarchyRow{
+				row("SHORT", "Cakilion"),
+				row("LONG", "Cakilion edentulae"),
+			},
+			wantCode: "LONG",
+		},
+		{
+			name:      "two equal-length candidates tie and are never guessed",
+			eunisName: "Salicion albae Soó 1930",
+			candidates: []hierarchyRow{
+				row("C1", "Salicion albae"),
+				row("C2", "Salicion albae"),
+			},
+			wantAmbiguous: true,
+		},
+		{
+			name:      "a later, strictly longer candidate resolves an earlier tie instead of leaving it ambiguous",
+			eunisName: "Salicion albae Soó 1930",
+			candidates: []hierarchyRow{
+				row("TIE1", "Salicion"),
+				row("TIE2", "Salicion"),
+				row("LONGEST", "Salicion albae"),
+			},
+			wantCode: "LONGEST",
+		},
+		{
+			name:       "an empty candidate name is never a match",
+			eunisName:  "Salicion albae Soó 1930",
+			candidates: []hierarchyRow{row("EMPTY", "")},
+			wantCode:   "",
+		},
+		{
+			name:       "no candidate is a prefix at all",
+			eunisName:  "Salicion albae Soó 1930",
+			candidates: []hierarchyRow{row("C1", "Nomatchion")},
+			wantCode:   "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			match, ambiguous := longestPrefixMatch(tc.eunisName, tc.candidates)
+			if ambiguous != tc.wantAmbiguous {
+				t.Errorf("ambiguous = %v, want %v", ambiguous, tc.wantAmbiguous)
+			}
+			gotCode := ""
+			if match != nil {
+				gotCode = match.code
+			}
+			if gotCode != tc.wantCode {
+				t.Errorf("match code = %q, want %q", gotCode, tc.wantCode)
+			}
+		})
 	}
 }

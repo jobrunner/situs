@@ -187,10 +187,9 @@ func longestPrefixMatch(eunisName string, candidates []hierarchyRow) (match *hie
 			continue
 		}
 		l := len(c.name)
-		switch {
-		case l > bestLen:
+		if l > bestLen {
 			bestLen, best, tie = l, c, false
-		case l == bestLen:
+		} else if l == bestLen {
 			tie = true
 		}
 	}
