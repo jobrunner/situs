@@ -259,6 +259,54 @@ const (
 	MaxSearchLimit     = 100
 )
 
+// DimensionSummary is one dimension's statistics over a species list.
+//
+// Absent fields are absent measurements, never zeroes: sd is omitted for a
+// single value (a spread of zero is a claim; "cannot be computed" is a
+// different one), and MeanNicheWeighted is omitted for vocabularies that
+// carry no niche widths (Tichý, Midolo) so it can never be confused with
+// the unweighted mean.
+type DimensionSummary struct {
+	Mean              float64  `json:"mean"`
+	MeanNicheWeighted *float64 `json:"mean_niche_weighted,omitempty"`
+	SD                *float64 `json:"sd,omitempty"`
+	Min               float64  `json:"min"`
+	Max               float64  `json:"max"`
+	// N is how many species carried a value in this dimension, NMissing how
+	// many of the known species did not. Per dimension, not global: EIVE
+	// covers L/M/N/R/T unevenly, and a mean over 3 of 18 species is a
+	// different statement than one over 17 of 18.
+	N        int `json:"n"`
+	NMissing int `json:"n_missing"`
+	// NExcludedWeighted counts species left out of the weighted mean because
+	// their niche width was not positive. Zero in the pinned data; reported
+	// rather than silently repaired if a future ingest produces one.
+	NExcludedWeighted int `json:"n_excluded_weighted,omitempty"`
+}
+
+// VocabSummary is one vocabulary's dimensions. Never merged across
+// vocabularies: EIVE's 0–10 and Tichý's 1–12 are different scales, so their
+// common mean would be an invented number.
+type VocabSummary struct {
+	VocabVersion string                      `json:"vocab_version"`
+	Dimensions   map[string]DimensionSummary `json:"dimensions"`
+}
+
+// UnknownConcept is one concept id the index could not answer for, with the
+// same two diagnoses the batch route uses.
+type UnknownConcept struct {
+	ConceptID string `json:"concept_id"`
+	Reason    string `json:"reason"`
+}
+
+// TraitSummary is the indicator-value analysis over a species list.
+type TraitSummary struct {
+	Requested    int                     `json:"requested"`
+	Known        int                     `json:"known"`
+	Unknown      []UnknownConcept        `json:"unknown"`
+	Vocabularies map[string]VocabSummary `json:"vocabularies"`
+}
+
 // QueryService is the read API's use cases over the local index. Every method
 // is autark: it needs no upstream service.
 type QueryService interface {
