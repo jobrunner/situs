@@ -47,6 +47,38 @@ func TestSummarizeDimension_SampleStandardDeviation(t *testing.T) {
 	}
 }
 
+// Exactly two values is the smallest sample a spread can be computed for —
+// the boundary right next to the n=1 case above, which must behave
+// differently from it.
+func TestSummarizeDimension_SDPresentForExactlyTwoValues(t *testing.T) {
+	got := summarizeDimension([]domain.TraitValue{tv(3, nil), tv(7, nil)}, 2)
+
+	if got.SD == nil {
+		t.Fatal("SD is nil, want a value for n=2")
+	}
+	// mean 5, deviations -2/2, sumSq 8, sample variance 8/(2-1)=8 -> sqrt(8).
+	if math.Abs(*got.SD-math.Sqrt(8)) > 1e-9 {
+		t.Errorf("SD = %v, want %v", *got.SD, math.Sqrt(8))
+	}
+}
+
+// Deliberately avoids any value equal to the mean: a zero deviation would
+// turn "d/d" (the sum-of-squares mutant this test exists to catch) into 0/0
+// == NaN, and a NaN silently fails to compare unequal to anything, masking
+// the mutant instead of killing it.
+func TestSummarizeDimension_SumOfSquaresIsSquaredNotDividedDeviation(t *testing.T) {
+	got := summarizeDimension([]domain.TraitValue{tv(1, nil), tv(2, nil), tv(6, nil)}, 3)
+
+	if got.SD == nil {
+		t.Fatal("SD is nil, want a value for n=3")
+	}
+	// mean 3, deviations -2/-1/3, sumSq 4+1+9=14, sample variance 14/(3-1)=7.
+	want := math.Sqrt(7)
+	if math.Abs(*got.SD-want) > 1e-9 {
+		t.Errorf("SD = %v, want %v (sum of squared deviations, not summed d/d)", *got.SD, want)
+	}
+}
+
 // One value has no spread that can be computed. Reporting 0 would be a
 // claim about the data that the data does not support.
 func TestSummarizeDimension_SDAbsentForSingleValue(t *testing.T) {

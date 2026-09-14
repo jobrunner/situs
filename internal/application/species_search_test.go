@@ -73,6 +73,18 @@ func TestSearchSpecies_MissingLimitTakesTheDefault(t *testing.T) {
 	}
 }
 
+// The two limits right at the accepted range's edges must both go through
+// unrejected — the boundary check must reject exactly what is outside
+// [1, MaxSearchLimit], not one value further in either direction.
+func TestSearchSpecies_AcceptsBoundaryLimits(t *testing.T) {
+	for _, limit := range []int{1, input.MaxSearchLimit} {
+		_, err := NewQueryService(newFakeRepo()).SearchSpecies(context.Background(), "fagus", intPtr(limit))
+		if err != nil {
+			t.Errorf("SearchSpecies(limit=%d) error = %v, want no error", limit, err)
+		}
+	}
+}
+
 func TestSearchSpecies_RejectsZeroNegativeAndOversizedLimit(t *testing.T) {
 	for _, limit := range []int{0, -1, input.MaxSearchLimit + 1} {
 		_, err := NewQueryService(newFakeRepo()).SearchSpecies(context.Background(), "fagus", intPtr(limit))

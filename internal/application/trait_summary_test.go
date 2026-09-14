@@ -111,6 +111,35 @@ func TestSpeciesTraitSummary_AllUnknownIsEmptyNotError(t *testing.T) {
 	}
 }
 
+// When every requested id carries a foreign backbone prefix, wanted is empty
+// and the repository must not be asked at all. traitsForConceptsErr proves
+// it: if the code called TraitsForConcepts regardless, this injected error
+// would surface and the test would fail.
+func TestSpeciesTraitSummary_AllForeignBackboneNeverQueriesTheRepository(t *testing.T) {
+	repo := seedTraitSummaryRepo()
+	repo.traitsForConceptsErr = errors.New("must not be called")
+
+	got, err := NewQueryService(repo).SpeciesTraitSummary(
+		context.Background(), []string{"gbif:concept:1", "gbif:concept:2"})
+	if err != nil {
+		t.Fatalf("SpeciesTraitSummary: %v", err)
+	}
+	if got.Requested != 2 || got.Known != 0 {
+		t.Errorf("Requested/Known = %d/%d, want 2/0", got.Requested, got.Known)
+	}
+	if len(got.Vocabularies) != 0 {
+		t.Errorf("got %d vocabularies, want none", len(got.Vocabularies))
+	}
+	if len(got.Unknown) != 2 {
+		t.Fatalf("got %d unknown entries, want 2", len(got.Unknown))
+	}
+	for _, u := range got.Unknown {
+		if u.Reason != input.ReasonUnknownBackbone {
+			t.Errorf("reason for %q = %q, want %q", u.ConceptID, u.Reason, input.ReasonUnknownBackbone)
+		}
+	}
+}
+
 func TestSpeciesTraitSummary_RepositoryErrorIsWrapped(t *testing.T) {
 	repo := seedTraitSummaryRepo()
 	repo.traitsForConceptsErr = errors.New("disk on fire")
