@@ -101,7 +101,7 @@ derselbe Konzept-ID-Satz wie bei `POST /v1/species/habitat-types`:
 {"concept_ids": ["wcvp:concept:83891", "wcvp:concept:2692970"]}
 ```
 
-Gemessen am gepinnten Datenstand: eine Abfrage über drei Arten liefert für EIVE
+Gemessen am gepinnten Datenstand: eine Abfrage über zwei Arten liefert für EIVE
 5 von 5 Dimensionen mit gewichtetem Mittel, für Tichý 0 von 6 und für Midolo 0
 von 5 — die Trennung nach Vokabular hält also im echten Betrieb, nicht nur auf
 dem Papier.
