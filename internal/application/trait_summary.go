@@ -45,18 +45,31 @@ func (q *QueryService) SpeciesTraitSummary(ctx context.Context, conceptIDs []str
 		}
 	}
 
+	vocabularies, err := summarizeVocabularies(traits)
+	if err != nil {
+		return input.TraitSummary{}, err
+	}
+
 	return input.TraitSummary{
 		Requested:    len(conceptIDs),
 		Known:        len(traits),
 		Unknown:      unknown,
-		Vocabularies: summarizeVocabularies(traits),
+		Vocabularies: vocabularies,
 	}, nil
 }
 
 // summarizeVocabularies buckets every value by (vocab, dim) and summarizes
 // each bucket. A dimension nobody carried a value for never gets a bucket,
 // so it is absent from the answer rather than a row of zeroes.
-func summarizeVocabularies(traits map[string][]domain.TraitValue) map[string]input.VocabSummary {
+//
+// Bucketing by vocab alone (not (vocab, vocab_version)) is only sound because
+// writeVocab (internal/application/trait_ingest.go) deletes every existing row
+// of a vocabulary before writing its new rows, so the index can never carry
+// two versions of the same vocabulary side by side. That is an ingest
+// invariant, not something this function can see from the map it is handed —
+// so it checks it explicitly rather than silently averaging two scales
+// together if the invariant is ever broken.
+func summarizeVocabularies(traits map[string][]domain.TraitValue) (map[string]input.VocabSummary, error) {
 	type bucket struct {
 		version string
 		byDim   map[string][]domain.TraitValue
@@ -68,6 +81,12 @@ func summarizeVocabularies(traits map[string][]domain.TraitValue) map[string]inp
 			if !ok {
 				b = &bucket{version: v.VocabVersion, byDim: map[string][]domain.TraitValue{}}
 				buckets[v.Vocab] = b
+			}
+			if b.version != v.VocabVersion {
+				return nil, fmt.Errorf(
+					"index is inconsistent: vocabulary %q carries both version %q and %q; "+
+						"writeVocab is supposed to delete a vocabulary's prior rows before writing a new version",
+					v.Vocab, b.version, v.VocabVersion)
 			}
 			b.byDim[string(v.Dim)] = append(b.byDim[string(v.Dim)], v)
 		}
@@ -82,5 +101,5 @@ func summarizeVocabularies(traits map[string][]domain.TraitValue) map[string]inp
 		}
 		out[vocab] = input.VocabSummary{VocabVersion: b.version, Dimensions: dims}
 	}
-	return out
+	return out, nil
 }

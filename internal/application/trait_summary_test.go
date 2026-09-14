@@ -150,6 +150,28 @@ func TestSpeciesTraitSummary_RepositoryErrorIsWrapped(t *testing.T) {
 	}
 }
 
+// The ingest guarantees at most one version per vocabulary (writeVocab
+// deletes a vocabulary's prior rows before writing a new version), so two
+// versions of the same vocabulary showing up here means the index itself is
+// broken. The aggregation must refuse to average them into one invented mean
+// rather than silently reporting whichever version it happened to see first.
+func TestSpeciesTraitSummary_TwoVersionsOfSameVocabIsIndexInconsistency(t *testing.T) {
+	repo := newFakeRepo()
+	repo.traitValues = []fakeTraitValue{
+		{ConceptID: "wcvp:concept:1", Value: domain.TraitValue{Vocab: "eive", VocabVersion: "1.0", Dim: "M", Value: 4}},
+		{ConceptID: "wcvp:concept:2", Value: domain.TraitValue{Vocab: "eive", VocabVersion: "1.1", Dim: "M", Value: 8}},
+	}
+
+	_, err := NewQueryService(repo).SpeciesTraitSummary(
+		context.Background(), []string{"wcvp:concept:1", "wcvp:concept:2"})
+	if err == nil {
+		t.Fatal("want an error when two versions of the same vocabulary are present, got none")
+	}
+	if errors.Is(err, input.ErrInvalidQuery) {
+		t.Error("this is a broken index, not a bad request: must not be ErrInvalidQuery")
+	}
+}
+
 // A dimension where no species carried a value must be absent, not a row of
 // zeroes.
 func TestSpeciesTraitSummary_DimensionWithoutValuesIsAbsent(t *testing.T) {
