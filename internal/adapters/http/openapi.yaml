@@ -195,9 +195,15 @@ paths:
         - name: q
           in: query
           required: true
-          description: Teilstring, mindestens ein Zeichen. Leer ist INVALID_QUERY, nicht „alles".
+          description: >-
+            Teilstring, mindestens ein Zeichen. Leer ist INVALID_QUERY, nicht
+            „alles". Auch ein Wert, der ausschließlich aus Leerraum besteht,
+            wird nach dem Trimmen als leer behandelt und ergibt ebenfalls
+            INVALID_QUERY — dies lässt sich in OpenAPI 3.0.3 nicht formal
+            ausdrücken.
           schema:
             type: string
+            minLength: 1
           example: fagus
         - name: limit
           in: query
@@ -370,6 +376,8 @@ paths:
                   maxItems: 300
                   items:
                     type: string
+                    minLength: 1
+                    example: "wcvp:concept:123456"
                   example: ["wcvp:concept:83891", "wcvp:concept:2692970"]
       responses:
         "200":

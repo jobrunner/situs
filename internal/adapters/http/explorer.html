@@ -282,9 +282,22 @@ async function search(inputEl, listEl, targetEl) {
   const generation = (inputEl._searchGeneration || 0) + 1;
   inputEl._searchGeneration = generation;
   if (!q) { listEl.innerHTML = ""; return; }
-  const res = await fetch(`/v1/species/search?q=${encodeURIComponent(q)}`);
-  const hits = await res.json();
-  if (inputEl._searchGeneration !== generation) { return; }
+  let hits;
+  try {
+    const res = await fetch(`/v1/species/search?q=${encodeURIComponent(q)}`);
+    const body = await res.json();
+    if (inputEl._searchGeneration !== generation) { return; }
+    if (!res.ok) { throw new Error(body && body.error ? body.error.message : `HTTP ${res.status}`); }
+    hits = body;
+  } catch (err) {
+    if (inputEl._searchGeneration !== generation) { return; }
+    listEl.innerHTML = "";
+    const li = document.createElement("li");
+    li.className = "unresolved";
+    li.textContent = "Suche fehlgeschlagen: " + err;
+    listEl.appendChild(li);
+    return;
+  }
   listEl.innerHTML = "";
   for (const h of hits) {
     const li = document.createElement("li");
@@ -378,11 +391,18 @@ function runSynHabitat() {
 }
 
 // Index self-description in the header, so one always sees what is queried.
-fetch("/v1/info").then(r => r.json()).then(i => {
-  document.getElementById("info").textContent =
-    `${i.service} ${i.version} · ${i.index.species_with_concept} Konzepte · ` +
-    `${i.index.areas_with_data} Gebiete · Backbones: ${i.index.concept_backbones.join(", ")}`;
-});
+(async () => {
+  try {
+    const res = await fetch("/v1/info");
+    const i = await res.json();
+    if (!res.ok) { throw new Error(i && i.error ? i.error.message : `HTTP ${res.status}`); }
+    document.getElementById("info").textContent =
+      `${i.service} ${i.version} · ${i.index.species_with_concept} Konzepte · ` +
+      `${i.index.areas_with_data} Gebiete · Backbones: ${i.index.concept_backbones.join(", ")}`;
+  } catch (err) {
+    document.getElementById("info").textContent = "Index-Info nicht verfügbar: " + err;
+  }
+})();
 </script>
 </body>
 </html>

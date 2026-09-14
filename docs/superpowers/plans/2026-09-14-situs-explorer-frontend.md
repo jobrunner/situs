@@ -2,6 +2,16 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Historical note (post-execution):** every `limit int` snippet below for
+> the use case — `input.QueryService.SearchSpecies` and its fake — is the
+> plan's original design. Implementation shipped `limit *int` instead: only
+> a pointer can distinguish an omitted `limit` from an explicit `0`. (The
+> repository-level `output.Repository.SearchSpeciesNames(ctx, q string,
+> limit int)` is unaffected — the resolution to a concrete limit happens in
+> the use case, above that boundary.) Left unedited below as the execution
+> record; do not copy these snippets — see `internal/ports/input/services.go`
+> for the authoritative signature.
+
 **Goal:** situs bekommt eine eingebettete, abhängigkeitsfreie Weboberfläche unter `GET /` plus die zwei Routen, die sie braucht: eine Namenssuche über die Index-eigenen Namen und eine Zeigerwertanalyse über eine Artenliste.
 
 **Architecture:** Hexagonal wie der Rest des Dienstes. Die Namenssuche ist ein reiner Read (sqlite-Adapter → Port → dünner Use-Case → Handler). Die Zeigerwertanalyse trennt strikt: eine **pure, I/O-freie Statistikfunktion** in `internal/application` (100 % Coverage-Floor) gegenüber dem Datenzugriff im sqlite-Adapter. Die Explorer-Seite folgt exakt dem Muster von `/docs`: eine `//go:embed`-Datei, inline ausgeliefert, ohne CDN.
