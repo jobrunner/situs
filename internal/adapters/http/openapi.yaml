@@ -26,6 +26,23 @@ servers:
     description: Derselbe Server, der diese Spezifikation ausliefert
 
 paths:
+  /:
+    get:
+      summary: API-Explorer
+      description: >-
+        Eine selbst-enthaltene Weboberfläche, die jeden Lese-Endpunkt dieses
+        Dienstes ausprobierbar macht und dabei die jeweils abgesetzte URL
+        mitzeigt. Stylesheet und Skript sind eingebettet, nichts wird aus dem
+        Netz nachgeladen — situs läuft lokal und im Feld ohne Netz. Die Seite
+        rechnet nichts selbst aus: sie zeigt, was der Dienst antwortet.
+      operationId: explorer
+      responses:
+        "200":
+          description: Die Explorer-Seite als HTML.
+          content:
+            text/html:
+              schema:
+                type: string
   /health/live:
     get:
       summary: Liveness-Probe

@@ -108,6 +108,7 @@ func (s *Server) setupRoutes() *mux.Router {
 	r.Use(s.recoveryMiddleware)
 
 	// Operations surface.
+	r.HandleFunc("/", s.handleExplorer).Methods(http.MethodGet)
 	r.HandleFunc("/health/live", s.handleLiveness).Methods(http.MethodGet)
 	r.HandleFunc("/health/ready", s.handleReadiness).Methods(http.MethodGet)
 	r.Handle("/metrics", promhttp.Handler()).Methods(http.MethodGet)
