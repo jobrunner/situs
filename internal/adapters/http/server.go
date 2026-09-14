@@ -122,6 +122,7 @@ func (s *Server) setupRoutes() *mux.Router {
 	r.HandleFunc("/v1/species/{conceptId}/habitat-types", s.handleSpeciesHabitatTypes).Methods(http.MethodGet)
 	r.HandleFunc("/v1/species/{conceptId}/traits", s.handleSpeciesTraits).Methods(http.MethodGet)
 	r.HandleFunc("/v1/species/habitat-types", s.handleSpeciesBatch).Methods(http.MethodPost)
+	r.HandleFunc("/v1/species/traits/summary", s.handleSpeciesTraitSummary).Methods(http.MethodPost)
 	r.HandleFunc("/v1/syntaxon/{id}/habitat-types", s.handleSyntaxonHabitatTypes).Methods(http.MethodGet)
 
 	return r

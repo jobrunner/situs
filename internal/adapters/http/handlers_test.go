@@ -856,6 +856,40 @@ type fakeQueryService struct {
 	// searchHits/searchErr control what SearchSpecies returns.
 	searchHits []input.SpeciesSearchHit
 	searchErr  error
+	// traitSummaries/traitSummaryErr control what SpeciesTraitSummary
+	// returns, keyed by concept id.
+	traitSummaries  map[string]map[string]input.VocabSummary
+	traitSummaryErr error
+}
+
+// SpeciesTraitSummary mirrors the use case's contract closely enough for the
+// adapter to be tested against it: known concepts report the seeded
+// vocabularies, unknown ones report unknown_concept. Deliberately simple —
+// callers of this double keep the request to a single known concept id, since
+// this fake overwrites its own Vocabularies assignment on a second known id
+// rather than merging.
+func (f *fakeQueryService) SpeciesTraitSummary(_ context.Context, conceptIDs []string) (input.TraitSummary, error) {
+	if f.traitSummaryErr != nil {
+		return input.TraitSummary{}, f.traitSummaryErr
+	}
+	if len(conceptIDs) == 0 {
+		return input.TraitSummary{}, fmt.Errorf("concept_ids must hold at least one id: %w", input.ErrInvalidQuery)
+	}
+	summary := input.TraitSummary{
+		Requested:    len(conceptIDs),
+		Unknown:      []input.UnknownConcept{},
+		Vocabularies: map[string]input.VocabSummary{},
+	}
+	for _, id := range conceptIDs {
+		if values, ok := f.traitSummaries[id]; ok {
+			summary.Known++
+			summary.Vocabularies = values
+			continue
+		}
+		summary.Unknown = append(summary.Unknown,
+			input.UnknownConcept{ConceptID: id, Reason: input.ReasonUnknownConcept})
+	}
+	return summary, nil
 }
 
 func (f *fakeQueryService) SearchSpecies(_ context.Context, q string, limit int) ([]input.SpeciesSearchHit, error) {
@@ -952,6 +986,13 @@ func seededQueryService() *fakeQueryService {
 		searchHits: []input.SpeciesSearchHit{
 			{VerbatimName: "Fagus sylvatica", ConceptID: strPtr("wcvp:concept:83891")},
 			{VerbatimName: "Fagus orientalis"},
+		},
+		traitSummaries: map[string]map[string]input.VocabSummary{
+			"wcvp:concept:83891": {
+				"eive": {VocabVersion: "1.0", Dimensions: map[string]input.DimensionSummary{
+					"M": {Mean: 6, Min: 4, Max: 8, N: 2},
+				}},
+			},
 		},
 	}
 }
