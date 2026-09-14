@@ -64,9 +64,12 @@ make build       # ./situs
 ./situs serve    # HTTP auf 127.0.0.1:8070
 ```
 
-Erreichbar sind `GET /health/live`, `GET /health/ready`, `GET /metrics`,
-`GET /openapi`, `GET /docs` (Swagger-UI, Assets eingebettet — funktioniert also
-ohne Netz), `GET /v1/info` und die Lese-Endpunkte:
+Unter `http://localhost:8070/` liegt der API-Explorer — eine selbst-enthaltene
+Seite, die jeden Lese-Endpunkt ausprobierbar macht, ohne Netz.
+
+Erreichbar sind außerdem `GET /health/live`, `GET /health/ready`,
+`GET /metrics`, `GET /openapi`, `GET /docs` (Swagger-UI, Assets eingebettet —
+funktioniert also ohne Netz), `GET /v1/info` und die Lese-Endpunkte:
 
 ```bash
 # --db entfällt, wenn index.path (Default: situs.sqlite) passt.
@@ -83,6 +86,14 @@ curl -s 'localhost:8070/v1/syntaxon/<syntaxonId>/habitat-types'
 curl -s -X POST localhost:8070/v1/species/habitat-types \
   -H 'Content-Type: application/json' \
   -d '{"concept_ids":["wcvp:concept:2457314","wcvp:concept:2606633"]}'
+
+# Namen, die der Index selbst führt — keine Namensauflösung, dafür ist hostus da.
+curl -s 'localhost:8070/v1/species/search?q=fagus&limit=5'
+
+# Zeigerwertanalyse über eine Artenliste, je Vokabular und Dimension getrennt.
+curl -s -X POST localhost:8070/v1/species/traits/summary \
+  -H 'Content-Type: application/json' \
+  -d '{"concept_ids":["wcvp:concept:83891","wcvp:concept:2692970"]}'
 
 # Nur was im Gebiet vorkommt (WGSRPD-Level-3-Code, aus GPS abgeleitet).
 # Setzt einen abgeschlossenen Verbreitungs-Ingest voraus — siehe unten.
