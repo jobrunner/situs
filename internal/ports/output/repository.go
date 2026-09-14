@@ -102,6 +102,14 @@ type Repository interface {
 	// ConceptIDs lists the distinct concept ids the index holds, so the
 	// distribution step knows what to ask for.
 	ConceptIDs(ctx context.Context) ([]string, error)
+	// SearchSpeciesNames returns the index's own verbatim names containing
+	// q (case-insensitive substring), at most limit of them, ordered by
+	// name so the same query is stably reproducible.
+	//
+	// This is NOT name resolution: no fuzzy matching, no synonyms, no
+	// author variants. It answers only "which names does THIS index carry,
+	// and under which concept id" — real resolution is hostus' job.
+	SearchSpeciesNames(ctx context.Context, q string, limit int) ([]domain.SpeciesName, error)
 	// Traits returns every domain.TraitSet situs holds for conceptID,
 	// grouped PER VOCABULARY, never mixed. vocabs empty means every
 	// ingested vocabulary; otherwise filtered (serves GET .../traits?vocab=).

@@ -446,6 +446,8 @@ type fakeRepo struct {
 	}
 	allSyntaxaErr error
 	speciesRoles  []domain.SpeciesRole
+	speciesNames  []domain.SpeciesName
+	searchErr     error
 	localizations []domain.Localization
 	distribution  []fakeDistribution
 	traitValues   []fakeTraitValue
@@ -516,6 +518,22 @@ func (r *fakeRepo) ConceptIDs(_ context.Context) ([]string, error) {
 		if s.ConceptID != nil && !seen[*s.ConceptID] {
 			seen[*s.ConceptID] = true
 			out = append(out, *s.ConceptID)
+		}
+	}
+	return out, nil
+}
+
+func (r *fakeRepo) SearchSpeciesNames(_ context.Context, q string, limit int) ([]domain.SpeciesName, error) {
+	if r.searchErr != nil {
+		return nil, r.searchErr
+	}
+	out := []domain.SpeciesName{}
+	for _, n := range r.speciesNames {
+		if strings.Contains(strings.ToLower(n.VerbatimName), strings.ToLower(q)) {
+			out = append(out, n)
+		}
+		if len(out) == limit {
+			break
 		}
 	}
 	return out, nil
