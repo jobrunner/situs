@@ -862,6 +862,16 @@ func (f *fakeQueryService) SearchSpecies(_ context.Context, q string, limit int)
 	if f.searchErr != nil {
 		return nil, f.searchErr
 	}
+	// Mirrors the real use case's contract, not its implementation: an
+	// empty/whitespace-only q and a limit outside [1, MaxSearchLimit] are
+	// rejected with input.ErrInvalidQuery; limit == 0 means "unset" and is
+	// not one of those rejected values.
+	if strings.TrimSpace(q) == "" {
+		return nil, fmt.Errorf("q must not be empty: %w", input.ErrInvalidQuery)
+	}
+	if limit != 0 && (limit < 0 || limit > input.MaxSearchLimit) {
+		return nil, fmt.Errorf("limit must be between 1 and %d: %w", input.MaxSearchLimit, input.ErrInvalidQuery)
+	}
 	out := []input.SpeciesSearchHit{}
 	for _, h := range f.searchHits {
 		if strings.Contains(strings.ToLower(h.VerbatimName), strings.ToLower(q)) {
