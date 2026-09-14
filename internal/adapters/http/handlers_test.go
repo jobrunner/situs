@@ -853,6 +853,25 @@ type fakeQueryService struct {
 	traitErr          error
 	gotTraitConceptID string
 	gotTraitVocab     string
+	// searchHits/searchErr control what SearchSpecies returns.
+	searchHits []input.SpeciesSearchHit
+	searchErr  error
+}
+
+func (f *fakeQueryService) SearchSpecies(_ context.Context, q string, limit int) ([]input.SpeciesSearchHit, error) {
+	if f.searchErr != nil {
+		return nil, f.searchErr
+	}
+	out := []input.SpeciesSearchHit{}
+	for _, h := range f.searchHits {
+		if strings.Contains(strings.ToLower(h.VerbatimName), strings.ToLower(q)) {
+			out = append(out, h)
+		}
+		if limit > 0 && len(out) == limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeQueryService) Traits(_ context.Context, conceptID, vocab string) ([]input.TraitSetView, error) {
@@ -919,6 +938,10 @@ func seededQueryService() *fakeQueryService {
 			SpeciesWithConcept: 2,
 			AreaScheme:         domain.SchemeWGSRPDL3,
 			AreasWithData:      3,
+		},
+		searchHits: []input.SpeciesSearchHit{
+			{VerbatimName: "Fagus sylvatica", ConceptID: strPtr("wcvp:concept:83891")},
+			{VerbatimName: "Fagus orientalis"},
 		},
 	}
 }

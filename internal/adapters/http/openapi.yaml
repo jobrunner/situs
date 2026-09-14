@@ -161,6 +161,47 @@ paths:
           $ref: "#/components/responses/InvalidQuery"
         "404":
           $ref: "#/components/responses/NotFound"
+  /v1/species/search:
+    get:
+      summary: Namen suchen, die dieser Index selbst führt
+      description: >-
+        Sucht einen Teilstring (case-insensitiv) in den `verbatim_name`, die
+        der Index selbst trägt, und liefert die zugehörige Concept-ID mit.
+        **Das ist keine Namensauflösung:** kein Fuzzy-Matching, keine
+        Synonyme, keine Autorenvarianten, kein Backbone-Wissen — dafür ist
+        hostus zuständig. Diese Route beantwortet ausschließlich „welche
+        Namen kennt *dieser* Index". `concept_id` ist `null`, wenn der Ingest
+        den Namen nicht auflösen konnte; solche Treffer werden mitgeliefert
+        und nicht gefiltert, weil sie zur Wahrheit über den Index gehören.
+      operationId: speciesSearch
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Teilstring, mindestens ein Zeichen. Leer ist INVALID_QUERY, nicht „alles".
+          schema:
+            type: string
+          example: fagus
+        - name: limit
+          in: query
+          required: false
+          description: Höchstzahl der Treffer. Fehlt der Parameter, gilt 20.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Die Treffer, nach Namen sortiert. Leer, wenn nichts passt.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SpeciesSearchHit"
+        "400":
+          $ref: "#/components/responses/InvalidQuery"
   /v1/species/{conceptId}/habitat-types:
     get:
       summary: Habitattypen einer Art (mit Rolle)
@@ -537,6 +578,21 @@ components:
           enum: [derived_from_aggregate]
         derived_from:
           $ref: "#/components/schemas/AggregateSource"
+    SpeciesSearchHit:
+      type: object
+      required: [verbatim_name, concept_id]
+      properties:
+        verbatim_name:
+          type: string
+          example: Fagus sylvatica
+        concept_id:
+          type: string
+          nullable: true
+          description: >-
+            `null`, wenn der Ingest diesen Namen nicht auflösen konnte. Das
+            Feld ist immer vorhanden — ein fehlendes und ein leeres Feld
+            wären für einen Client nicht unterscheidbar.
+          example: wcvp:concept:83891
     HabitatTypeDetail:
       allOf:
         - $ref: "#/components/schemas/HabitatTypeSummary"

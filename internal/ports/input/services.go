@@ -47,6 +47,10 @@ var (
 	// treatment as ErrUnknownArea: a typo and a genuine absence must not
 	// look the same -> INVALID_QUERY.
 	ErrUnknownVocab = errors.New("unknown trait vocabulary")
+	// ErrInvalidQuery is a malformed request parameter -> INVALID_QUERY. The
+	// existing ErrUnknown* sentinels say "this value does not exist here";
+	// this one says "this value is not well-formed at all".
+	ErrInvalidQuery = errors.New("invalid query")
 )
 
 // The role vocabulary of species_role, closed for this foundation.
@@ -237,6 +241,24 @@ type IndexInfo struct {
 	AreasWithData int `json:"areas_with_data"`
 }
 
+// SpeciesSearchHit is one hit of the index-own name search.
+//
+// ConceptID has no omitempty on purpose: a name the index carries but could
+// not resolve must arrive as an explicit null, so a client can tell "not
+// resolvable" from "field forgotten". Filtering those hits out would state a
+// higher resolution rate than the index actually has.
+type SpeciesSearchHit struct {
+	VerbatimName string  `json:"verbatim_name"`
+	ConceptID    *string `json:"concept_id"`
+}
+
+// The search result bound. A default keeps a bare ?q= cheap; the maximum
+// keeps one request from serving the whole index as an autocomplete answer.
+const (
+	DefaultSearchLimit = 20
+	MaxSearchLimit     = 100
+)
+
 // QueryService is the read API's use cases over the local index. Every method
 // is autark: it needs no upstream service.
 type QueryService interface {
@@ -260,4 +282,7 @@ type QueryService interface {
 	// ingested vocabulary. An unresolvable vocab is INVALID_QUERY; a
 	// concept with no trait data is a normal empty answer, not NOT_FOUND.
 	Traits(ctx context.Context, conceptID, vocab string) ([]TraitSetView, error)
+	// SearchSpecies finds index-own verbatim names containing q. It is not
+	// name resolution (no fuzzy, no synonyms) — see the repository port.
+	SearchSpecies(ctx context.Context, query string, limit int) ([]SpeciesSearchHit, error)
 }
