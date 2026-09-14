@@ -118,6 +118,15 @@ type Repository interface {
 	// ?vocab= filter must be validated against this: an unknown value is an
 	// error, not an empty answer that could be a typo.
 	KnownVocabs(ctx context.Context) ([]string, error)
+	// TraitsForConcepts returns every trait value the index holds for each
+	// of conceptIDs, keyed by concept id. Concepts without any trait data
+	// are absent from the map rather than present-but-empty: "no data" and
+	// "an empty list of data" are the same fact, and one representation is
+	// enough.
+	//
+	// One read for the whole list, not one per concept: an analysis over a
+	// vegetation record asks about dozens of species at once.
+	TraitsForConcepts(ctx context.Context, conceptIDs []string) (map[string][]domain.TraitValue, error)
 }
 
 // A NameResolver can fail in two ways that must not be confused, because they

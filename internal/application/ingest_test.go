@@ -487,6 +487,8 @@ type fakeRepo struct {
 	knownVocabsErr error
 	// traitsErr fails Traits, exercising QueryService.Traits' data-fetch error path.
 	traitsErr error
+	// traitsForConceptsErr fails TraitsForConcepts.
+	traitsForConceptsErr error
 }
 
 // fakeDistribution is one recorded UpsertDistribution call.
@@ -740,6 +742,37 @@ func (r *fakeRepo) Traits(_ context.Context, conceptID string, vocabs []string) 
 	out := make([]domain.TraitSet, 0, len(order))
 	for _, key := range order {
 		out = append(out, *sets[key])
+	}
+	return out, nil
+}
+
+// TraitsForConcepts mirrors the sqlite adapter's contract: it is derived
+// from the same recorded traitValues as Traits (not a separate store), a
+// concept with no rows is absent from the map, and each concept's values
+// come out ordered by vocab then dim — the adapter's ORDER BY concept_id,
+// vocab, dim.
+func (r *fakeRepo) TraitsForConcepts(_ context.Context, conceptIDs []string) (map[string][]domain.TraitValue, error) {
+	if r.traitsForConceptsErr != nil {
+		return nil, r.traitsForConceptsErr
+	}
+	wanted := map[string]bool{}
+	for _, id := range conceptIDs {
+		wanted[id] = true
+	}
+	out := map[string][]domain.TraitValue{}
+	for _, tv := range r.traitValues {
+		if wanted[tv.ConceptID] {
+			out[tv.ConceptID] = append(out[tv.ConceptID], tv.Value)
+		}
+	}
+	for id := range out {
+		values := out[id]
+		sort.Slice(values, func(i, j int) bool {
+			if values[i].Vocab != values[j].Vocab {
+				return values[i].Vocab < values[j].Vocab
+			}
+			return values[i].Dim < values[j].Dim
+		})
 	}
 	return out, nil
 }

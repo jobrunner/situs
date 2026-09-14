@@ -199,6 +199,66 @@ func TestKnownVocabs_ListsDistinctIngestedVocabularies(t *testing.T) {
 	}
 }
 
+func TestTraitsForConcepts_GroupsByConceptAndOmitsUnknownOnes(t *testing.T) {
+	db := openTestDB(t)
+	tx, err := db.Begin(context.Background())
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertTraitVocabulary("eive", "1.0"); err != nil {
+		t.Fatalf("UpsertTraitVocabulary: %v", err)
+	}
+	nw := 2.5
+	for conceptID, values := range map[string][]domain.TraitValue{
+		"wcvp:concept:1": {
+			{Vocab: "eive", VocabVersion: "1.0", Dim: "M", Value: 4.2, NicheWidth: &nw},
+			{Vocab: "eive", VocabVersion: "1.0", Dim: "N", Value: 3.1, NicheWidth: &nw},
+		},
+		"wcvp:concept:2": {
+			{Vocab: "eive", VocabVersion: "1.0", Dim: "M", Value: 6.8, NicheWidth: &nw},
+		},
+	} {
+		for _, v := range values {
+			if err := tx.UpsertTraitValue(conceptID, v); err != nil {
+				t.Fatalf("UpsertTraitValue: %v", err)
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.TraitsForConcepts(context.Background(),
+		[]string{"wcvp:concept:1", "wcvp:concept:2", "wcvp:concept:999"})
+	if err != nil {
+		t.Fatalf("TraitsForConcepts: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d concepts, want 2 (the unknown one must be absent, not empty)", len(got))
+	}
+	if len(got["wcvp:concept:1"]) != 2 {
+		t.Errorf("concept 1 has %d values, want 2", len(got["wcvp:concept:1"]))
+	}
+	if _, present := got["wcvp:concept:999"]; present {
+		t.Error("the unknown concept is present in the map; it must be absent")
+	}
+	if got["wcvp:concept:2"][0].NicheWidth == nil {
+		t.Error("niche width was lost on the way out")
+	}
+}
+
+func TestTraitsForConcepts_EmptyInputIsEmptyMapNotError(t *testing.T) {
+	db := openTestDB(t)
+
+	got, err := db.TraitsForConcepts(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("TraitsForConcepts: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("got %d entries, want none", len(got))
+	}
+}
+
 func TestTraits_UnknownConceptReturnsEmpty(t *testing.T) {
 	db := openTestDB(t)
 	sets, err := db.Traits(t.Context(), "wcvp:does-not-exist", nil)
@@ -265,8 +325,9 @@ func TestTraitReads_QueryErrorsAreReturned(t *testing.T) {
 	ctx := context.Background()
 
 	cases := map[string]func() error{
-		"Traits":      func() error { _, err := db.Traits(ctx, "wcvp:1", nil); return err },
-		"KnownVocabs": func() error { _, err := db.KnownVocabs(ctx); return err },
+		"Traits":            func() error { _, err := db.Traits(ctx, "wcvp:1", nil); return err },
+		"KnownVocabs":       func() error { _, err := db.KnownVocabs(ctx); return err },
+		"TraitsForConcepts": func() error { _, err := db.TraitsForConcepts(ctx, []string{"wcvp:1"}); return err },
 	}
 	for name, call := range cases {
 		if err := call(); err == nil {
@@ -294,6 +355,10 @@ func TestTraitReads_RowsIterationAndScanErrorsAreReturned(t *testing.T) {
 		"KnownVocabs": {
 			call: func(db *DB) error { _, err := db.KnownVocabs(ctx); return err },
 			rows: "known vocabs", scan: "known vocabs",
+		},
+		"TraitsForConcepts": {
+			call: func(db *DB) error { _, err := db.TraitsForConcepts(ctx, []string{"wcvp:1"}); return err },
+			rows: "iterating trait values", scan: "scanning trait value",
 		},
 	}
 	for name, tc := range cases {

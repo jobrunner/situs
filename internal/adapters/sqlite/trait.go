@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/jobrunner/situs/internal/domain"
@@ -109,4 +110,59 @@ func (d *DB) Traits(ctx context.Context, conceptID string, vocabs []string) ([]d
 func (d *DB) KnownVocabs(ctx context.Context) ([]string, error) {
 	return d.queryStrings(ctx, "known vocabs",
 		`SELECT DISTINCT vocab FROM trait_vocabulary ORDER BY vocab`)
+}
+
+// traitChunkSize bounds how many concept ids go into one IN (...) list, for
+// the same reason areaChunkSize does in read.go: sqlite caps bound
+// parameters per statement, and an analysis may ask about hundreds of ids.
+const traitChunkSize = 500
+
+// TraitsForConcepts returns every trait value the index holds for each of
+// conceptIDs, keyed by concept id. A concept without trait data is absent
+// from the map, never present with an empty slice — "no data" and "an empty
+// list of data" are the same fact.
+func (d *DB) TraitsForConcepts(ctx context.Context, conceptIDs []string) (map[string][]domain.TraitValue, error) {
+	out := map[string][]domain.TraitValue{}
+	for chunk := range slices.Chunk(conceptIDs, traitChunkSize) {
+		if err := d.appendTraitsForChunk(ctx, out, chunk); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// appendTraitsForChunk reads one bounded chunk into out.
+func (d *DB) appendTraitsForChunk(ctx context.Context, out map[string][]domain.TraitValue, conceptIDs []string) error {
+	// Only placeholders are generated here, never values — the ids stay
+	// bound arguments, so this is not SQL construction from input
+	// (gosec G201/G202), same idiom as appendAreasForChunk.
+	placeholders := strings.Repeat(",?", len(conceptIDs))[1:]
+	args := make([]any, 0, len(conceptIDs))
+	for _, id := range conceptIDs {
+		args = append(args, id)
+	}
+
+	rows, err := d.QueryContext(ctx,
+		`SELECT concept_id, vocab, vocab_version, dim, value, niche_width, n_systems
+		 FROM trait_value WHERE concept_id IN (`+placeholders+`)
+		 ORDER BY concept_id, vocab, dim`, args...)
+	if err != nil {
+		return fmt.Errorf("sqlite: reading traits for %d concepts: %w", len(conceptIDs), err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var conceptID, vocab, vocabVersion, dim string
+		var tv domain.TraitValue
+		if err := rows.Scan(&conceptID, &vocab, &vocabVersion, &dim,
+			&tv.Value, &tv.NicheWidth, &tv.NSystems); err != nil {
+			return fmt.Errorf("sqlite: scanning trait value: %w", err)
+		}
+		tv.Vocab, tv.VocabVersion, tv.Dim = vocab, vocabVersion, domain.TraitDim(dim)
+		out[conceptID] = append(out[conceptID], tv)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("sqlite: iterating trait values: %w", err)
+	}
+	return nil
 }
