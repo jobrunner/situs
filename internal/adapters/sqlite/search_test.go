@@ -126,6 +126,55 @@ func TestSearchSpeciesNames_UnderscoreIsLiteralToo(t *testing.T) {
 	}
 }
 
+// Two rows can share a verbatim_name while carrying different concept ids
+// (e.g. the same name recorded under two roles, resolved to two different
+// concepts by a future ingest). ORDER BY verbatim_name alone leaves such a
+// tie to sqlite's discretion; concept_id as a second key makes the order
+// deterministic across repeated calls.
+func TestSearchSpeciesNames_SameNameDifferentConceptIDsHaveAStableOrder(t *testing.T) {
+	db := openTestDB(t)
+	tx, err := db.Begin(context.Background())
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertTypology(domain.Typology{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}); err != nil {
+		t.Fatalf("UpsertTypology: %v", err)
+	}
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "T17"}
+	if err := tx.UpsertHabitatType(domain.HabitatType{Key: key, NameEN: "Beech forest"}); err != nil {
+		t.Fatalf("UpsertHabitatType: %v", err)
+	}
+	conceptA := "wcvp:concept:100"
+	conceptB := "wcvp:concept:200"
+	for _, r := range []domain.SpeciesRole{
+		{Key: key, VerbatimName: "Fagus sylvatica", Role: "diagnostic", ConceptID: &conceptB},
+		{Key: key, VerbatimName: "Fagus sylvatica", Role: "constant", ConceptID: &conceptA},
+	} {
+		if err := tx.UpsertSpeciesRole(r); err != nil {
+			t.Fatalf("UpsertSpeciesRole %q/%q: %v", r.VerbatimName, r.Role, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	for i := 0; i < 5; i++ {
+		got, err := db.SearchSpeciesNames(context.Background(), "sylvatica", 20)
+		if err != nil {
+			t.Fatalf("SearchSpeciesNames: %v", err)
+		}
+		if len(got) != 2 {
+			t.Fatalf("got %d hits, want 2 (both concept ids for the shared name)", len(got))
+		}
+		if got[0].ConceptID == nil || *got[0].ConceptID != conceptA {
+			t.Errorf("got[0].ConceptID = %v, want %s", got[0].ConceptID, conceptA)
+		}
+		if got[1].ConceptID == nil || *got[1].ConceptID != conceptB {
+			t.Errorf("got[1].ConceptID = %v, want %s", got[1].ConceptID, conceptB)
+		}
+	}
+}
+
 func TestSearchSpeciesNames_NoMatchIsEmptyNotError(t *testing.T) {
 	db := seedSearchDB(t)
 

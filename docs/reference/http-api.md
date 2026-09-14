@@ -82,8 +82,13 @@ Route beantwortet ausschließlich „welche Namen kennt *dieser* Index", nicht
 nicht auflösen konnte; solche Treffer werden **mitgeliefert und nicht
 gefiltert**, weil sie zur Wahrheit über den Index gehören — eine gefilterte
 Liste würde eine höhere Auflösungsquote behaupten, als der Index tatsächlich
-hat. Gemessen am gepinnten Datenstand führt der Index **3780** distinkte
-`verbatim_name`, davon **3314** mit Concept-ID.
+hat. Gemessen am gepinnten Datenstand führt der **fertige Index** **3780**
+distinkte `verbatim_name`, davon **3314** mit Concept-ID — das schließt die
+Mitgliedsarten ein, die erst durch die Aggregat-Ableitung (`provenance =
+'derived_from_aggregate'`) hinzukommen. Das ist eine andere Grundgesamtheit
+als die **3587** Artennamen in [measured-index.md](measured-index.md), die die
+**Eingabe** misst — die Namen aus `species_roles.csv` vor der
+Aggregat-Ableitung.
 
 `q` ist Pflicht: leer (oder nur Whitespace) ist `INVALID_QUERY`, nicht „liefere
 alles". `limit` hat die Vorgabe **20** und das Maximum **100**; ein Wert

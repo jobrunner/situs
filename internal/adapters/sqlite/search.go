@@ -30,13 +30,21 @@ func likeEscape(q string) string {
 // produced one, showing both rows is the honest answer — silently keeping
 // whichever row sqlite returned first would hide the ambiguity.
 //
+// ORDER BY carries concept_id as a second key, not just verbatim_name: the
+// port promises a stably reproducible order, and two rows sharing a name
+// would otherwise tie on the first key, leaving sqlite free to return them
+// in either order from one call to the next — and to drop a different one
+// of the two at the LIMIT boundary each time. concept_id can be NULL; sqlite
+// orders NULL before any non-NULL value in ASC, so the tie still breaks the
+// same way every time.
+//
 // sqlite's LIKE is case-insensitive for ASCII by default, which is what the
 // binomial Latin names in this index are.
 func (d *DB) SearchSpeciesNames(ctx context.Context, q string, limit int) ([]domain.SpeciesName, error) {
 	rows, err := d.QueryContext(ctx,
 		`SELECT DISTINCT verbatim_name, concept_id FROM species_role
 		 WHERE verbatim_name LIKE ? ESCAPE '\'
-		 ORDER BY verbatim_name
+		 ORDER BY verbatim_name, concept_id
 		 LIMIT ?`,
 		"%"+likeEscape(q)+"%", limit)
 	if err != nil {

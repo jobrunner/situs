@@ -535,9 +535,23 @@ func (r *fakeRepo) SearchSpeciesNames(_ context.Context, q string, limit int) ([
 			out = append(out, n)
 		}
 	}
-	// Mirrors the real adapter's ORDER BY verbatim_name: a caller relying on
-	// the interface's ordering guarantee must see the same behavior here.
-	sort.Slice(out, func(i, j int) bool { return out[i].VerbatimName < out[j].VerbatimName })
+	// Mirrors the real adapter's ORDER BY verbatim_name, concept_id: a caller
+	// relying on the interface's stable-ordering guarantee must see the same
+	// behavior here, including the tie-break when two rows share a name.
+	// NULL sorts before any concept id, same as sqlite ASC.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].VerbatimName != out[j].VerbatimName {
+			return out[i].VerbatimName < out[j].VerbatimName
+		}
+		a, b := out[i].ConceptID, out[j].ConceptID
+		if a == nil {
+			return b != nil
+		}
+		if b == nil {
+			return false
+		}
+		return *a < *b
+	})
 	// Mirrors SQL's LIMIT semantics, including LIMIT 0 meaning zero rows —
 	// the append-then-compare form used before broke exactly on that case.
 	if limit >= 0 && len(out) > limit {

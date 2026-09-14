@@ -215,6 +215,9 @@ async function call(panel, url, init) {
   box.textContent = (init && init.method === "POST" ? "POST " : "GET ") + url;
   out.textContent = "…";
   delete out.dataset.compact;
+  // Clear any previous response up front: if this request fails, toggleFormat
+  // must find nothing to re-render, never the last successful answer.
+  delete out.dataset.raw;
   try {
     const res = await fetch(url, init);
     const body = await res.json();
