@@ -532,9 +532,14 @@ func (r *fakeRepo) SearchSpeciesNames(_ context.Context, q string, limit int) ([
 		if strings.Contains(strings.ToLower(n.VerbatimName), strings.ToLower(q)) {
 			out = append(out, n)
 		}
-		if len(out) == limit {
-			break
-		}
+	}
+	// Mirrors the real adapter's ORDER BY verbatim_name: a caller relying on
+	// the interface's ordering guarantee must see the same behavior here.
+	sort.Slice(out, func(i, j int) bool { return out[i].VerbatimName < out[j].VerbatimName })
+	// Mirrors SQL's LIMIT semantics, including LIMIT 0 meaning zero rows —
+	// the append-then-compare form used before broke exactly on that case.
+	if limit >= 0 && len(out) > limit {
+		out = out[:limit]
 	}
 	return out, nil
 }
