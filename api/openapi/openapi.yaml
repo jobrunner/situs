@@ -26,6 +26,23 @@ servers:
     description: Derselbe Server, der diese Spezifikation ausliefert
 
 paths:
+  /:
+    get:
+      summary: API-Explorer
+      description: >-
+        Eine selbst-enthaltene Weboberfläche, die jeden Lese-Endpunkt dieses
+        Dienstes ausprobierbar macht und dabei die jeweils abgesetzte URL
+        mitzeigt. Stylesheet und Skript sind eingebettet, nichts wird aus dem
+        Netz nachgeladen — situs läuft lokal und im Feld ohne Netz. Die Seite
+        rechnet nichts selbst aus: sie zeigt, was der Dienst antwortet.
+      operationId: explorer
+      responses:
+        "200":
+          description: Die Explorer-Seite als HTML.
+          content:
+            text/html:
+              schema:
+                type: string
   /health/live:
     get:
       summary: Liveness-Probe
@@ -161,6 +178,53 @@ paths:
           $ref: "#/components/responses/InvalidQuery"
         "404":
           $ref: "#/components/responses/NotFound"
+  /v1/species/search:
+    get:
+      summary: Namen suchen, die dieser Index selbst führt
+      description: >-
+        Sucht einen Teilstring (case-insensitiv) in den `verbatim_name`, die
+        der Index selbst trägt, und liefert die zugehörige Concept-ID mit.
+        **Das ist keine Namensauflösung:** kein Fuzzy-Matching, keine
+        Synonyme, keine Autorenvarianten, kein Backbone-Wissen — dafür ist
+        hostus zuständig. Diese Route beantwortet ausschließlich „welche
+        Namen kennt *dieser* Index". `concept_id` ist `null`, wenn der Ingest
+        den Namen nicht auflösen konnte; solche Treffer werden mitgeliefert
+        und nicht gefiltert, weil sie zur Wahrheit über den Index gehören.
+      operationId: speciesSearch
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: >-
+            Teilstring, mindestens ein Zeichen. Leer ist INVALID_QUERY, nicht
+            „alles". Auch ein Wert, der ausschließlich aus Leerraum besteht,
+            wird nach dem Trimmen als leer behandelt und ergibt ebenfalls
+            INVALID_QUERY — dies lässt sich in OpenAPI 3.0.3 nicht formal
+            ausdrücken.
+          schema:
+            type: string
+            minLength: 1
+          example: fagus
+        - name: limit
+          in: query
+          required: false
+          description: Höchstzahl der Treffer. Fehlt der Parameter, gilt 20.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Die Treffer, nach Namen sortiert. Leer, wenn nichts passt.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SpeciesSearchHit"
+        "400":
+          $ref: "#/components/responses/InvalidQuery"
   /v1/species/{conceptId}/habitat-types:
     get:
       summary: Habitattypen einer Art (mit Rolle)
@@ -282,6 +346,46 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ConceptResolution"
+        "400":
+          $ref: "#/components/responses/InvalidQuery"
+  /v1/species/traits/summary:
+    post:
+      summary: Zeigerwertanalyse über eine Artenliste
+      description: >-
+        Mittelt die Zeigerwerte einer Artenliste — **strikt je Vokabular und
+        Dimension**, niemals darüber hinweg: EIVE (0–10) und Tichý (1–12)
+        sind verschiedene Skalen, ihr gemeinsames Mittel wäre eine erfundene
+        Zahl. Neben dem arithmetischen Mittel wird, wo Nischenbreiten
+        vorliegen (nur EIVE), ein mit `1/Nischenbreite` gewichtetes Mittel
+        ausgewiesen: eine schmale Nische ist der präzisere Standortanzeiger.
+        Beide stehen nebeneinander, damit die Methodenwahl beim Auswertenden
+        bleibt. Unbekannte Concept-IDs sind ein normales 200 mit Begründung,
+        kein Fehler.
+      operationId: speciesTraitSummary
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [concept_ids]
+              properties:
+                concept_ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 300
+                  items:
+                    type: string
+                    minLength: 1
+                    example: "wcvp:concept:123456"
+                  example: ["wcvp:concept:83891", "wcvp:concept:2692970"]
+      responses:
+        "200":
+          description: Die Analyse.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TraitSummary"
         "400":
           $ref: "#/components/responses/InvalidQuery"
   /v1/syntaxon/{id}/habitat-types:
@@ -537,6 +641,21 @@ components:
           enum: [derived_from_aggregate]
         derived_from:
           $ref: "#/components/schemas/AggregateSource"
+    SpeciesSearchHit:
+      type: object
+      required: [verbatim_name, concept_id]
+      properties:
+        verbatim_name:
+          type: string
+          example: Fagus sylvatica
+        concept_id:
+          type: string
+          nullable: true
+          description: >-
+            `null`, wenn der Ingest diesen Namen nicht auflösen konnte. Das
+            Feld ist immer vorhanden — ein fehlendes und ein leeres Feld
+            wären für einen Client nicht unterscheidbar.
+          example: wcvp:concept:83891
     HabitatTypeDetail:
       allOf:
         - $ref: "#/components/schemas/HabitatTypeSummary"
@@ -668,6 +787,81 @@ components:
             über den Index, kein Platzhalter. Es ist eine Anzahl und keine Liste:
             *welche* Codes gültig sind, sagt keine Route.
           example: 366
+    TraitSummary:
+      type: object
+      required: [requested, known, unknown, vocabularies]
+      properties:
+        requested:
+          type: integer
+          description: Zahl der angefragten Concept-IDs.
+        known:
+          type: integer
+          description: Zahl der Konzepte, zu denen der Index Zeigerwerte führt.
+        unknown:
+          type: array
+          items:
+            $ref: "#/components/schemas/UnknownConcept"
+        vocabularies:
+          type: object
+          description: Vokabular-ID -> Auswertung. Leer, wenn nichts auflösbar war.
+          additionalProperties:
+            $ref: "#/components/schemas/VocabSummary"
+    UnknownConcept:
+      type: object
+      required: [concept_id, reason]
+      properties:
+        concept_id:
+          type: string
+        reason:
+          type: string
+          enum: [unknown_backbone, unknown_concept]
+          description: >-
+            `unknown_backbone`: das ID-Präfix passt nicht zum Index (Fehler
+            des Aufrufers). `unknown_concept`: richtiges Präfix, aber keine
+            Zeigerwerte vorhanden (Grenze der Daten).
+    VocabSummary:
+      type: object
+      required: [vocab_version, dimensions]
+      properties:
+        vocab_version:
+          type: string
+          example: "1.0"
+        dimensions:
+          type: object
+          description: Dimensions-Kürzel -> Statistik. Dimensionen ohne einen einzigen Wert fehlen.
+          additionalProperties:
+            $ref: "#/components/schemas/DimensionSummary"
+    DimensionSummary:
+      type: object
+      required: [mean, min, max, n, n_missing]
+      properties:
+        mean:
+          type: number
+          description: Arithmetisches Mittel über alle Arten mit Wert in dieser Dimension.
+        mean_niche_weighted:
+          type: number
+          description: >-
+            Mit `1/Nischenbreite` gewichtetes Mittel. **Fehlt** bei
+            Vokabularen ohne Nischenbreiten (Tichý, Midolo) — es wird nie mit
+            dem ungewichteten Mittel gefüllt.
+        sd:
+          type: number
+          description: Stichproben-Standardabweichung (n-1). **Fehlt** bei n < 2.
+        min:
+          type: number
+        max:
+          type: number
+        n:
+          type: integer
+          description: Arten mit Wert in dieser Dimension.
+        n_missing:
+          type: integer
+          description: Bekannte Arten ohne Wert in dieser Dimension.
+        n_excluded_weighted:
+          type: integer
+          description: >-
+            Arten, die aus dem gewichteten Mittel fielen, weil ihre
+            Nischenbreite nicht positiv war. Fehlt, wenn keine betroffen war.
     # Die einheitliche Fehlerhülle jeder Antwort (writeError) — identisch zu
     # hostus. Codes: INVALID_QUERY, NOT_FOUND, INTERNAL_ERROR. Es gibt kein
     # UPSTREAM_UNAVAILABLE: der Lesepfad ist autark, zur Laufzeit hängt kein

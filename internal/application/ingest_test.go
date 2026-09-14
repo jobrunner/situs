@@ -446,6 +446,8 @@ type fakeRepo struct {
 	}
 	allSyntaxaErr error
 	speciesRoles  []domain.SpeciesRole
+	speciesNames  []domain.SpeciesName
+	searchErr     error
 	localizations []domain.Localization
 	distribution  []fakeDistribution
 	traitValues   []fakeTraitValue
@@ -485,6 +487,8 @@ type fakeRepo struct {
 	knownVocabsErr error
 	// traitsErr fails Traits, exercising QueryService.Traits' data-fetch error path.
 	traitsErr error
+	// traitsForConceptsErr fails TraitsForConcepts.
+	traitsForConceptsErr error
 }
 
 // fakeDistribution is one recorded UpsertDistribution call.
@@ -517,6 +521,41 @@ func (r *fakeRepo) ConceptIDs(_ context.Context) ([]string, error) {
 			seen[*s.ConceptID] = true
 			out = append(out, *s.ConceptID)
 		}
+	}
+	return out, nil
+}
+
+func (r *fakeRepo) SearchSpeciesNames(_ context.Context, q string, limit int) ([]domain.SpeciesName, error) {
+	if r.searchErr != nil {
+		return nil, r.searchErr
+	}
+	out := []domain.SpeciesName{}
+	for _, n := range r.speciesNames {
+		if strings.Contains(strings.ToLower(n.VerbatimName), strings.ToLower(q)) {
+			out = append(out, n)
+		}
+	}
+	// Mirrors the real adapter's ORDER BY verbatim_name, concept_id: a caller
+	// relying on the interface's stable-ordering guarantee must see the same
+	// behavior here, including the tie-break when two rows share a name.
+	// NULL sorts before any concept id, same as sqlite ASC.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].VerbatimName != out[j].VerbatimName {
+			return out[i].VerbatimName < out[j].VerbatimName
+		}
+		a, b := out[i].ConceptID, out[j].ConceptID
+		if a == nil {
+			return b != nil
+		}
+		if b == nil {
+			return false
+		}
+		return *a < *b
+	})
+	// Mirrors SQL's LIMIT semantics, including LIMIT 0 meaning zero rows —
+	// the append-then-compare form used before broke exactly on that case.
+	if limit >= 0 && len(out) > limit {
+		out = out[:limit]
 	}
 	return out, nil
 }
@@ -717,6 +756,37 @@ func (r *fakeRepo) Traits(_ context.Context, conceptID string, vocabs []string) 
 	out := make([]domain.TraitSet, 0, len(order))
 	for _, key := range order {
 		out = append(out, *sets[key])
+	}
+	return out, nil
+}
+
+// TraitsForConcepts mirrors the sqlite adapter's contract: it is derived
+// from the same recorded traitValues as Traits (not a separate store), a
+// concept with no rows is absent from the map, and each concept's values
+// come out ordered by vocab then dim — the adapter's ORDER BY concept_id,
+// vocab, dim.
+func (r *fakeRepo) TraitsForConcepts(_ context.Context, conceptIDs []string) (map[string][]domain.TraitValue, error) {
+	if r.traitsForConceptsErr != nil {
+		return nil, r.traitsForConceptsErr
+	}
+	wanted := map[string]bool{}
+	for _, id := range conceptIDs {
+		wanted[id] = true
+	}
+	out := map[string][]domain.TraitValue{}
+	for _, tv := range r.traitValues {
+		if wanted[tv.ConceptID] {
+			out[tv.ConceptID] = append(out[tv.ConceptID], tv.Value)
+		}
+	}
+	for id := range out {
+		values := out[id]
+		sort.Slice(values, func(i, j int) bool {
+			if values[i].Vocab != values[j].Vocab {
+				return values[i].Vocab < values[j].Vocab
+			}
+			return values[i].Dim < values[j].Dim
+		})
 	}
 	return out, nil
 }

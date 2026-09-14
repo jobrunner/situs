@@ -108,6 +108,7 @@ func (s *Server) setupRoutes() *mux.Router {
 	r.Use(s.recoveryMiddleware)
 
 	// Operations surface.
+	r.HandleFunc("/", s.handleExplorer).Methods(http.MethodGet)
 	r.HandleFunc("/health/live", s.handleLiveness).Methods(http.MethodGet)
 	r.HandleFunc("/health/ready", s.handleReadiness).Methods(http.MethodGet)
 	r.Handle("/metrics", promhttp.Handler()).Methods(http.MethodGet)
@@ -118,9 +119,11 @@ func (s *Server) setupRoutes() *mux.Router {
 	r.HandleFunc("/v1/info", s.handleInfo).Methods(http.MethodGet)
 	r.HandleFunc("/v1/habitat-type/{typology}/{code}", s.handleHabitatType).Methods(http.MethodGet)
 	r.HandleFunc("/v1/habitat-type/{typology}/{code}/species", s.handleHabitatTypeSpecies).Methods(http.MethodGet)
+	r.HandleFunc("/v1/species/search", s.handleSpeciesSearch).Methods(http.MethodGet)
 	r.HandleFunc("/v1/species/{conceptId}/habitat-types", s.handleSpeciesHabitatTypes).Methods(http.MethodGet)
 	r.HandleFunc("/v1/species/{conceptId}/traits", s.handleSpeciesTraits).Methods(http.MethodGet)
 	r.HandleFunc("/v1/species/habitat-types", s.handleSpeciesBatch).Methods(http.MethodPost)
+	r.HandleFunc("/v1/species/traits/summary", s.handleSpeciesTraitSummary).Methods(http.MethodPost)
 	r.HandleFunc("/v1/syntaxon/{id}/habitat-types", s.handleSyntaxonHabitatTypes).Methods(http.MethodGet)
 
 	return r

@@ -8,6 +8,7 @@ decken).
 
 | Route | Zweck |
 |---|---|
+| `GET /` | API-Explorer, selbst-enthalten |
 | `GET /health/live` | Liveness-Probe |
 | `GET /health/ready` | Readiness-Probe |
 | `GET /metrics` | Prometheus-Metriken |
@@ -16,10 +17,22 @@ decken).
 | `GET /v1/info` | Name, Version und Selbstauskunft des Index |
 | `GET /v1/habitat-type/{typology}/{code}` | Habitattyp mit Arten, Syntaxa und Crosswalks |
 | `GET /v1/habitat-type/{typology}/{code}/species?role=` | Artenliste, optional nach Rolle gefiltert |
+| `GET /v1/species/search?q=&limit=` | Namenssuche über die im Index geführten `verbatim_name` |
 | `GET /v1/species/{conceptId}/habitat-types` | Habitattypen einer Art (mit Rolle) |
 | `POST /v1/species/habitat-types` | Batch über Konzept-IDs (`concept_ids`) |
 | `GET /v1/syntaxon/{id}/habitat-types` | Habitattypen einer Pflanzengesellschaft |
 | `GET /v1/species/{conceptId}/traits?vocab=` | Zeigerwerte einer Art, optional nach Vokabular gefiltert |
+| `POST /v1/species/traits/summary` | Zeigerwertanalyse über eine Artenliste |
+
+## API-Explorer: `GET /`
+
+Eine selbst-enthaltene Weboberfläche, die jeden Lese-Endpunkt dieses Dienstes
+ausprobierbar macht und dabei die jeweils abgesetzte URL mitzeigt. Stylesheet
+und Skript sind eingebettet, nichts wird aus dem Netz nachgeladen — situs läuft
+lokal und im Feld ohne Netz. Die Seite rechnet **nichts selbst aus**: sie zeigt,
+was der Dienst antwortet, keine eigene Aggregation, kein eigenes Ranking. Die
+Route ist exakt gebunden (`GET /`, kein Prefix-Match), ein unbekannter Pfad
+bleibt `404`.
 
 **Die Leseseite läuft ohne hostus.** Jede Route hier wird allein aus der lokalen
 SQLite-Datei beantwortet; kein Lesepfad ruft einen Upstream-Dienst. hostus wird
@@ -49,6 +62,75 @@ Anhang-I-Entsprechungen, in beiden Richtungen abfragbar. Sie ist leer, wenn es
 keine gibt — bei Anhang I ist das der Normalfall. Der Qualifier liest sich immer
 als „abgefragter Typ *qualifier* dieser Typ"; eine gespeicherte Zeile, die auf
 den abgefragten Typ zeigt, wird dafür invertiert (`<` ↔ `>`).
+
+## Namenssuche: `GET /v1/species/search`
+
+Sucht einen Teilstring (case-insensitiv) in den `verbatim_name`, die **dieser
+Index selbst** trägt, und liefert die zugehörige Concept-ID mit:
+
+```json
+[
+  {"verbatim_name": "Fagus orientalis", "concept_id": null},
+  {"verbatim_name": "Fagus sylvatica", "concept_id": "wcvp:concept:83891"}
+]
+```
+
+**Das ist keine Namensauflösung.** Kein Fuzzy-Matching, keine Synonyme, keine
+Autorenvarianten, kein Backbone-Wissen — dafür ist hostus zuständig. Diese
+Route beantwortet ausschließlich „welche Namen kennt *dieser* Index", nicht
+„was heißt dieser Name". `concept_id: null` heißt, dass der Ingest den Namen
+nicht auflösen konnte; solche Treffer werden **mitgeliefert und nicht
+gefiltert**, weil sie zur Wahrheit über den Index gehören — eine gefilterte
+Liste würde eine höhere Auflösungsquote behaupten, als der Index tatsächlich
+hat. Gemessen am gepinnten Datenstand führt der **fertige Index** **3780**
+distinkte `verbatim_name`, davon **3314** mit Concept-ID — das schließt die
+Mitgliedsarten ein, die erst durch die Aggregat-Ableitung (`provenance =
+'derived_from_aggregate'`) hinzukommen. Das ist eine andere Grundgesamtheit
+als die **3587** Artennamen in [measured-index.md](measured-index.md), die die
+**Eingabe** misst — die Namen aus `species_roles.csv` vor der
+Aggregat-Ableitung.
+
+`q` ist Pflicht: leer (oder nur Whitespace) ist `INVALID_QUERY`, nicht „liefere
+alles". `limit` hat die Vorgabe **20** und das Maximum **100**; ein Wert
+außerhalb davon oder ein nicht ganzzahliger Wert ist ebenfalls
+`INVALID_QUERY` — ein verschluckter Tippfehler, der still auf einen anderen
+Wert zurückfällt, wäre die Fehlerquelle, die diese Prüfung vermeidet. Die
+Treffer sind nach Namen sortiert.
+
+## Zeigerwertanalyse: `POST /v1/species/traits/summary`
+
+Mittelt die Zeigerwerte (EIVE, Tichý, Midolo) einer Artenliste — der Body ist
+derselbe Konzept-ID-Satz wie bei `POST /v1/species/habitat-types`:
+
+```json
+{"concept_ids": ["wcvp:concept:83891", "wcvp:concept:2692970"]}
+```
+
+Gemessen am gepinnten Datenstand: eine Abfrage über zwei Arten liefert für EIVE
+5 von 5 Dimensionen mit gewichtetem Mittel, für Tichý 0 von 6 und für Midolo 0
+von 5 — die Trennung nach Vokabular hält also im echten Betrieb, nicht nur auf
+dem Papier.
+
+Die Rechenregeln:
+
+| Regel | Warum |
+|---|---|
+| Gemittelt wird **strikt je Vokabular und Dimension**, nie darüber hinweg | EIVE (0–10) und Tichý (1–12) sind verschiedene Skalen; ihr gemeinsames Mittel wäre eine erfundene Zahl |
+| `mean_niche_weighted` gewichtet mit `1/Nischenbreite` | eine schmale Nische ist der präzisere Standortanzeiger |
+| `mean_niche_weighted` **fehlt** bei Vokabularen ohne Nischenbreiten (Tichý, Midolo) | es wird nie mit dem ungewichteten Mittel gefüllt — sonst ließe sich Gewichtet nicht mehr von Ungewichtet unterscheiden |
+| Arten mit Nischenbreite ≤ 0 fallen aus dem gewichteten Mittel und zählen in `n_excluded_weighted` | eine Division durch eine nicht positive Breite wäre kein Gewicht, sondern ein Datenfehler, der sichtbar bleiben muss |
+| `sd` ist die Stichproben-Standardabweichung (Teiler n−1) und **fehlt bei n < 2** | aus einem Messwert lässt sich keine Streuung berechnen; eine `0` würde Übereinstimmung behaupten |
+| `n` und `n_missing` stehen **je Dimension**, nicht global | EIVE deckt L/M/N/R/T ungleichmäßig ab — ein Mittel über 3 von 18 Arten ist eine andere Aussage als eines über 17 von 18 |
+
+Unbekannte Concept-IDs sind kein Fehler, sondern kommen mit derselben
+Begründung wie bei `POST /v1/species/habitat-types` zurück
+(`unknown_backbone` bei unpassendem Präfix, `unknown_concept` bei passendem
+Präfix ohne Daten). Eine Anfrage, in der kein einziges Konzept auflösbar ist,
+ist ein normales **200** mit leeren `vocabularies`, kein `NOT_FOUND` — die
+Analyse einer Liste ganz unbekannter Arten ist eine gültige, wenn auch leere
+Antwort. Ein leeres `concept_ids`-Array bleibt dagegen `INVALID_QUERY`, wie
+beim Batch-Endpunkt, mit denselben Grenzen (Body 1 MiB, höchstens 300
+Einträge, siehe unten).
 
 ## Zeigerwerte: `GET /v1/species/{conceptId}/traits`
 
@@ -166,7 +248,9 @@ und das `concept_ids`-Array auf **300 Einträge** (`maxItems` in der
 Spezifikation). Beides ergibt `INVALID_QUERY` (400). Die Array-Grenze ist nötig,
 weil die Byte-Grenze sie nicht impliziert: 1 MiB kurzer IDs sind Zehntausende
 Einträge, und jede verschiedene kostet eine Handvoll Index-Abfragen. 300 liegt
-weit über jeder realistischen Geländeaufnahme.
+weit über jeder realistischen Geländeaufnahme. `POST /v1/species/traits/summary`
+teilt dieselben beiden Grenzen — beide Routen dekodieren denselben Body und
+denselben `batchRequest`.
 
 Doppelte IDs sind erlaubt. Die Index-Arbeit wird intern dedupliziert, die Antwort
 trägt aber **einen Eintrag je Eingabe-ID in Eingabereihenfolge**, sodass
@@ -174,7 +258,10 @@ trägt aber **einen Eintrag je Eingabe-ID in Eingabereihenfolge**, sodass
 bestehender Eintrag wird **abgewiesen**, nicht übersprungen: übersprungen würde
 er die Liste eines vertrauenden Clients um eins verschieben, und
 `unknown_backbone` wäre gelogen, weil ein leerer String keine andere Backbone
-ist. Ein leeres `concept_ids` ist ebenfalls `INVALID_QUERY`.
+ist. Ein leeres `concept_ids` ist ebenfalls `INVALID_QUERY`. Für die
+Zeigerwertanalyse gilt dieselbe Ablehnung leerer Einträge; die
+Index-Reihenfolge-Garantie gilt dort nicht, weil ihre Antwort keine Liste je
+Eingabe ist, sondern je Vokabular/Dimension aggregiert.
 
 ## Gebietsfilter: `?area=` und `?only_in_area=`
 

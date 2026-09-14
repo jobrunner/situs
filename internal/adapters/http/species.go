@@ -59,18 +59,40 @@ func (s *Server) handleSpeciesBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	asked, ok := s.decodeConceptIDs(w, r)
+	if !ok {
+		return
+	}
+
+	resolutions, err := s.deps.Query.SpeciesSetHabitatTypes(r.Context(), asked, language(r), filter)
+	if err != nil {
+		s.writeQueryError(w, r, err)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, resolutions)
+}
+
+// decodeConceptIDs decodes and validates the {"concept_ids":[...]} body shared
+// by the batch and trait-summary routes: same size bounds, same refusal to
+// silently swallow a second JSON object, same rejection of a blank or absent
+// entry, same rejection of an altogether empty list — asking about nothing is
+// a mistake in the caller, not a question, and none of these bodies should
+// reach the use case to find that out. ok is false once an error response has
+// already been written, in which case the caller must return without doing
+// anything else.
+func (s *Server) decodeConceptIDs(w http.ResponseWriter, r *http.Request) ([]string, bool) {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBatchBodyBytes))
 	dec.DisallowUnknownFields()
 	var req batchRequest
 	if err := dec.Decode(&req); err != nil {
 		s.writeError(w, http.StatusBadRequest, CodeInvalidQuery, "request body must be {\"concept_ids\":[...]}")
-		return
+		return nil, false
 	}
 	// Without this, a body of two concatenated objects decodes the first and
 	// silently discards the rest — the caller would believe it sent both.
 	if err := dec.Decode(new(any)); !errors.Is(err, io.EOF) {
 		s.writeError(w, http.StatusBadRequest, CodeInvalidQuery, "request body must hold exactly one JSON object")
-		return
+		return nil, false
 	}
 
 	// The bound is on the raw array length, because that is what `maxItems: 300`
@@ -80,7 +102,7 @@ func (s *Server) handleSpeciesBatch(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, CodeInvalidQuery,
 			fmt.Sprintf("concept_ids holds %d entries, at most %d are accepted",
 				len(req.ConceptIDs), maxBatchConceptIDs))
-		return
+		return nil, false
 	}
 
 	// Every id in input order, duplicates included: the answer carries one entry
@@ -97,20 +119,14 @@ func (s *Server) handleSpeciesBatch(w http.ResponseWriter, r *http.Request) {
 		if id = strings.TrimSpace(id); id == "" {
 			s.writeError(w, http.StatusBadRequest, CodeInvalidQuery,
 				fmt.Sprintf("concept_ids[%d] is empty; every entry must be a concept id", i))
-			return
+			return nil, false
 		}
 		asked = append(asked, id)
 	}
 	if len(asked) == 0 {
 		s.writeError(w, http.StatusBadRequest, CodeInvalidQuery,
 			"concept_ids must hold at least one concept id")
-		return
+		return nil, false
 	}
-
-	resolutions, err := s.deps.Query.SpeciesSetHabitatTypes(r.Context(), asked, language(r), filter)
-	if err != nil {
-		s.writeQueryError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, resolutions)
+	return asked, true
 }
