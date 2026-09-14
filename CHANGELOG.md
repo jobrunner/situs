@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.4.0](https://github.com/jobrunner/situs/compare/v0.3.0...v0.4.0) (2026-09-14)
+
+
+### Features
+
+* API-Explorer unter / plus Namenssuche und Zeigerwertanalyse ([00c4416](https://github.com/jobrunner/situs/commit/00c441625da17305980024da7e6d30341ef7b494))
+* **application:** pure indicator-value statistics over a species list ([16fd974](https://github.com/jobrunner/situs/commit/16fd97410e1b1ff281172673eb3c3da37ad89bda))
+* **http:** GET /v1/species/search over the index's own names ([dc245d1](https://github.com/jobrunner/situs/commit/dc245d1e54d2317820228c44dbcc59c20a009407))
+* **http:** POST /v1/species/traits/summary — indicator-value analysis ([5264375](https://github.com/jobrunner/situs/commit/52643753670b34504003ed8be4a5662d9beb3a9e))
+* **http:** self-contained API explorer at / ([cf78b71](https://github.com/jobrunner/situs/commit/cf78b71c755f6bf6b7ad6d56640fbc0ebc2a5668))
+* **sqlite:** search the index's own verbatim species names ([8d120aa](https://github.com/jobrunner/situs/commit/8d120aac8ff44c7d64d5831cbe83e4cad62d6b9c))
+* **sqlite:** TraitsForConcepts reads many concepts in one query ([93f776e](https://github.com/jobrunner/situs/commit/93f776e5e68a99b2058d870f3221cb8d54dc7bda))
+
+
+### Bug Fixes
+
+* address PR [#28](https://github.com/jobrunner/situs/issues/28) review findings round 2 ([03a7859](https://github.com/jobrunner/situs/commit/03a78594c55839445f6a70a0307c1391bac165c9))
+* **application:** guard trait summary against mixed vocab versions ([ce4f696](https://github.com/jobrunner/situs/commit/ce4f69616a8aeb9cc16668ecbc91c710eca6f8da))
+* **application:** match fakeRepo.SearchSpeciesNames to the real adapter ([50c56a9](https://github.com/jobrunner/situs/commit/50c56a97a791d679ecacb4c94975b8bfab403c5a))
+* **explorer:** live-search race, keyboard access, and empty ?limit= ([e0f6160](https://github.com/jobrunner/situs/commit/e0f6160aaeaf326198a7fe006c3e4037c07b3105))
+* **http:** move q/limit validation to the use case, keep only parsability in the handler ([8221a53](https://github.com/jobrunner/situs/commit/8221a53c908d81b25f4cd05fadfe5e49ca3698bf))
+* **http:** reject explicit limit=0 as INVALID_QUERY, dedupe concept_ids body decode ([13b1797](https://github.com/jobrunner/situs/commit/13b1797180104cd0bc9492a41f0d89c23793c50e))
+* **review:** tighten OpenAPI q/concept_ids schemas, catch explorer fetches, annotate stale plan signature ([75cf2bc](https://github.com/jobrunner/situs/commit/75cf2bcab66005752d5b7be40c9b175924be5b0a))
+
 ## [0.3.0](https://github.com/jobrunner/situs/compare/v0.2.0...v0.3.0) (2026-08-30)
 
 
