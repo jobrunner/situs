@@ -332,7 +332,10 @@ type QueryService interface {
 	Traits(ctx context.Context, conceptID, vocab string) ([]TraitSetView, error)
 	// SearchSpecies finds index-own verbatim names containing q. It is not
 	// name resolution (no fuzzy, no synonyms) — see the repository port.
-	SearchSpecies(ctx context.Context, query string, limit int) ([]SpeciesSearchHit, error)
+	// limit == nil means "unset" and takes DefaultSearchLimit; a non-nil
+	// limit outside [1, MaxSearchLimit] — including an explicit 0 — is
+	// rejected rather than clamped or silently defaulted.
+	SearchSpecies(ctx context.Context, query string, limit *int) ([]SpeciesSearchHit, error)
 	// SpeciesTraitSummary aggregates the indicator values of a species list,
 	// strictly per vocabulary and dimension — never across vocabularies,
 	// whose scales differ.

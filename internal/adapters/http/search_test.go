@@ -60,6 +60,17 @@ func TestSearchRoute_UnparsableLimitIs400(t *testing.T) {
 	}
 }
 
+func TestSearchRoute_ExplicitZeroLimitIs400(t *testing.T) {
+	srv := newTestServer(t, seededQueryService())
+
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/species/search?q=fagus&limit=0", nil))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for an explicit limit=0; a client that mistypes limit must not silently get the default", rec.Code)
+	}
+}
+
 func TestSearchRoute_OversizedLimitIs400(t *testing.T) {
 	srv := newTestServer(t, seededQueryService())
 

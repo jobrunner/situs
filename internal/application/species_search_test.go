@@ -10,6 +10,8 @@ import (
 	"github.com/jobrunner/situs/internal/ports/input"
 )
 
+func intPtr(n int) *int { return &n }
+
 func TestSearchSpecies_MapsHitsIncludingUnresolvedOnes(t *testing.T) {
 	repo := newFakeRepo()
 	repo.speciesNames = []domain.SpeciesName{
@@ -17,7 +19,7 @@ func TestSearchSpecies_MapsHitsIncludingUnresolvedOnes(t *testing.T) {
 		{VerbatimName: "Fagus orientalis"},
 	}
 
-	got, err := NewQueryService(repo).SearchSpecies(context.Background(), "fagus", 20)
+	got, err := NewQueryService(repo).SearchSpecies(context.Background(), "fagus", intPtr(20))
 	if err != nil {
 		t.Fatalf("SearchSpecies: %v", err)
 	}
@@ -45,23 +47,24 @@ func TestSearchSpecies_MapsHitsIncludingUnresolvedOnes(t *testing.T) {
 
 func TestSearchSpecies_EmptyQueryIsInvalid(t *testing.T) {
 	for _, q := range []string{"", "   "} {
-		_, err := NewQueryService(newFakeRepo()).SearchSpecies(context.Background(), q, 20)
+		_, err := NewQueryService(newFakeRepo()).SearchSpecies(context.Background(), q, intPtr(20))
 		if !errors.Is(err, input.ErrInvalidQuery) {
 			t.Errorf("SearchSpecies(%q) error = %v, want ErrInvalidQuery", q, err)
 		}
 	}
 }
 
-// Zero means "unset" and takes the default; a negative or oversized value is
-// a malformed request, not something to silently clamp.
-func TestSearchSpecies_LimitZeroTakesTheDefault(t *testing.T) {
+// A missing limit (nil) means "unset" and takes the default; a negative,
+// zero, or oversized value is a malformed request, not something to silently
+// clamp or default.
+func TestSearchSpecies_MissingLimitTakesTheDefault(t *testing.T) {
 	repo := newFakeRepo()
 	repo.speciesNames = make([]domain.SpeciesName, 50)
 	for i := range repo.speciesNames {
 		repo.speciesNames[i] = domain.SpeciesName{VerbatimName: "Aaa" + strings.Repeat("a", i)}
 	}
 
-	got, err := NewQueryService(repo).SearchSpecies(context.Background(), "aaa", 0)
+	got, err := NewQueryService(repo).SearchSpecies(context.Background(), "aaa", nil)
 	if err != nil {
 		t.Fatalf("SearchSpecies: %v", err)
 	}
@@ -70,9 +73,9 @@ func TestSearchSpecies_LimitZeroTakesTheDefault(t *testing.T) {
 	}
 }
 
-func TestSearchSpecies_RejectsNegativeAndOversizedLimit(t *testing.T) {
-	for _, limit := range []int{-1, input.MaxSearchLimit + 1} {
-		_, err := NewQueryService(newFakeRepo()).SearchSpecies(context.Background(), "fagus", limit)
+func TestSearchSpecies_RejectsZeroNegativeAndOversizedLimit(t *testing.T) {
+	for _, limit := range []int{0, -1, input.MaxSearchLimit + 1} {
+		_, err := NewQueryService(newFakeRepo()).SearchSpecies(context.Background(), "fagus", intPtr(limit))
 		if !errors.Is(err, input.ErrInvalidQuery) {
 			t.Errorf("SearchSpecies(limit=%d) error = %v, want ErrInvalidQuery", limit, err)
 		}
@@ -83,7 +86,7 @@ func TestSearchSpecies_RepositoryErrorIsWrapped(t *testing.T) {
 	repo := newFakeRepo()
 	repo.searchErr = errors.New("disk on fire")
 
-	_, err := NewQueryService(repo).SearchSpecies(context.Background(), "fagus", 20)
+	_, err := NewQueryService(repo).SearchSpecies(context.Background(), "fagus", intPtr(20))
 	if err == nil {
 		t.Fatal("SearchSpecies with a failing repository = nil error, want an error")
 	}
@@ -93,7 +96,7 @@ func TestSearchSpecies_RepositoryErrorIsWrapped(t *testing.T) {
 }
 
 func TestSearchSpecies_NoMatchIsAnEmptySliceNotNil(t *testing.T) {
-	got, err := NewQueryService(newFakeRepo()).SearchSpecies(context.Background(), "quercus", 20)
+	got, err := NewQueryService(newFakeRepo()).SearchSpecies(context.Background(), "quercus", intPtr(20))
 	if err != nil {
 		t.Fatalf("SearchSpecies: %v", err)
 	}

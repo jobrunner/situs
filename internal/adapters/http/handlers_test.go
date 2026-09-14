@@ -892,18 +892,18 @@ func (f *fakeQueryService) SpeciesTraitSummary(_ context.Context, conceptIDs []s
 	return summary, nil
 }
 
-func (f *fakeQueryService) SearchSpecies(_ context.Context, q string, limit int) ([]input.SpeciesSearchHit, error) {
+func (f *fakeQueryService) SearchSpecies(_ context.Context, q string, limit *int) ([]input.SpeciesSearchHit, error) {
 	if f.searchErr != nil {
 		return nil, f.searchErr
 	}
 	// Mirrors the real use case's contract, not its implementation: an
-	// empty/whitespace-only q and a limit outside [1, MaxSearchLimit] are
-	// rejected with input.ErrInvalidQuery; limit == 0 means "unset" and is
-	// not one of those rejected values.
+	// empty/whitespace-only q and a non-nil limit outside [1, MaxSearchLimit]
+	// — an explicit 0 included — are rejected with input.ErrInvalidQuery;
+	// limit == nil means "unset" and is not one of those rejected values.
 	if strings.TrimSpace(q) == "" {
 		return nil, fmt.Errorf("q must not be empty: %w", input.ErrInvalidQuery)
 	}
-	if limit != 0 && (limit < 0 || limit > input.MaxSearchLimit) {
+	if limit != nil && (*limit <= 0 || *limit > input.MaxSearchLimit) {
 		return nil, fmt.Errorf("limit must be between 1 and %d: %w", input.MaxSearchLimit, input.ErrInvalidQuery)
 	}
 	out := []input.SpeciesSearchHit{}
@@ -911,7 +911,7 @@ func (f *fakeQueryService) SearchSpecies(_ context.Context, q string, limit int)
 		if strings.Contains(strings.ToLower(h.VerbatimName), strings.ToLower(q)) {
 			out = append(out, h)
 		}
-		if limit > 0 && len(out) == limit {
+		if limit != nil && len(out) == *limit {
 			break
 		}
 	}
