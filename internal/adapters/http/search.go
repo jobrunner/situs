@@ -7,18 +7,21 @@ import (
 
 // handleSpeciesSearch answers the index-own name search.
 //
-// An absent limit is nil ("unset") and lets the use case apply its default;
-// an unparsable one is rejected rather than treated as absent, because a
-// typo'd limit silently answering a different question is the failure mode
-// this route would otherwise have. Parsability is the only check made here:
+// A limit key that is absent altogether is nil ("unset") and lets the use
+// case apply its default; a limit key that is present — including an
+// explicitly empty "?limit=" — but fails to parse is rejected rather than
+// treated as absent, because a typo'd limit silently answering a different
+// question is the failure mode this route would otherwise have. Presence is
+// checked with Query().Has, since Query().Get alone cannot tell "missing"
+// from "present but empty" apart. Parsability is the only check made here:
 // it is genuinely HTTP's concern, the only place the raw string exists.
 // Whether q is empty and whether limit is in range — an explicit 0 included
 // — are rules of the query itself, not of the transport: the use case
 // enforces those, for every future caller, not just this one handler.
 func (s *Server) handleSpeciesSearch(w http.ResponseWriter, r *http.Request) {
 	var limit *int
-	if raw := r.URL.Query().Get("limit"); raw != "" {
-		parsed, err := strconv.Atoi(raw)
+	if r.URL.Query().Has("limit") {
+		parsed, err := strconv.Atoi(r.URL.Query().Get("limit"))
 		if err != nil {
 			s.writeError(w, http.StatusBadRequest, CodeInvalidQuery,
 				"limit must be a whole number")

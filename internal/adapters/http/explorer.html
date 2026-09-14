@@ -34,9 +34,12 @@
   th, td { text-align:left; padding:.3rem .5rem; border-bottom:1px solid var(--line); }
   th { color:var(--muted); font-weight:600; }
   .hits { list-style:none; padding:0; margin:.5rem 0 0; max-height:12rem; overflow:auto; }
-  .hits li { padding:.3rem .5rem; cursor:pointer; border-radius:3px; }
-  .hits li:hover { background:rgba(128,128,128,.12); }
-  .hits li.unresolved { color:var(--warn); cursor:not-allowed; }
+  .hits li { padding:0; border-radius:3px; }
+  .hits li.unresolved { padding:.3rem .5rem; color:var(--warn); cursor:not-allowed; }
+  .hits button.hit { display:block; width:100%; text-align:left; padding:.3rem .5rem;
+                     border:none; border-radius:3px; background:transparent; color:inherit;
+                     font:inherit; cursor:pointer; }
+  .hits button.hit:hover, .hits button.hit:focus-visible { background:rgba(128,128,128,.12); }
   .note { font-size:.8rem; color:var(--muted); margin-top:.5rem; }
 </style>
 </head>
@@ -266,17 +269,29 @@ function parseIds(text) {
 // Name search, shared by every panel that takes a concept id. A hit without
 // a concept id is shown but not selectable — the index knows the name, it
 // just could not resolve it.
+//
+// Each input field tracks its own request generation on the element itself:
+// bumped before the fetch, checked after the await. A response that is no
+// longer for the latest keystroke — arrived late, or the field was since
+// cleared — is discarded instead of overwriting a newer (or empty) list.
 async function search(inputEl, listEl, targetEl) {
   const q = inputEl.value.trim();
+  const generation = (inputEl._searchGeneration || 0) + 1;
+  inputEl._searchGeneration = generation;
   if (!q) { listEl.innerHTML = ""; return; }
   const res = await fetch(`/v1/species/search?q=${encodeURIComponent(q)}`);
   const hits = await res.json();
+  if (inputEl._searchGeneration !== generation) { return; }
   listEl.innerHTML = "";
   for (const h of hits) {
     const li = document.createElement("li");
     if (h.concept_id) {
-      li.textContent = `${h.verbatim_name} — ${h.concept_id}`;
-      li.onclick = () => { targetEl.value = h.concept_id; listEl.innerHTML = ""; };
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "hit";
+      btn.textContent = `${h.verbatim_name} — ${h.concept_id}`;
+      btn.onclick = () => { targetEl.value = h.concept_id; listEl.innerHTML = ""; };
+      li.appendChild(btn);
     } else {
       li.textContent = `${h.verbatim_name} — nicht aufgelöst`;
       li.className = "unresolved";

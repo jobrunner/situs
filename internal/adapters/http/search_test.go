@@ -71,6 +71,17 @@ func TestSearchRoute_ExplicitZeroLimitIs400(t *testing.T) {
 	}
 }
 
+func TestSearchRoute_ExplicitEmptyLimitIs400(t *testing.T) {
+	srv := newTestServer(t, seededQueryService())
+
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/species/search?q=fagus&limit=", nil))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for an explicit but empty limit; it must not be mistaken for an absent one", rec.Code)
+	}
+}
+
 func TestSearchRoute_OversizedLimitIs400(t *testing.T) {
 	srv := newTestServer(t, seededQueryService())
 
