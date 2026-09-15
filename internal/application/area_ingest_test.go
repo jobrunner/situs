@@ -218,3 +218,24 @@ func TestIngestAreas_SkipsAForeignAreaScheme(t *testing.T) {
 		t.Errorf("areas = %+v, want only the row in the one scheme situs stores", repo.areas)
 	}
 }
+
+// `situs ingest --csv-dir .` hands IngestAreas a bare relative filename, whose
+// directory half is "" — which os.OpenRoot (csvReader's confinement) does not
+// read as "the current directory". The file exists, so the ingest must read it.
+func TestIngestAreas_ReadsABareRelativePath(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "wgsrpd_areas.csv"),
+		[]byte(areaHeader+"wgsrpd_l3,GER,Germany\n"), 0o600); err != nil {
+		t.Fatalf("writing the CSV: %v", err)
+	}
+	t.Chdir(dir)
+	repo := newFakeRepo()
+
+	rep, err := IngestAreas(context.Background(), repo, "wgsrpd_areas.csv")
+	if err != nil {
+		t.Fatalf("IngestAreas on a bare relative path: %v", err)
+	}
+	if rep.Areas != 1 {
+		t.Errorf("report = %+v, want the one row read", rep)
+	}
+}

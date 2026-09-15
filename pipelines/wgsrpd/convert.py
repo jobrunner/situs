@@ -2,7 +2,7 @@
 """tblLevel3.txt (WGSRPD 2nd Edition) -> wgsrpd_areas.csv.
 
 The source is a `*`-separated, CRLF-terminated, cp1252-encoded export of the
-TDWG geography database ("Fo/royar", "Gala/pagos" carry the non-ASCII bytes).
+TDWG geography database ("Føroyar", "Galápagos" carry the non-ASCII bytes).
 Only level 3 is emitted: situs stores exactly one area scheme (wgsrpd_l3),
 and the level 1/2 hierarchy has no reader yet.
 

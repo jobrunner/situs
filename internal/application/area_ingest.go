@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 
 	"github.com/jobrunner/situs/internal/domain"
 	"github.com/jobrunner/situs/internal/ports/output"
@@ -62,7 +61,10 @@ func IngestAreas(ctx context.Context, repo output.Repository, csvPath string) (A
 // distribution row. An empty name is not a defect — the code is the fact, the
 // name the overlay.
 func ingestAreaRows(ctx context.Context, tx output.IngestTx, csvPath string) (AreaReport, error) {
-	dir, file := filepath.Split(csvPath)
+	// splitCSVPath, not filepath.Split: a bare relative filename (what
+	// `--csv-dir .` produces) splits to dir="", which os.OpenRoot does not
+	// read as the current directory.
+	dir, file := splitCSVPath(csvPath)
 	var rep AreaReport
 	skip := newRowSkipper(&rep.SkippedRows, file, "area")
 
