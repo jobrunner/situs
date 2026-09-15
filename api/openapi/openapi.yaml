@@ -124,6 +124,31 @@ paths:
                 $ref: "#/components/schemas/Info"
         "500":
           $ref: "#/components/responses/InternalError"
+  /v1/typologies:
+    get:
+      summary: Alle geführten Typologien
+      description: >-
+        Jede Habitattyp-Route adressiert immer über (typology, code) — diese
+        Route ist der Einstiegspunkt, der die gültigen `typology`-Werte
+        überhaupt bekannt macht, statt sie in der Doku nachschlagen zu
+        müssen. Sortiert nach `id`, damit dieselbe Anfrage stabil dieselbe
+        Reihenfolge liefert. `habitat_types` ist wie jede Zahl in `/v1/info`
+        am Index **gemessen**, nie konfiguriert: `0` heißt, die Typologie ist
+        registriert, aber (noch) nicht gefüllt — eine ehrliche Aussage, kein
+        Fehler. Die Antwort ist immer ein Array, auch wenn der Index keine
+        Typologie führt.
+      operationId: typologies
+      responses:
+        "200":
+          description: Alle Typologien, nach `id` sortiert.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TypologyView"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /v1/habitat-type/{typology}/{code}:
     get:
       summary: Ein Habitattyp mit Arten, Syntaxa und Crosswalks
@@ -740,6 +765,35 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/HabitatTypeRole"
+    TypologyView:
+      description: >-
+        Eine Typologie: eine Klassifikationssystem-Fassung, z. B.
+        `eunis@2021`, `eunis@2012` oder `annex1`. `habitat_types` ist die
+        gemessene Zahl der Habitattypen dieser Typologie im Index.
+      type: object
+      required: [id, scheme, version, name, source_ref, habitat_types]
+      properties:
+        id:
+          type: string
+          example: annex1
+        scheme:
+          type: string
+          example: annex1
+        version:
+          type: string
+          example: 92/43/EEC
+        name:
+          type: string
+          example: Habitats Directive Annex I
+        source_ref:
+          type: string
+        habitat_types:
+          type: integer
+          description: >-
+            Zahl der Habitattypen dieser Typologie, am Index gemessen. 0 ist
+            eine ehrliche Aussage — registriert, aber nicht gefüllt —, kein
+            Fehler.
+          example: 205
     Info:
       type: object
       required: [service, version, index]

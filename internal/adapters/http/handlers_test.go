@@ -860,6 +860,16 @@ type fakeQueryService struct {
 	// returns, keyed by concept id.
 	traitSummaries  map[string]map[string]input.VocabSummary
 	traitSummaryErr error
+	// typologies/typologiesErr control what Typologies returns.
+	typologies    []input.TypologyView
+	typologiesErr error
+}
+
+func (f *fakeQueryService) Typologies(context.Context) ([]input.TypologyView, error) {
+	if f.typologiesErr != nil {
+		return nil, f.typologiesErr
+	}
+	return f.typologies, nil
 }
 
 // SpeciesTraitSummary mirrors the use case's contract closely enough for the
@@ -977,6 +987,10 @@ func seededQueryService() *fakeQueryService {
 			"wcvp:concept:1": {{HabitatTypeSummary: r22, Role: input.RoleDiagnostic, Syntaxa: syntaxa}},
 		},
 		bySyntaxon: map[string][]input.HabitatTypeSummary{"BRO-01A": {r22}},
+		typologies: []input.TypologyView{
+			{ID: "annex1", Scheme: "annex1", Version: "92/43/EEC", Name: "Habitats Directive Annex I", HabitatTypes: 1},
+			{ID: "eunis@2021", Scheme: "eunis", Version: "2021", Name: "EUNIS 2021", HabitatTypes: 2},
+		},
 		indexInfo: input.IndexInfo{
 			ConceptBackbones:   []string{"wcvp"},
 			SpeciesWithConcept: 2,

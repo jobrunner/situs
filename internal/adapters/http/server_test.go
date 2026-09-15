@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	httpapi "github.com/jobrunner/situs/internal/adapters/http"
+	"github.com/jobrunner/situs/internal/ports/input"
 )
 
 func serve(t *testing.T, srv *httpapi.Server, method, target string) *httptest.ResponseRecorder {
@@ -82,6 +83,67 @@ func TestInfoFailsLoudlyWhenTheIndexCannotBeDescribed(t *testing.T) {
 	q.indexInfoErr = errors.New("index unreadable")
 
 	rec := serve(t, newTestServer(t, q), http.MethodGet, "/v1/info")
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "INTERNAL_ERROR") {
+		t.Errorf("body = %q, want the INTERNAL_ERROR envelope", rec.Body)
+	}
+}
+
+// GET /v1/typologies is the discovery entry point for (typology, code)
+// addressing: a client learns which typologies exist, sorted by id, without
+// guessing eunis@2021 and never finding eunis@2012 or annex1.
+func TestTypologiesListsSortedByID(t *testing.T) {
+	rec := serve(t, newTestServer(t, seededQueryService()), http.MethodGet, "/v1/typologies")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got []struct {
+		ID           string `json:"id"`
+		Scheme       string `json:"scheme"`
+		Version      string `json:"version"`
+		Name         string `json:"name"`
+		HabitatTypes int    `json:"habitat_types"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding body %q: %v", rec.Body, err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("typologies = %+v, want 2 entries", got)
+	}
+	if got[0].ID != "annex1" || got[1].ID != "eunis@2021" {
+		t.Errorf("ids = [%s, %s], want [annex1, eunis@2021] (sorted)", got[0].ID, got[1].ID)
+	}
+	if got[1].HabitatTypes != 2 {
+		t.Errorf("eunis@2021 habitat_types = %d, want 2", got[1].HabitatTypes)
+	}
+}
+
+// The response is always an array, even when the index carries no typology at
+// all — never null, so a client can range over it unconditionally.
+func TestTypologiesIsAlwaysAnArrayNeverNull(t *testing.T) {
+	q := seededQueryService()
+	q.typologies = []input.TypologyView{}
+
+	rec := serve(t, newTestServer(t, q), http.MethodGet, "/v1/typologies")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := strings.TrimSpace(rec.Body.String())
+	if body != "[]" {
+		t.Errorf("body = %q, want the literal empty array [], never null", body)
+	}
+}
+
+func TestTypologiesFailsLoudlyOnRepositoryError(t *testing.T) {
+	q := seededQueryService()
+	q.typologiesErr = errors.New("index unreadable")
+
+	rec := serve(t, newTestServer(t, q), http.MethodGet, "/v1/typologies")
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", rec.Code)

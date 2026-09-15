@@ -109,6 +109,70 @@ func TestTypology_RoundTripAndNotFound(t *testing.T) {
 	}
 }
 
+// TestTypologies_CountsHabitatTypesAndSortsByID exercises the LEFT JOIN
+// count: eunis@2021 carries two seeded habitat types (r22, r99), annex1
+// carries one (lrt). A third, freshly registered typology with no habitat
+// types must still appear, with a measured 0 — not be silently dropped by
+// the join.
+func TestTypologies_CountsHabitatTypesAndSortsByID(t *testing.T) {
+	db := openSeededDB(t)
+	ctx := t.Context()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertTypology(domain.Typology{ID: "eunis@2012", Scheme: "eunis", Version: "2012"}); err != nil {
+		t.Fatalf("UpsertTypology: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.Typologies(ctx)
+	if err != nil {
+		t.Fatalf("Typologies: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("Typologies = %+v, want 3 entries", got)
+	}
+	// Sorted by id: annex1 < eunis@2012 < eunis@2021.
+	wantIDs := []domain.TypologyID{"annex1", "eunis@2012", "eunis@2021"}
+	for i, want := range wantIDs {
+		if got[i].Typology.ID != want {
+			t.Errorf("Typologies[%d].ID = %s, want %s", i, got[i].Typology.ID, want)
+		}
+	}
+	counts := map[domain.TypologyID]int{}
+	for _, s := range got {
+		counts[s.Typology.ID] = s.HabitatTypes
+	}
+	if counts["eunis@2021"] != 2 {
+		t.Errorf("eunis@2021 habitat_types = %d, want 2", counts["eunis@2021"])
+	}
+	if counts["annex1"] != 1 {
+		t.Errorf("annex1 habitat_types = %d, want 1", counts["annex1"])
+	}
+	if counts["eunis@2012"] != 0 {
+		t.Errorf("eunis@2012 habitat_types = %d, want 0 (registered but empty)", counts["eunis@2012"])
+	}
+}
+
+func TestTypologies_EmptyIndexReturnsEmptySliceNotNil(t *testing.T) {
+	db := openTestDB(t)
+
+	got, err := db.Typologies(t.Context())
+	if err != nil {
+		t.Fatalf("Typologies: %v", err)
+	}
+	if got == nil {
+		t.Error("Typologies() = nil, want an empty, non-nil slice")
+	}
+	if len(got) != 0 {
+		t.Errorf("Typologies() = %+v, want none on a fresh index", got)
+	}
+}
+
 // A crosswalk row is stored once but must be answerable from both ends —
 // otherwise the Annex I entry direction of the API would see nothing.
 func TestCrosswalks_FindsRowsInBothDirections(t *testing.T) {

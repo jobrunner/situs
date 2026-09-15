@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -599,6 +600,29 @@ func (r *fakeRepo) Typology(_ context.Context, id domain.TypologyID) (domain.Typ
 	return domain.Typology{}, fmt.Errorf("fakeRepo: typology %s: %w", id, output.ErrNotFound)
 }
 
+// Typologies mirrors the sqlite adapter's contract: every registered
+// typology, sorted by id, with the measured count of habitat types it
+// carries — counted here rather than trusted from a separately-seeded field,
+// so a test that adds a habitat type without updating a count cannot pass by
+// accident.
+func (r *fakeRepo) Typologies(_ context.Context) ([]output.TypologySummary, error) {
+	if r.typologyErr != nil {
+		return nil, r.typologyErr
+	}
+	out := make([]output.TypologySummary, 0, len(r.typologies))
+	for _, t := range r.typologies {
+		count := 0
+		for _, h := range r.types {
+			if h.Key.Typology == t.ID {
+				count++
+			}
+		}
+		out = append(out, output.TypologySummary{Typology: t, HabitatTypes: count})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Typology.ID < out[j].Typology.ID })
+	return out, nil
+}
+
 func (r *fakeRepo) Crosswalks(_ context.Context, key domain.HabitatTypeKey) ([]domain.Crosswalk, error) {
 	if r.crosswalksErr != nil {
 		return nil, r.crosswalksErr
@@ -1075,6 +1099,67 @@ func TestSpeciesSetHabitatTypes_WithoutAnAreaFilterInAreaIsAbsentEverywhere(t *t
 // A client has to be able to check up front whether its concept ids can match
 // this index at all, instead of discovering a backbone mismatch through empty
 // answers. Every figure is derived from the index, never configured.
+// TestTypologies_ListsAndCountsSortedByID uses seedQueryRepo's world: three
+// typologies (eunis@2021, eunis@2012, annex1) and four habitat types spread
+// across them, so the use case's mapping is checked against a repo that
+// itself already counts and sorts — the use case must not reorder or
+// recompute what the port already promises.
+func TestTypologies_ListsAndCountsSortedByID(t *testing.T) {
+	repo := seedQueryRepo()
+
+	got, err := NewQueryService(repo).Typologies(context.Background())
+	if err != nil {
+		t.Fatalf("Typologies: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("Typologies = %+v, want 3 entries", got)
+	}
+	wantIDs := []domain.TypologyID{"annex1", "eunis@2012", "eunis@2021"}
+	for i, want := range wantIDs {
+		if got[i].ID != want {
+			t.Errorf("Typologies[%d].ID = %s, want %s", i, got[i].ID, want)
+		}
+	}
+	byID := map[domain.TypologyID]input.TypologyView{}
+	for _, v := range got {
+		byID[v.ID] = v
+	}
+	if byID["eunis@2021"].HabitatTypes != 2 { // queryR22, queryR99
+		t.Errorf("eunis@2021 habitat_types = %d, want 2", byID["eunis@2021"].HabitatTypes)
+	}
+	if byID["annex1"].HabitatTypes != 1 { // queryLRT
+		t.Errorf("annex1 habitat_types = %d, want 1", byID["annex1"].HabitatTypes)
+	}
+	if byID["eunis@2012"].HabitatTypes != 1 { // query212
+		t.Errorf("eunis@2012 habitat_types = %d, want 1", byID["eunis@2012"].HabitatTypes)
+	}
+	if byID["eunis@2021"].Scheme != "eunis" || byID["eunis@2021"].Version != "2021" {
+		t.Errorf("eunis@2021 = %+v, want scheme/version carried through", byID["eunis@2021"])
+	}
+}
+
+func TestTypologies_EmptyIndexIsAnEmptySliceNotNil(t *testing.T) {
+	repo := newFakeRepo()
+
+	got, err := NewQueryService(repo).Typologies(context.Background())
+	if err != nil {
+		t.Fatalf("Typologies: %v", err)
+	}
+	if got == nil {
+		t.Error("Typologies() = nil, want an empty, non-nil slice")
+	}
+}
+
+func TestTypologies_SurfacesRepositoryFailure(t *testing.T) {
+	repo := newFakeRepo()
+	wantErr := errors.New("index unreadable")
+	repo.typologyErr = wantErr
+
+	if _, err := NewQueryService(repo).Typologies(context.Background()); !errors.Is(err, wantErr) {
+		t.Errorf("Typologies error = %v, want it to wrap %v", err, wantErr)
+	}
+}
+
 func TestIndexInfo_ReportsTheBackboneTheIndexWasBuiltFrom(t *testing.T) {
 	repo := newFakeRepo()
 	id := "wcvp:concept:1"

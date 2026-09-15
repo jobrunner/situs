@@ -32,6 +32,39 @@ func (d *DB) Typology(ctx context.Context, id domain.TypologyID) (domain.Typolog
 	return t, nil
 }
 
+// Typologies lists every registered typology with the measured count of its
+// habitat types, sorted by id. The count is a single LEFT JOIN/GROUP BY
+// rather than one query per typology: the index carries only a handful of
+// typologies, but N+1 queries is a pattern worth avoiding on principle.
+func (d *DB) Typologies(ctx context.Context) ([]output.TypologySummary, error) {
+	rows, err := d.QueryContext(ctx,
+		`SELECT t.id, t.scheme, t.version, t.name, t.source_ref, COUNT(h.code)
+		 FROM habitat_typology t
+		 LEFT JOIN habitat_type h ON h.typology_id = t.id
+		 GROUP BY t.id, t.scheme, t.version, t.name, t.source_ref
+		 ORDER BY t.id`)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: querying typologies: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := []output.TypologySummary{}
+	for rows.Next() {
+		var id string
+		var s output.TypologySummary
+		if err := rows.Scan(&id, &s.Typology.Scheme, &s.Typology.Version, &s.Typology.Name,
+			&s.Typology.SourceRef, &s.HabitatTypes); err != nil {
+			return nil, fmt.Errorf("sqlite: scanning typology: %w", err)
+		}
+		s.Typology.ID = domain.TypologyID(id)
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite: reading typologies: %w", err)
+	}
+	return out, nil
+}
+
 // Crosswalks returns every crosswalk touching key, in either direction, in the
 // orientation it is stored in. The caller decides which end it asked about.
 func (d *DB) Crosswalks(ctx context.Context, key domain.HabitatTypeKey) ([]domain.Crosswalk, error) {
