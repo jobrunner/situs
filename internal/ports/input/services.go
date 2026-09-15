@@ -219,6 +219,19 @@ type TraitSetView struct {
 	Values       []TraitValueView `json:"values"`
 }
 
+// TypologyView is one classification system the index carries. HabitatTypes
+// is measured from the index, like every other figure in IndexInfo — a
+// typology with 0 is registered but not (yet) filled, an honest answer, not
+// an error.
+type TypologyView struct {
+	ID           domain.TypologyID `json:"id"`
+	Scheme       string            `json:"scheme"`
+	Version      string            `json:"version"`
+	Name         string            `json:"name"`
+	SourceRef    string            `json:"source_ref"`
+	HabitatTypes int               `json:"habitat_types"`
+}
+
 // IndexInfo is the index's self-description, so a client can check up front
 // whether its concept ids can match at all instead of discovering a backbone
 // mismatch through empty answers. Every field is measured from the index, never
@@ -312,6 +325,11 @@ type TraitSummary struct {
 type QueryService interface {
 	// IndexInfo describes what the index holds, measured from the index itself.
 	IndexInfo(ctx context.Context) (IndexInfo, error)
+	// Typologies lists every typology the index carries, sorted by id, so a
+	// client can discover which (typology, code) pairs it may even ask
+	// about instead of guessing eunis@2021 and never learning that
+	// eunis@2012 and annex1 exist too.
+	Typologies(ctx context.Context) ([]TypologyView, error)
 	// HabitatType returns one type with its species, syntaxa and crosswalks.
 	// filter marks (and, if OnlyInArea, prunes) the species by area.
 	HabitatType(ctx context.Context, key domain.HabitatTypeKey, lang string, filter AreaFilter) (HabitatTypeDetail, error)

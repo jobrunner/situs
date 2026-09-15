@@ -152,7 +152,7 @@
   <div class="row">
     <div>
       <label for="ht-detail-typology">typology</label>
-      <input id="ht-detail-typology" size="12" placeholder="eunis@2021">
+      <select id="ht-detail-typology"><option value="">wird geladen …</option></select>
     </div>
     <div>
       <label for="ht-detail-code">code</label>
@@ -170,7 +170,7 @@
   <div class="row">
     <div>
       <label for="ht-species-typology">typology</label>
-      <input id="ht-species-typology" size="12" placeholder="eunis@2021">
+      <select id="ht-species-typology"><option value="">wird geladen …</option></select>
     </div>
     <div>
       <label for="ht-species-code">code</label>
@@ -389,6 +389,51 @@ function runSynHabitat() {
   const url = withQuery(`/v1/syntaxon/${encodeURIComponent(id)}/habitat-types`, params);
   call("syn-habitat", url);
 }
+
+// Both habitat-type panels take a typology id. Filled from one shared fetch
+// of /v1/typologies, not two, so a single failure (index not ready, or no
+// typology loaded at all) is diagnosed once instead of twice with the risk
+// of disagreeing messages. The endpoint already returns the id sorted; this
+// only renders it, it never re-sorts or filters.
+async function loadTypologies() {
+  const selects = [
+    document.getElementById("ht-detail-typology"),
+    document.getElementById("ht-species-typology"),
+  ];
+  try {
+    const res = await fetch("/v1/typologies");
+    const body = await res.json();
+    if (!res.ok) { throw new Error(body && body.error ? body.error.message : `HTTP ${res.status}`); }
+    if (!Array.isArray(body) || !body.length) { throw new Error("Index führt keine Typologie."); }
+    for (const sel of selects) {
+      sel.innerHTML = "";
+      for (const t of body) {
+        const opt = document.createElement("option");
+        opt.value = t.id;
+        opt.textContent = `${t.id} — ${t.name} (${t.habitat_types} Habitattypen)`;
+        sel.appendChild(opt);
+      }
+    }
+    // Preselect the typology with the most habitat types: the most complete
+    // one the index actually carries, a fact read off the response — not a
+    // guess about which typology someone is likelier to query.
+    const richest = body.reduce((a, b) => (b.habitat_types > a.habitat_types ? b : a));
+    for (const sel of selects) { sel.value = richest.id; }
+  } catch (err) {
+    const msg = "Typologien nicht verfügbar: " + err;
+    for (const sel of selects) {
+      sel.innerHTML = "";
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "Typologien nicht verfügbar";
+      sel.appendChild(opt);
+      sel.disabled = true;
+    }
+    document.querySelector("#ht-detail .url").textContent = msg;
+    document.querySelector("#ht-species .url").textContent = msg;
+  }
+}
+loadTypologies();
 
 // Index self-description in the header, so one always sees what is queried.
 (async () => {

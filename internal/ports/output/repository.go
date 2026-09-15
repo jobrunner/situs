@@ -56,11 +56,23 @@ type IngestTx interface {
 	Rollback() error
 }
 
+// TypologySummary is one registered typology plus the measured count of
+// habitat types it carries — the count is a query result, not a stored field
+// of domain.Typology, so it stays out of the domain type.
+type TypologySummary struct {
+	Typology     domain.Typology
+	HabitatTypes int
+}
+
 type Repository interface {
 	Begin(ctx context.Context) (IngestTx, error)
 	// Typology returns the registered typology, or ErrNotFound when the index
 	// carries no such classification system.
 	Typology(ctx context.Context, id domain.TypologyID) (domain.Typology, error)
+	// Typologies lists every registered typology together with the measured
+	// count of habitat types it carries, sorted by id. A count of 0 is a
+	// typology registered but not (yet) filled — a normal state, not an error.
+	Typologies(ctx context.Context) ([]TypologySummary, error)
 	HabitatType(ctx context.Context, key domain.HabitatTypeKey) (domain.HabitatType, error)
 	// CrosswalksTo returns every crosswalk whose To.Typology is typology.
 	CrosswalksTo(ctx context.Context, typology domain.TypologyID) ([]domain.Crosswalk, error)
