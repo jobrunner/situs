@@ -344,6 +344,54 @@ func TestCORSIgnoresAnUnparsableAllowedOrigin(t *testing.T) {
 	}
 }
 
+// TestCORSLogsWhenEveryConfiguredOriginIsUnusable pins the gap the coordinator
+// found: a Warn per bad entry says which entries failed, but not that the
+// consequence is CORS staying off entirely despite being configured. Error
+// level (not Warn) because, unlike a single bad entry in an otherwise-working
+// list, this is not a partial degradation an operator could reasonably miss —
+// the whole feature they configured silently never turns on.
+func TestCORSLogsWhenEveryConfiguredOriginIsUnusable(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	srv := httpapi.NewServer(":0", testDeps(stubHealth{ready: true}), logger, httpapi.Options{
+		CORSAllowedOrigins: []string{"example.com", "foo.de"}, // both missing a scheme
+	})
+
+	logged := buf.String()
+	if !strings.Contains(logged, "level=ERROR") {
+		t.Errorf("log output = %q, want an ERROR-level line once every configured origin is unusable", logged)
+	}
+	if !strings.Contains(logged, "CORS was configured but every allowed-origin entry was unusable") {
+		t.Errorf("log output = %q, want it to state the consequence (CORS stays disabled), not just the per-entry symptom", logged)
+	}
+
+	// The consequence must actually hold: no Origin header gets a response.
+	req := httptest.NewRequest(http.MethodGet, "/v1/info", nil)
+	req.Header.Set("Origin", "https://example.com")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want unset — CORS should indeed stay off", got)
+	}
+}
+
+// TestCORSDoesNotLogTheAggregateWarningWhenAtLeastOneOriginIsUsable pins the
+// other side of the new branch: a mix of one bad and one good entry keeps CORS
+// working, so the "everything failed" message must not fire.
+func TestCORSDoesNotLogTheAggregateWarningWhenAtLeastOneOriginIsUsable(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	httpapi.NewServer(":0", testDeps(stubHealth{ready: true}), logger, httpapi.Options{
+		CORSAllowedOrigins: []string{"example.com", "https://allowed.example.test"},
+	})
+
+	if strings.Contains(buf.String(), "every allowed-origin entry was unusable") {
+		t.Errorf("log output = %q, must not claim total failure when one entry is still usable", buf.String())
+	}
+}
+
 // testDeps keeps the health-probe tests focused on the probe while still
 // wiring a complete set of ports.
 func testDeps(health input.HealthChecker) httpapi.Deps {

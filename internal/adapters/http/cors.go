@@ -67,6 +67,18 @@ func (s *Server) initCORS(origins []string) {
 		}
 		s.corsPatterns = append(s.corsPatterns, p)
 	}
+
+	// Each bad entry already logged its own Warn above, but that leaves the
+	// consequence unstated: if every entry was unusable, CORS ends up fully
+	// disabled even though the operator configured it — the same trap the
+	// per-entry warning guards against, one level up. Error, not Warn: unlike
+	// a single bad entry in an otherwise-working list, this is not a partial
+	// degradation an operator might reasonably miss — the whole feature they
+	// asked for silently never turns on, and only this line says so.
+	if len(origins) > 0 && len(s.corsPatterns) == 0 {
+		s.logger.Error("CORS was configured but every allowed-origin entry was unusable — CORS stays disabled",
+			"origins", origins)
+	}
 }
 
 // wrapCORS returns h unchanged when no usable origins are configured, so a
