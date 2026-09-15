@@ -57,9 +57,10 @@ func New(ctx context.Context, cfg *config.Config, logger *slog.Logger, version s
 		Health: a.Health,
 		Query:  application.NewQueryService(a.Index),
 	}, logger, httpapi.Options{
-		ServiceName: "situs",
-		Version:     version,
-		ReadTimeout: cfg.Server.ReadTimeout,
+		ServiceName:        "situs",
+		Version:            version,
+		ReadTimeout:        cfg.Server.ReadTimeout,
+		CORSAllowedOrigins: cfg.Server.CORS.AllowedOrigins,
 	})
 	return a, nil
 }

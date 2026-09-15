@@ -320,6 +320,68 @@ hängt kein Upstream-Dienst daran, der ausfallen könnte. Und es gibt kein
 Fehlerfall, sondern eine normale 200-Antwort mit `known: false` und einem
 `reason` — eine unbekannte ID darf nicht die ganze Anfrage verwerfen.
 
+## CORS (optional, standardmäßig aus)
+
+Ohne `SITUS_SERVER_CORS_ALLOWED_ORIGINS` sendet situs **keinerlei**
+CORS-Header — der Dienst verhält sich byte-identisch wie ohne diese
+Funktion. Das ist der korrekte Default: der eingebaute Explorer unter `/`
+wird vom selben Origin ausgeliefert, den er abfragt, und braucht kein CORS.
+
+Gesetzt wird eine kommagetrennte Liste erlaubter Origins:
+
+```bash
+export SITUS_SERVER_CORS_ALLOWED_ORIGINS='http://localhost:5173,https://*.fieldworksdiary.app'
+```
+
+Ein Eintrag ist entweder ein exakter Origin (`http://localhost:5173`) oder ein
+Subdomain-Platzhalter (`https://*.fieldworksdiary.app`), bei dem nur das
+führende Host-Label durch `*` ersetzt wird. **Schema und Port müssen auch beim
+Platzhalter exakt passen** — `https://*.fieldworksdiary.app` deckt
+`https://app.fieldworksdiary.app`, aber weder `http://app.fieldworksdiary.app`
+(anderes Schema) noch `https://app.fieldworksdiary.app:8443` (anderer Port).
+Leerraum um einen Eintrag ist erlaubt und wird vor dem Parsen entfernt —
+`'http://localhost:5173, https://*.fieldworksdiary.app'` (Leerzeichen nach dem
+Komma, die naheliegende Schreibweise) ergibt dieselben zwei Einträge wie ohne
+Leerzeichen. Ein Eintrag, der nach dem Trimmen leer ist (ein doppeltes Komma,
+ein Komma am Ende), gilt **nicht** als brauchbar und fällt unter dieselbe
+Warnung wie jeder andere kaputte Eintrag — er verschwindet nicht kommentarlos.
+
+Ein Eintrag ohne Schema, mit ungültigem Schema (z. B. `ht/tps://` oder ein
+Schema mit eingebettetem Leerzeichen), mit Pfad, mit Query (`?...`) oder
+Fragment (`#...`), mit einem Port außerhalb 1–65535 oder in nicht-kanonischer
+Form (`:0443`, `:+443` — ein Browser schickt nie eine führende Null oder ein
+`+`) oder ein bloßes `*` bricht den Start **nicht** ab. Er wird beim Start
+verworfen, mit einer Warnung, die den fehlerhaften Eintrag und die nötige
+Korrektur nennt (`ignoring unusable CORS origin pattern`) — der Dienst läuft
+mit den übrigen, brauchbaren Einträgen weiter. Sind **alle** konfigurierten
+Einträge unbrauchbar, kommt zusätzlich eine Fehlermeldung (`CORS was
+configured but every allowed-origin entry was unusable — CORS stays
+disabled`), weil CORS dann trotz Konfiguration vollständig wirkungslos
+bleibt. Der Prozess startet in beiden Fällen.
+
+Schema und Host werden beim Parsen auf Kleinschreibung normalisiert — beide
+sind laut Spezifikation unabhängig von der Schreibweise gleich. Ein Eintrag
+wie `HTTPS://Example.COM` trifft also dieselbe Herkunft wie
+`https://example.com`. Anders als Schema und Host wird der Port nicht auf
+Kleinschreibung normalisiert, da er ohnehin nur aus Ziffern besteht — das gilt
+unabhängig von der Vorgabe-Port-Normalisierung im nächsten Absatz.
+
+Ein Vorgabe-Port wird beim Parsen dagegen sehr wohl normalisiert — weg
+genommen, nicht nur umgeschrieben: `https://example.com:443` und
+`https://example.com` (ebenso `http://example.com:80` und
+`http://example.com`) bezeichnen dieselbe Herkunft, weil ein Browser den
+Vorgabe-Port im `Origin`-Header nie mitschickt. Das gilt **nur** für das
+schema-eigene Vorgabe-Paar — `https://example.com:80` bleibt eine andere
+Herkunft als `https://example.com`, weil `:80` der Vorgabe-Port des
+`http`-Schemas ist, nicht des `https`-Schemas.
+
+Es gibt **kein** `Access-Control-Allow-Credentials`: situs kennt keine
+Anmeldung, also gibt es keine Sitzung, die mitgeschickt werden müsste.
+
+`Access-Control-Allow-Methods` wird bei jedem Preflight aus der tatsächlichen
+Routing-Tabelle beantwortet, nie aus einer festen Liste — ein neuer Endpunkt
+ist damit automatisch abgedeckt.
+
 ## Bekannte Grenze: Leseverhalten
 
 Die Arten- und Syntaxon-Pfade lesen pro gefundenem Habitattyp nachträglich

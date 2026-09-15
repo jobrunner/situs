@@ -133,6 +133,19 @@ Zwei Eigenheiten, die beide gemessen und nicht vermutet sind:
 - Das Image läuft als `nonroot` (uid 65532), die Host-Datei gehört Dir — daher
   `--user`, alternativ `chown 65532` auf dem Index.
 
+### CORS für einen Browser-Client
+
+Standardmäßig sendet situs kein CORS — nur der eingebaute Explorer unter `/`
+ruft den Dienst same-origin auf. Eine externe Browser-Anwendung (z. B. eine
+Exkursions-App) braucht eine explizite Freigabe:
+
+```bash
+export SITUS_SERVER_CORS_ALLOWED_ORIGINS='http://localhost:5173,https://*.fieldworksdiary.app'
+```
+
+Details (Platzhalter-Regeln, Fehlerverhalten) in
+`docs/reference/http-api.md#cors-optional-standardmäßig-aus`.
+
 Das Image setzt `SITUS_SERVER_HOST=0.0.0.0` — der Config-Default `127.0.0.1` ist
 für ein lokales Binary richtig, macht im Container aber jeden gemappten Port
 unerreichbar. Die veröffentlichte Dokumentation liegt unter
