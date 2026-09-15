@@ -22,6 +22,7 @@ import (
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/jobrunner/situs/internal/domain"
 	"github.com/jobrunner/situs/internal/ports/input"
 )
 
@@ -53,6 +54,7 @@ type Server struct {
 	serviceName    string
 	version        string
 	tracerProvider trace.TracerProvider // nil when tracing is disabled
+	corsPatterns   []domain.OriginPattern
 }
 
 // Options carries the optional dependencies.
@@ -63,6 +65,10 @@ type Options struct {
 	// ReadTimeout bounds reading a whole request (config key server.read_timeout).
 	// Zero means no limit beyond ReadHeaderTimeout.
 	ReadTimeout time.Duration
+	// CORSAllowedOrigins are the allow-listed origins (exact or
+	// "https://*.example.com" wildcard) from server.cors.allowed_origins. Empty
+	// keeps the service CORS-free — see cors.go.
+	CORSAllowedOrigins []string
 }
 
 // NewServer builds the server, wires the routes and prepares the http.Server.
@@ -83,9 +89,10 @@ func NewServer(addr string, deps Deps, logger *slog.Logger, opts Options) *Serve
 		tracerProvider: opts.TracerProvider,
 	}
 	s.router = s.setupRoutes()
+	s.initCORS(opts.CORSAllowedOrigins)
 	s.server = &http.Server{
 		Addr:              addr,
-		Handler:           s.router,
+		Handler:           s.Handler(),
 		ReadTimeout:       opts.ReadTimeout,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -132,6 +139,13 @@ func (s *Server) setupRoutes() *mux.Router {
 // Router exposes the router so tests and the contract fitness function can walk
 // the registered routes.
 func (s *Server) Router() *mux.Router { return s.router }
+
+// Handler returns the router wrapped in the CORS layer (a no-op wrapper when
+// CORS is disabled). This — not Router() — is what must be served: the CORS
+// wrapper sits outside the router because gorilla/mux only runs Use-middleware
+// for requests that match a route, and an OPTIONS preflight against a
+// GET/POST-only route matches none (see cors.go).
+func (s *Server) Handler() http.Handler { return s.wrapCORS(s.router) }
 
 // Start serves until Shutdown is called.
 func (s *Server) Start() error { return s.server.ListenAndServe() }

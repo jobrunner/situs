@@ -6,6 +6,8 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -151,11 +153,195 @@ func specSurface(t *testing.T, specPath string) map[string]bool {
 // every route.
 func newTestServer(t *testing.T, query input.QueryService) *httpapi.Server {
 	t.Helper()
+	return newTestServerWithOptions(t, query, httpapi.Options{})
+}
+
+func newTestServerWithOptions(t *testing.T, query input.QueryService, opts httpapi.Options) *httpapi.Server {
+	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 	return httpapi.NewServer(":0", httpapi.Deps{
 		Health: stubHealth{ready: true},
 		Query:  query,
-	}, logger, httpapi.Options{})
+	}, logger, opts)
+}
+
+// TestCORSDisabledByDefaultIsByteIdentical pins the decided behavior: without
+// any allowed origin configured, the service must answer exactly as it does
+// today — no CORS headers at all, even for a cross-origin request.
+func TestCORSDisabledByDefaultIsByteIdentical(t *testing.T) {
+	srv := newTestServerWithOptions(t, seededQueryService(), httpapi.Options{})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/info", nil)
+	req.Header.Set("Origin", "https://app.example.test")
+	srv.Handler().ServeHTTP(rec, req)
+
+	res := rec.Result()
+	defer func() { _ = res.Body.Close() }()
+	for _, h := range []string{
+		"Access-Control-Allow-Origin", "Access-Control-Allow-Methods",
+		"Access-Control-Allow-Headers", "Access-Control-Max-Age", "Vary",
+	} {
+		if v := res.Header.Get(h); v != "" {
+			t.Errorf("header %s = %q, want unset when CORS is not configured", h, v)
+		}
+	}
+}
+
+// TestCORSPreflightForEveryWritingRoute is the gate for the trap described in
+// cors.go: it walks the route table for every non-GET operation and fires the
+// preflight a browser would send.
+//
+// It catches both ways CORS silently breaks — a middleware registered with
+// router.Use (mux bypasses it for the unmatched OPTIONS, so no headers come
+// back) and an Access-Control-Allow-Methods answer that has drifted from the
+// routes. Neither shows up in a unit test, in curl, or in a same-origin
+// frontend; the usual discovery path is an integrator's bug report.
+//
+// Driving Handler() rather than Router() is the whole point: the bare router
+// has no CORS layer, so the same test against Router() would prove nothing.
+func TestCORSPreflightForEveryWritingRoute(t *testing.T) {
+	const origin = "https://app.example.test"
+	srv := newTestServerWithOptions(t, seededQueryService(), httpapi.Options{
+		CORSAllowedOrigins: []string{origin},
+	})
+
+	ops := writingRouteOps(t, srv)
+	if len(ops) == 0 {
+		t.Skip("no writing routes registered yet — nothing to preflight")
+	}
+
+	for _, o := range ops {
+		t.Run(o.method+" "+o.path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodOptions, o.path, nil)
+			req.Header.Set("Origin", origin)
+			req.Header.Set("Access-Control-Request-Method", o.method)
+			req.Header.Set("Access-Control-Request-Headers", "content-type")
+
+			rec := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(rec, req)
+			res := rec.Result()
+			defer func() { _ = res.Body.Close() }()
+
+			if res.StatusCode != http.StatusNoContent {
+				t.Errorf("preflight status = %d, want 204 — is CORS registered with "+
+					"router.Use instead of wrapping the router?", res.StatusCode)
+			}
+			if got := res.Header.Get("Access-Control-Allow-Origin"); got != origin {
+				t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, origin)
+			}
+			if allow := res.Header.Get("Access-Control-Allow-Methods"); !strings.Contains(allow, o.method) {
+				t.Errorf("Access-Control-Allow-Methods = %q, missing %q — a browser "+
+					"will block this endpoint", allow, o.method)
+			}
+		})
+	}
+}
+
+// writingRouteOp is one non-GET/HEAD route the preflight test exercises.
+type writingRouteOp struct{ method, path string }
+
+// writingRouteOps derives the preflight test cases from the route table, so an
+// endpoint added tomorrow is covered without touching the test. Path-var
+// routes are skipped: httptest.NewRequest needs a concrete path, and every
+// writing route in situs today is a fixed path anyway.
+func writingRouteOps(t *testing.T, srv *httpapi.Server) []writingRouteOp {
+	t.Helper()
+	var ops []writingRouteOp
+	err := srv.Router().Walk(func(route *mux.Route, _ *mux.Router, _ []*mux.Route) error {
+		tmpl, tErr := route.GetPathTemplate()
+		if tErr == nil && !strings.Contains(tmpl, "{") {
+			if methods, mErr := route.GetMethods(); mErr == nil {
+				for _, m := range methods {
+					// GET/HEAD are "simple requests" — no preflight, nothing to pin.
+					if m != http.MethodGet && m != http.MethodHead && m != http.MethodOptions {
+						ops = append(ops, writingRouteOp{m, tmpl})
+					}
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk router: %v", err)
+	}
+	return ops
+}
+
+// A bare OPTIONS (no Origin, no Access-Control-Request-Method) is not a
+// preflight and must still reach the router — otherwise enabling CORS quietly
+// turns every OPTIONS into a 204.
+func TestBareOptionsIsNotSwallowed(t *testing.T) {
+	srv := newTestServerWithOptions(t, seededQueryService(), httpapi.Options{
+		CORSAllowedOrigins: []string{"https://app.example.test"},
+	})
+
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodOptions, "/v1/species/habitat-types", nil))
+
+	if rec.Code == http.StatusNoContent {
+		t.Error("bare OPTIONS answered 204 by the CORS layer; it must fall through to the router")
+	}
+}
+
+// TestCORSRejectsUnlistedOrigin proves an origin outside the allow-list gets no
+// Access-Control-Allow-Origin — the browser then refuses the response, even
+// though the preflight itself still answers 204 (see corsHandler's comment on
+// why the status is uniform).
+func TestCORSRejectsUnlistedOrigin(t *testing.T) {
+	srv := newTestServerWithOptions(t, seededQueryService(), httpapi.Options{
+		CORSAllowedOrigins: []string{"https://allowed.example.test"},
+	})
+
+	req := httptest.NewRequest(http.MethodOptions, "/v1/species/habitat-types", nil)
+	req.Header.Set("Origin", "https://not-allowed.example.test")
+	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("Access-Control-Allow-Origin = %q for an unlisted origin, want unset", got)
+	}
+}
+
+// TestCORSWildcardDoesNotLeakAcrossSchemeOrPort pins the decided rule: scheme
+// and port must match exactly, even under a subdomain wildcard.
+func TestCORSWildcardDoesNotLeakAcrossSchemeOrPort(t *testing.T) {
+	srv := newTestServerWithOptions(t, seededQueryService(), httpapi.Options{
+		CORSAllowedOrigins: []string{"https://*.fieldworksdiary.app"},
+	})
+
+	for _, origin := range []string{
+		"http://app.fieldworksdiary.app",       // wrong scheme
+		"https://app.fieldworksdiary.app:8443", // unlisted port
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/v1/info", nil)
+		req.Header.Set("Origin", origin)
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+			t.Errorf("origin %q: Access-Control-Allow-Origin = %q, want unset", origin, got)
+		}
+	}
+}
+
+// TestCORSIgnoresAnUnparsableAllowedOrigin pins the "fails loud, not silent"
+// choice at initCORS: a malformed entry is dropped with a logged warning
+// rather than crashing the process or ending up matching everything.
+func TestCORSIgnoresAnUnparsableAllowedOrigin(t *testing.T) {
+	srv := newTestServerWithOptions(t, seededQueryService(), httpapi.Options{
+		CORSAllowedOrigins: []string{"not-a-valid-origin", "https://allowed.example.test"},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/info", nil)
+	req.Header.Set("Origin", "https://allowed.example.test")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://allowed.example.test" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want the still-valid entry to remain usable", got)
+	}
 }
 
 // testDeps keeps the health-probe tests focused on the probe while still
