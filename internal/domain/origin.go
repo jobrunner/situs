@@ -41,9 +41,29 @@ func ParseOrigin(s string) (Origin, error) {
 				"sandboxed document; grant the real origin instead", s)
 	}
 
+	scheme, rest, err := parseScheme(s)
+	if err != nil {
+		return Origin{}, err
+	}
+	if err := rejectNonOriginParts(s, rest); err != nil {
+		return Origin{}, err
+	}
+	host, port, hasPort, err := parseAuthority(s, rest)
+	if err != nil {
+		return Origin{}, err
+	}
+
+	return canonicalizeOrigin(scheme, host, port, hasPort), nil
+}
+
+// parseScheme splits s into its scheme and the "://"-following rest, and
+// checks the scheme in isolation — presence and RFC 3986 syntax. The rest is
+// returned unexamined; what may or may not follow a scheme is a separate
+// question, answered by the authority checks.
+func parseScheme(s string) (scheme, rest string, err error) {
 	scheme, rest, ok := strings.Cut(s, "://")
 	if !ok || scheme == "" {
-		return Origin{}, fmt.Errorf("origin %q needs a scheme — write it as https://%s",
+		return "", "", fmt.Errorf("origin %q needs a scheme — write it as https://%s",
 			s, strings.TrimPrefix(s, "://"))
 	}
 	// Scheme and DNS host are case-insensitive by spec; the port is a number and
@@ -57,39 +77,57 @@ func ParseOrigin(s string) (Origin, error) {
 	// scheme of its Origin header, so such an entry would parse and then never
 	// match a real request.
 	if !isValidScheme(scheme) {
-		return Origin{}, fmt.Errorf("origin %q has an invalid scheme %q", s, scheme)
+		return "", "", fmt.Errorf("origin %q has an invalid scheme %q", s, scheme)
 	}
+	return scheme, rest, nil
+}
+
+// rejectNonOriginParts rejects a path, query, or fragment on the raw
+// scheme-following text. None of the three is part of a serialized origin —
+// a browser never sends any of them in the Origin header — so an entry
+// carrying one would parse "successfully" and then never match a real
+// request.
+func rejectNonOriginParts(s, rest string) error {
 	if strings.Contains(rest, "/") {
-		return Origin{}, fmt.Errorf("origin %q must not contain a path", s)
+		return fmt.Errorf("origin %q must not contain a path", s)
 	}
-	// Query and fragment are not part of a serialized origin either — a browser
-	// never sends them in the Origin header. An entry carrying one would parse
-	// "successfully" and then never match a single real request.
 	if strings.Contains(rest, "?") {
-		return Origin{}, fmt.Errorf("origin %q must not contain a query (drop everything from \"?\" on)", s)
+		return fmt.Errorf("origin %q must not contain a query (drop everything from \"?\" on)", s)
 	}
 	if strings.Contains(rest, "#") {
-		return Origin{}, fmt.Errorf("origin %q must not contain a fragment (drop everything from \"#\" on)", s)
+		return fmt.Errorf("origin %q must not contain a fragment (drop everything from \"#\" on)", s)
 	}
+	return nil
+}
 
-	host, port, hasPort, err := splitHostPort(rest)
+// parseAuthority splits rest — already known to be a bare authority — into
+// host and port, and validates both: a host must be present and free of
+// userinfo, and a given port must be canonical.
+func parseAuthority(s, rest string) (host, port string, hasPort bool, err error) {
+	host, port, hasPort, err = splitHostPort(rest)
 	if err != nil {
-		return Origin{}, fmt.Errorf("origin %q: %w", s, err)
+		return "", "", false, fmt.Errorf("origin %q: %w", s, err)
 	}
 	if host == "" {
-		return Origin{}, fmt.Errorf("origin %q needs a host", s)
+		return "", "", false, fmt.Errorf("origin %q needs a host", s)
 	}
 	// A browser never sends userinfo in the Origin header — the header is
 	// scheme/host/port only, RFC 6454 §7 does not include it. An entry like
 	// "https://user@example.com" would parse "successfully" here and then never
 	// match a single real request.
 	if strings.Contains(host, "@") {
-		return Origin{}, fmt.Errorf("origin %q must not contain userinfo (drop the \"user@\" part — a browser never sends it)", s)
+		return "", "", false, fmt.Errorf("origin %q must not contain userinfo (drop the \"user@\" part — a browser never sends it)", s)
 	}
 	if hasPort && !isCanonicalPort(port) {
-		return Origin{}, fmt.Errorf("origin %q has an invalid port %q (expected 1-65535 in canonical decimal form)", s, port)
+		return "", "", false, fmt.Errorf("origin %q has an invalid port %q (expected 1-65535 in canonical decimal form)", s, port)
 	}
+	return host, port, hasPort, nil
+}
 
+// canonicalizeOrigin brings an already-validated scheme/host/port triple into
+// the exact form a browser would send: lower-cased host, and the scheme's own
+// default port dropped.
+func canonicalizeOrigin(scheme, host, port string, hasPort bool) Origin {
 	// A browser serializes an explicit default port away: "https://host:443" and
 	// "http://host:80" are sent as "https://host" and "http://host" in the
 	// Origin header. Normalizing here — not just for https/443 but not for the
@@ -98,8 +136,7 @@ func ParseOrigin(s string) (Origin, error) {
 	if hasPort && isDefaultPort(scheme, port) {
 		port = ""
 	}
-
-	return Origin{Scheme: scheme, Host: strings.ToLower(host), Port: port}, nil
+	return Origin{Scheme: scheme, Host: strings.ToLower(host), Port: port}
 }
 
 // isValidScheme reports whether scheme is a syntactically valid URI scheme
