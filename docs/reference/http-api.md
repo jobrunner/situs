@@ -15,6 +15,7 @@ decken).
 | `GET /openapi` | diese Spezifikation |
 | `GET /docs` | Swagger-UI für diese Spezifikation, offline-fähig (Assets eingebettet) |
 | `GET /v1/info` | Name, Version und Selbstauskunft des Index |
+| `GET /v1/typologies` | alle geführten Typologien, nach `id` sortiert |
 | `GET /v1/habitat-type/{typology}/{code}` | Habitattyp mit Arten, Syntaxa und Crosswalks |
 | `GET /v1/habitat-type/{typology}/{code}/species?role=` | Artenliste, optional nach Rolle gefiltert |
 | `GET /v1/species/search?q=&limit=` | Namenssuche über die im Index geführten `verbatim_name` |
@@ -199,6 +200,33 @@ Zahl, die aus einem Cache stammt, wäre keine gemessene Zahl mehr.
 Fällt eine der beiden Abfragen aus, antwortet die Route **500**
 (`INTERNAL_ERROR`) und nicht ein mit Nullen gefülltes `index`-Objekt: das läse
 sich für einen Client wie „leerer Index" oder „falsches Backbone".
+
+## Typologien auflisten: `GET /v1/typologies`
+
+Jede Habitattyp-Route adressiert über `(typology, code)` — aber ohne diese
+Route kennt ein Client nur die Typologie-ID, die er schon geraten oder aus der
+Doku abgeschrieben hat. `GET /v1/typologies` listet alle, **nach `id`
+sortiert**, damit dieselbe Anfrage stabil dieselbe Reihenfolge liefert:
+
+```json
+[
+  { "id": "annex1", "scheme": "annex1", "version": "92/43/EEC",
+    "name": "Habitats Directive Annex I",
+    "source_ref": "https://doi.org/10.2909/...", "habitat_types": 205 },
+  { "id": "eunis@2012", "scheme": "eunis", "version": "2012",
+    "name": "EUNIS 2012", "source_ref": "...", "habitat_types": 0 },
+  { "id": "eunis@2021", "scheme": "eunis", "version": "2021",
+    "name": "EUNIS 2021", "source_ref": "...", "habitat_types": 7937 }
+]
+```
+
+`habitat_types` ist wie jede Zahl in `/v1/info` **am Index gemessen**, nie
+konfiguriert. Eine `0` ist eine ehrliche Aussage — die Typologie ist
+registriert, aber (noch) nicht gefüllt —, kein Fehler; oben steht
+`eunis@2012` beispielhaft dafür. Die Antwort ist immer ein Array, auch wenn
+der Index keine einzige Typologie führt (`[]`, nie `null`). Es gibt keinen
+Filter und keine Parameter: wer eine einzelne Typologie will, kennt danach
+ihre ID und fragt `GET /v1/habitat-type/{typology}/{code}`.
 
 ## Die zwei Arten-Pfade
 
