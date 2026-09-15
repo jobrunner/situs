@@ -71,7 +71,10 @@ Am gepinnten Datenstand sind beide gemessen **0**. Siehe
    gefragt; hängt von nichts ab und nichts hängt davon ab — die Namen sind ein
    Overlay auf die Codes, die Schritt 5 schreibt. Fehlt die Datei, ist das
    **keine** Fehlersituation: der Report zählt 0 (`AreaNames.Areas`) und die
-   Codes bleiben namenlos.
+   Codes bleiben namenlos. Eine Zeile ohne Code oder mit einem anderen
+   Gebietsschema als `wgsrpd_l3` wird übersprungen und gezählt
+   (`AreaNames.SkippedRows`) statt geschrieben: sie würde auf der Leseseite
+   mit nichts zusammenfinden, und dieses Schweigen soll im Report stehen.
 4. `IngestSpeciesRoles` — Artenrollen, aufgelöst gegen eine lokale
    Crosswalk-Datei (`eurosl_crosswalk.csv`), plus abgeleitete
    Mitgliedsarten-Zeilen für Sammelarten (`aggregate_members.csv`). Kein

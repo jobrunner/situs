@@ -196,3 +196,25 @@ func TestIngestAreas_WarnsOnlyWhenRowsWereSkipped(t *testing.T) {
 		})
 	}
 }
+
+// situs stores exactly one area scheme. A row naming another one would be
+// written and counted as a success, yet join with nothing on the read side —
+// a silent data defect wearing a clean report. It is skipped and counted
+// instead, so a typo in the pipeline surfaces where it is measured.
+func TestIngestAreas_SkipsAForeignAreaScheme(t *testing.T) {
+	path := writeAreaCSV(t, areaHeader+
+		"wgsrpd_l3,GER,Germany\n"+
+		"wgsrpd_13,AUT,Austria\n") // digit one-three, not letter-l-three
+	repo := newFakeRepo()
+
+	rep, err := IngestAreas(context.Background(), repo, path)
+	if err != nil {
+		t.Fatalf("IngestAreas: %v", err)
+	}
+	if rep.Areas != 1 || rep.SkippedRows != 1 {
+		t.Errorf("report = %+v, want 1 area and 1 skipped row", rep)
+	}
+	if len(repo.areas) != 1 || repo.areas[0].Code != "GER" {
+		t.Errorf("areas = %+v, want only the row in the one scheme situs stores", repo.areas)
+	}
+}

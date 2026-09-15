@@ -21,7 +21,10 @@ CACHE_DIR="${SCRIPT_DIR}/.cache"
 OUT_DIR="${SCRIPT_DIR}/output"
 mkdir -p "${CACHE_DIR}" "${OUT_DIR}"
 
-SRC_PATH="${CACHE_DIR}/tblLevel3.txt"
+# The cache path carries the PIN: keyed by filename alone, bumping PIN above
+# would silently do nothing on any machine with a warm cache — the run would
+# claim the new commit and convert the old file.
+SRC_PATH="${CACHE_DIR}/${PIN}-tblLevel3.txt"
 OUT_PATH="${OUT_DIR}/wgsrpd_areas.csv"
 
 if [[ -f "${SRC_PATH}" ]]; then

@@ -335,7 +335,7 @@ für den der Index keine Daten hat, ist `INVALID_QUERY` (400) und **nicht** eine
 Liste voller „kommt nicht vor": ein Tippfehler und eine echte Abwesenheit dürfen
 nicht gleich aussehen.
 
-**Welche Codes gültig sind, sagt `GET /v1/areas`** (siehe unten).
+**Welche Codes gültig sind, sagt `GET /v1/areas`** (siehe oben).
 `areas_with_data` in `/v1/info` nennt weiterhin nur ihre *Anzahl* — daraus
 lässt sich ablesen, ob überhaupt ein Verbreitungs-Ingest gelaufen ist (`0`
 heißt nein), nicht aber, ob `GER` dabei ist.

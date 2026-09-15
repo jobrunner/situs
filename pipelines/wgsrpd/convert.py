@@ -39,6 +39,11 @@ def main():
         w = csv.writer(outf)
         w.writerow(["area_scheme", "area_code", "name_en"])
         for row in it:
+            # A truncated line is what `skipped` is for — indexing it blindly
+            # would abort the whole run over one malformed record.
+            if len(row) < 2:
+                skipped += 1
+                continue
             code = row[0].strip()
             name = row[1].strip()
             if not code or not name or code in seen:

@@ -57,9 +57,10 @@ func IngestAreas(ctx context.Context, repo output.Repository, csvPath string) (A
 	return rep, nil
 }
 
-// ingestAreaRows parses and writes the rows. A row whose area is incomplete is
-// skipped and counted: it could never match a distribution row. An empty name
-// is not a defect — the code is the fact, the name the overlay.
+// ingestAreaRows parses and writes the rows. A row whose area is incomplete or
+// names a foreign scheme is skipped and counted: it could never match a
+// distribution row. An empty name is not a defect — the code is the fact, the
+// name the overlay.
 func ingestAreaRows(ctx context.Context, tx output.IngestTx, csvPath string) (AreaReport, error) {
 	dir, file := filepath.Split(csvPath)
 	var rep AreaReport
@@ -76,6 +77,14 @@ func ingestAreaRows(ctx context.Context, tx output.IngestTx, csvPath string) (Ar
 			}
 			if !a.IsComplete() {
 				skip(line, fmt.Errorf("incomplete area %s", a.Area))
+				return nil
+			}
+			// situs stores exactly one area scheme. A row naming another one
+			// would be written and counted as a success, yet join with nothing
+			// on the read side — that silence is the whole reason to reject it
+			// here, where the report can show it.
+			if a.Scheme != domain.SchemeWGSRPDL3 {
+				skip(line, fmt.Errorf("area scheme %q is not %q", a.Scheme, domain.SchemeWGSRPDL3))
 				return nil
 			}
 			if err := tx.UpsertArea(a); err != nil {
