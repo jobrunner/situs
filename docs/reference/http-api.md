@@ -372,8 +372,8 @@ genommen, nicht nur umgeschrieben: `https://example.com:443` und
 `http://example.com`) bezeichnen dieselbe Herkunft, weil ein Browser den
 Vorgabe-Port im `Origin`-Header nie mitschickt. Das gilt **nur** für das
 schema-eigene Vorgabe-Paar — `https://example.com:80` bleibt eine andere
-Herkunft als `https://example.com`, weil `:80` das Vorgabe des `http`-Schemas
-ist, nicht des `https`-Schemas.
+Herkunft als `https://example.com`, weil `:80` der Vorgabe-Port des
+`http`-Schemas ist, nicht des `https`-Schemas.
 
 Es gibt **kein** `Access-Control-Allow-Credentials`: situs kennt keine
 Anmeldung, also gibt es keine Sitzung, die mitgeschickt werden müsste.
