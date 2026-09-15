@@ -675,3 +675,66 @@ func TestIngestCommand_DoesNotWarnWhenTheBackbonesAgree(t *testing.T) {
 		t.Errorf("log output = %q, want no backbone warning for an index built on wcvp", logOutput)
 	}
 }
+
+func TestIngestCommandIngestsAreaNames(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t)
+	writeIngestCSV(t, dir, "wgsrpd_areas.csv",
+		"area_scheme,area_code,name_en\n"+
+			"wgsrpd_l3,GER,Germany\n"+
+			"wgsrpd_l3,FOR,Føroyar\n")
+	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", dbPath})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("executing ingest: %v", err)
+	}
+	if !strings.Contains(out.String(), `"Areas": 2`) {
+		t.Errorf("output = %q, want the Areas report to count both rows", out.String())
+	}
+}
+
+// No pinned WGSRPD artifact is a normal state: the run keeps working and the
+// area codes simply stay unnamed.
+func TestIngestCommandRunsWithoutAnAreaNameFile(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t) // no wgsrpd_areas.csv written
+	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", dbPath})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("executing ingest without wgsrpd_areas.csv: %v", err)
+	}
+	if !strings.Contains(out.String(), `"Areas": 0`) {
+		t.Errorf("output = %q, want a present-but-zero Areas report", out.String())
+	}
+}
+
+// A malformed wgsrpd_areas.csv fails the whole run, wrapped with this
+// command's own "ingesting area names" text.
+func TestIngestCommandFailsOnMalformedAreaNames(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t)
+	writeIngestCSV(t, dir, "wgsrpd_areas.csv", "scheme,code,name\nwgsrpd_l3,GER,Germany\n")
+	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
+
+	root := newRootCmd()
+	root.SetOut(&bytes.Buffer{})
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", dbPath})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("executing ingest with a malformed wgsrpd_areas.csv = nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "ingesting area names") {
+		t.Errorf("error = %q, want it to name the area name ingest step", err)
+	}
+}

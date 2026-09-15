@@ -164,6 +164,7 @@ type ingestOutput struct {
 	Localizations      int
 	DerivedLabels      int
 	SyntaxaHierarchy   application.SyntaxaHierarchyReport
+	AreaNames          application.AreaReport
 	Traits             application.TraitReport
 }
 
@@ -198,6 +199,15 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath, crosswalk
 	hierarchyReport, err := application.IngestSyntaxaHierarchy(ctx, db, hierarchyCSV)
 	if err != nil {
 		return fmt.Errorf("ingesting syntaxa hierarchy from %q: %w", hierarchyCSV, err)
+	}
+
+	// Area names depend on nothing and nothing depends on them: they are a
+	// pure overlay on the area codes the distribution step writes later, and
+	// a local CSV is their only source — no service is asked at any point.
+	areaCSV := filepath.Join(csvDir, "wgsrpd_areas.csv")
+	areaReport, err := application.IngestAreas(ctx, db, areaCSV)
+	if err != nil {
+		return fmt.Errorf("ingesting area names from %q: %w", areaCSV, err)
 	}
 
 	speciesReport, err := application.IngestSpeciesRoles(ctx, db,
@@ -259,6 +269,7 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath, crosswalk
 		Localizations:      localizations,
 		DerivedLabels:      derivedLabels,
 		SyntaxaHierarchy:   hierarchyReport,
+		AreaNames:          areaReport,
 		Traits:             traitReport,
 	}
 	enc := json.NewEncoder(cmd.OutOrStdout())

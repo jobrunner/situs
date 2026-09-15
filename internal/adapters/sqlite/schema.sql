@@ -121,3 +121,13 @@ CREATE TABLE IF NOT EXISTS trait_vocabulary (
   ingested_at TEXT NOT NULL,
   PRIMARY KEY (vocab, version)
 );
+
+-- The WGSRPD area names (pipelines/wgsrpd). Pure overlay on the codes that
+-- species_distribution already carries: no FK either way, and a code without a
+-- row here stays a perfectly valid area — it just has no name yet.
+CREATE TABLE IF NOT EXISTS area (
+  area_scheme TEXT NOT NULL,
+  area_code   TEXT NOT NULL,
+  name_en     TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (area_scheme, area_code)
+);

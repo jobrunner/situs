@@ -863,6 +863,16 @@ type fakeQueryService struct {
 	// typologies/typologiesErr control what Typologies returns.
 	typologies    []input.TypologyView
 	typologiesErr error
+	// areas/areasErr control what Areas returns.
+	areas    []input.AreaView
+	areasErr error
+}
+
+func (f *fakeQueryService) Areas(context.Context) ([]input.AreaView, error) {
+	if f.areasErr != nil {
+		return nil, f.areasErr
+	}
+	return f.areas, nil
 }
 
 func (f *fakeQueryService) Typologies(context.Context) ([]input.TypologyView, error) {
@@ -987,6 +997,10 @@ func seededQueryService() *fakeQueryService {
 			"wcvp:concept:1": {{HabitatTypeSummary: r22, Role: input.RoleDiagnostic, Syntaxa: syntaxa}},
 		},
 		bySyntaxon: map[string][]input.HabitatTypeSummary{"BRO-01A": {r22}},
+		areas: []input.AreaView{
+			{Scheme: domain.SchemeWGSRPDL3, Code: "FRA", Name: "France"},
+			{Scheme: domain.SchemeWGSRPDL3, Code: "GER", Name: "Germany"},
+		},
 		typologies: []input.TypologyView{
 			{ID: "annex1", Scheme: "annex1", Version: "92/43/EEC", Name: "Habitats Directive Annex I", HabitatTypes: 1},
 			{ID: "eunis@2021", Scheme: "eunis", Version: "2021", Name: "EUNIS 2021", HabitatTypes: 2},

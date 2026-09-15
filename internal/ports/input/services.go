@@ -232,6 +232,15 @@ type TypologyView struct {
 	HabitatTypes int               `json:"habitat_types"`
 }
 
+// AreaView is one distribution area a client can filter by. Name is the
+// English WGSRPD name and is empty when no name was ingested for the code —
+// the code stays the identity, the name is an overlay on it.
+type AreaView struct {
+	Scheme string `json:"scheme"`
+	Code   string `json:"code"`
+	Name   string `json:"name"`
+}
+
 // IndexInfo is the index's self-description, so a client can check up front
 // whether its concept ids can match at all instead of discovering a backbone
 // mismatch through empty answers. Every field is measured from the index, never
@@ -330,6 +339,8 @@ type QueryService interface {
 	// about instead of guessing eunis@2021 and never learning that
 	// eunis@2012 and annex1 exist too.
 	Typologies(ctx context.Context) ([]TypologyView, error)
+	// Areas lists the areas the ?area= filter can answer, with their names.
+	Areas(ctx context.Context) ([]AreaView, error)
 	// HabitatType returns one type with its species, syntaxa and crosswalks.
 	// filter marks (and, if OnlyInArea, prunes) the species by area.
 	HabitatType(ctx context.Context, key domain.HabitatTypeKey, lang string, filter AreaFilter) (HabitatTypeDetail, error)

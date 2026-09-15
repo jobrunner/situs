@@ -17,3 +17,12 @@ func (a Area) String() string { return a.Scheme + ":" + a.Code }
 // IsComplete reports whether both halves are present. An incomplete area must
 // never reach the index: it would silently match nothing.
 func (a Area) IsComplete() bool { return a.Scheme != "" && a.Code != "" }
+
+// NamedArea is an area plus its English name from the WGSRPD tables. The name
+// is an overlay on the code, never its identity: the index answers in codes,
+// and an area whose name was never ingested keeps an empty NameEN rather than
+// borrowing its code as a stand-in name.
+type NamedArea struct {
+	Area
+	NameEN string
+}

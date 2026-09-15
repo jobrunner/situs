@@ -149,6 +149,30 @@ paths:
                   $ref: "#/components/schemas/TypologyView"
         "500":
           $ref: "#/components/responses/InternalError"
+  /v1/areas:
+    get:
+      summary: Alle Gebiete, nach denen gefiltert werden kann
+      description: >-
+        Der Einstiegspunkt für `?area=`: die WGSRPD-Level-3-Gebiete, zu denen
+        **dieser** Index Verbreitungsdaten hat, jedes mit seinem englischen
+        Namen. Bewusst nur Gebiete mit Daten — ein Gebiet ohne Daten wäre ein
+        Filter, der nur leer antworten kann. Sortiert nach `code`, damit
+        dieselbe Anfrage stabil dieselbe Reihenfolge liefert. `name` ist leer,
+        wenn zu einem Code kein Name eingelesen wurde: der Code ist die
+        Identität, der Name nur ein Overlay darauf. Die Antwort ist immer ein
+        Array, auch wenn der Index keine Verbreitungsdaten führt.
+      operationId: areas
+      responses:
+        "200":
+          description: Alle Gebiete mit Daten, nach `code` sortiert.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AreaView"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /v1/habitat-type/{typology}/{code}:
     get:
       summary: Ein Habitattyp mit Arten, Syntaxa und Crosswalks
@@ -765,6 +789,24 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/HabitatTypeRole"
+    AreaView:
+      description: >-
+        Ein Verbreitungsgebiet, nach dem gefiltert werden kann: WGSRPD-Level-3
+        ("botanische Länder"). `code` ist die Identität, `name` der englische
+        WGSRPD-Name als Overlay — leer, wenn zu dem Code kein Name eingelesen
+        wurde.
+      type: object
+      required: [scheme, code, name]
+      properties:
+        scheme:
+          type: string
+          example: wgsrpd_l3
+        code:
+          type: string
+          example: GER
+        name:
+          type: string
+          example: Germany
     TypologyView:
       description: >-
         Eine Typologie: eine Klassifikationssystem-Fassung, z. B.

@@ -58,7 +58,7 @@
   </div>
   <div>
     <label for="g-area">area (WGSRPD L3)</label>
-    <input id="g-area" size="6" placeholder="GER">
+    <select id="g-area"><option value="">—</option></select>
   </div>
   <div>
     <label><input type="checkbox" id="g-onlyarea"> only_in_area</label>
@@ -434,6 +434,40 @@ async function loadTypologies() {
   }
 }
 loadTypologies();
+
+// The area filter is filled from /v1/areas: that route lists exactly the
+// codes THIS index has distribution data for, so one cannot pick a code that
+// can only answer INVALID_QUERY or an empty list. The empty first option
+// stays: no filter is the normal case. An index without distribution data
+// legitimately yields just that one option — nothing is wrong, there is
+// simply nothing to filter by yet.
+async function loadAreas() {
+  const sel = document.getElementById("g-area");
+  try {
+    const res = await fetch("/v1/areas");
+    const body = await res.json();
+    if (!res.ok) { throw new Error(body && body.error ? body.error.message : `HTTP ${res.status}`); }
+    if (!Array.isArray(body)) { throw new Error("unerwartete Antwort"); }
+    for (const a of body) {
+      const opt = document.createElement("option");
+      opt.value = a.code;
+      // A code without an ingested name keeps showing its code alone — the
+      // code is the identity, the name only an overlay on it.
+      opt.textContent = a.name ? `${a.code} — ${a.name}` : a.code;
+      sel.appendChild(opt);
+    }
+  } catch (err) {
+    // Replaces the empty option rather than joining it: a disabled select
+    // shows only its selected entry, and that has to be the message.
+    sel.innerHTML = "";
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Gebiete nicht verfügbar: " + err;
+    sel.appendChild(opt);
+    sel.disabled = true;
+  }
+}
+loadAreas();
 
 // Index self-description in the header, so one always sees what is queried.
 (async () => {
