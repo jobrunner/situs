@@ -362,10 +362,12 @@ bleibt. Der Prozess startet in beiden Fällen.
 Schema und Host werden beim Parsen auf Kleinschreibung normalisiert — beide
 sind laut Spezifikation unabhängig von der Schreibweise gleich. Ein Eintrag
 wie `HTTPS://Example.COM` trifft also dieselbe Herkunft wie
-`https://example.com`. Der Port wird **nicht** normalisiert, da er ohnehin
-nur aus Ziffern besteht.
+`https://example.com`. Anders als Schema und Host wird der Port nicht auf
+Kleinschreibung normalisiert, da er ohnehin nur aus Ziffern besteht — das gilt
+unabhängig von der Vorgabe-Port-Normalisierung im nächsten Absatz.
 
-Ein Vorgabe-Port wird beim Parsen normalisiert: `https://example.com:443` und
+Ein Vorgabe-Port wird beim Parsen dagegen sehr wohl normalisiert — weg
+genommen, nicht nur umgeschrieben: `https://example.com:443` und
 `https://example.com` (ebenso `http://example.com:80` und
 `http://example.com`) bezeichnen dieselbe Herkunft, weil ein Browser den
 Vorgabe-Port im `Origin`-Header nie mitschickt. Das gilt **nur** für das

@@ -112,21 +112,15 @@ func (s *Server) corsHandler(next http.Handler) http.Handler {
 			// entry either.
 			w.Header().Add("Vary", "Access-Control-Request-Method")
 		}
-		if origin != "" {
-			if s.isOriginAllowed(origin) {
-				w.Header().Set("Access-Control-Allow-Origin", origin)
-				// Advertise the method the ROUTER actually accepts for this
-				// path, rather than a hand-written list. A literal
-				// "GET, POST, OPTIONS" here is correct exactly until someone
-				// adds a route with a new method: nothing fails at build time,
-				// and the endpoint is simply unusable from a browser. Deriving
-				// the answer from the route table makes that drift impossible.
-				if requestedMethod != "" && s.routeAllowsMethod(r, requestedMethod) {
-					w.Header().Set("Access-Control-Allow-Methods", requestedMethod+", OPTIONS")
-				}
-				w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Authorization")
-				w.Header().Set("Access-Control-Max-Age", corsMaxAgeSeconds)
-			}
+		requestedHeaders := r.Header.Get("Access-Control-Request-Headers")
+		if requestedHeaders != "" {
+			// Allow-Headers below is derived from this, so — same reasoning as
+			// Access-Control-Request-Method above — two preflights from the same
+			// origin asking about different headers must not share a cache entry.
+			w.Header().Add("Vary", "Access-Control-Request-Headers")
+		}
+		if origin != "" && s.isOriginAllowed(origin) {
+			s.setAllowedOriginHeaders(w, r, origin, requestedMethod, requestedHeaders)
 		}
 
 		// Only a real preflight is short-circuited: OPTIONS carrying both Origin
@@ -145,6 +139,32 @@ func (s *Server) corsHandler(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// setAllowedOriginHeaders sets the headers that only make sense once origin is
+// known to be on the allow-list. Split out of corsHandler to keep that
+// function's branching shallow — this is the part that grows whenever a new
+// preflight header (Allow-Methods, Allow-Headers, ...) is added.
+func (s *Server) setAllowedOriginHeaders(w http.ResponseWriter, r *http.Request, origin, requestedMethod, requestedHeaders string) {
+	w.Header().Set("Access-Control-Allow-Origin", origin)
+	// Advertise the method the ROUTER actually accepts for this path, rather
+	// than a hand-written list. A literal "GET, POST, OPTIONS" here is correct
+	// exactly until someone adds a route with a new method: nothing fails at
+	// build time, and the endpoint is simply unusable from a browser. Deriving
+	// the answer from the route table makes that drift impossible.
+	if requestedMethod != "" && s.routeAllowsMethod(r, requestedMethod) {
+		w.Header().Set("Access-Control-Allow-Methods", requestedMethod+", OPTIONS")
+	}
+	// Mirror back exactly the headers the browser asked about, rather than a
+	// hand-written allow-list. situs has no login and so no header worth
+	// denying: a fixed list ("Accept, Content-Type, Authorization") rejects
+	// any caller sending something else — say X-Request-Id — with nothing
+	// anywhere saying why. Reflecting the request is the standard shape for a
+	// service with no credentials and no header allow-list to enforce.
+	if requestedHeaders != "" {
+		w.Header().Set("Access-Control-Allow-Headers", requestedHeaders)
+	}
+	w.Header().Set("Access-Control-Max-Age", corsMaxAgeSeconds)
 }
 
 // routeAllowsMethod asks the router whether method+path would match a route.

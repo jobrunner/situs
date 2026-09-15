@@ -138,8 +138,8 @@ func TestLoadDefaultsToCORSDisabled(t *testing.T) {
 	if len(cfg.Server.CORS.AllowedOrigins) != 0 {
 		t.Errorf("server.cors.allowed_origins = %v, want empty", cfg.Server.CORS.AllowedOrigins)
 	}
-	if cfg.Server.CORS.Enabled() {
-		t.Error("CORS.Enabled() = true with no origins configured, want false")
+	if cfg.Server.CORS.Configured() {
+		t.Error("CORS.Configured() = true with no origins configured, want false")
 	}
 }
 
@@ -159,8 +159,8 @@ func TestLoadReadsTheCORSAllowedOriginsFromTheEnvironmentAsACommaSeparatedList(t
 			t.Errorf("server.cors.allowed_origins[%d] = %q, want %q", i, cfg.Server.CORS.AllowedOrigins[i], o)
 		}
 	}
-	if !cfg.Server.CORS.Enabled() {
-		t.Error("CORS.Enabled() = false with origins configured, want true")
+	if !cfg.Server.CORS.Configured() {
+		t.Error("CORS.Configured() = false with origins configured, want true")
 	}
 }
 

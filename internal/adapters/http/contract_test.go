@@ -338,6 +338,58 @@ func TestCORSPreflightVariesByRequestedMethod(t *testing.T) {
 	}
 }
 
+// TestCORSPreflightMirrorsRequestedHeaders pins Fund 1 of the review: a fixed
+// Access-Control-Allow-Headers list ("Accept, Content-Type, Authorization")
+// rejected any caller sending a header outside it — even from an allowed
+// origin — with nothing anywhere saying why. situs has no login and so no
+// header worth denying, so the preflight now mirrors back exactly what the
+// browser asked about in Access-Control-Request-Headers.
+func TestCORSPreflightMirrorsRequestedHeaders(t *testing.T) {
+	const origin = "https://allowed.example.test"
+	srv := newTestServerWithOptions(t, seededQueryService(), httpapi.Options{
+		CORSAllowedOrigins: []string{origin},
+	})
+
+	req := httptest.NewRequest(http.MethodOptions, "/v1/species/habitat-types", nil)
+	req.Header.Set("Origin", origin)
+	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	req.Header.Set("Access-Control-Request-Headers", "x-request-id, content-type")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Access-Control-Allow-Headers"); got != "x-request-id, content-type" {
+		t.Errorf("Access-Control-Allow-Headers = %q, want the requested headers mirrored back verbatim", got)
+	}
+	if got := rec.Header().Values("Vary"); !slices.Contains(got, "Access-Control-Request-Headers") {
+		t.Errorf("Vary = %v, want it to contain %q on a preflight response", got, "Access-Control-Request-Headers")
+	}
+}
+
+// TestCORSPreflightWithoutRequestedHeadersOmitsAllowHeaders covers the
+// preflight that asks about a method but no custom header at all (the common
+// case: a plain POST with only Content-Type, which is itself a CORS-safelisted
+// header a browser never lists in Access-Control-Request-Headers). Nothing was
+// requested, so nothing needs to be allowed or varied on.
+func TestCORSPreflightWithoutRequestedHeadersOmitsAllowHeaders(t *testing.T) {
+	const origin = "https://allowed.example.test"
+	srv := newTestServerWithOptions(t, seededQueryService(), httpapi.Options{
+		CORSAllowedOrigins: []string{origin},
+	})
+
+	req := httptest.NewRequest(http.MethodOptions, "/v1/species/habitat-types", nil)
+	req.Header.Set("Origin", origin)
+	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Access-Control-Allow-Headers"); got != "" {
+		t.Errorf("Access-Control-Allow-Headers = %q, want unset when nothing was requested", got)
+	}
+	if got := rec.Header().Values("Vary"); slices.Contains(got, "Access-Control-Request-Headers") {
+		t.Errorf("Vary = %v, want it to NOT contain %q when nothing was requested", got, "Access-Control-Request-Headers")
+	}
+}
+
 // TestCORSRejectsUnlistedOrigin proves an origin outside the allow-list gets no
 // Access-Control-Allow-Origin — the browser then refuses the response, even
 // though the preflight itself still answers 204 (see corsHandler's comment on

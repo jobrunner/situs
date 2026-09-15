@@ -61,9 +61,16 @@ type CORSConfig struct {
 	AllowedOrigins []string `mapstructure:"allowed_origins"`
 }
 
-// Enabled reports whether any origin is allowed; the middleware is only wired
-// in when this is true.
-func (c CORSConfig) Enabled() bool { return len(c.AllowedOrigins) > 0 }
+// Configured reports whether any origin string was set at all — it does NOT
+// promise CORS will actually work. Config holds strings, nothing more: it has
+// no domain.ParseOriginPattern to ask which of them parse, so it cannot know
+// whether the middleware ends up wired in. That verdict belongs one layer up,
+// after parsing — internal/adapters/http.initCORS is what decides real
+// usability (len(s.corsPatterns) > 0), and only that decision should ever be
+// called "Enabled". Calling this method "Enabled" claimed the parsed verdict
+// from the unparsed input; naming it for what it actually checks — presence,
+// not usability — keeps the two truths from being mistaken for each other.
+func (c CORSConfig) Configured() bool { return len(c.AllowedOrigins) > 0 }
 
 // Addr is the listen address of the HTTP server.
 func (c ServerConfig) Addr() string {

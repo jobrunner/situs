@@ -79,6 +79,13 @@ func ParseOrigin(s string) (Origin, error) {
 	if host == "" {
 		return Origin{}, fmt.Errorf("origin %q needs a host", s)
 	}
+	// A browser never sends userinfo in the Origin header — the header is
+	// scheme/host/port only, RFC 6454 §7 does not include it. An entry like
+	// "https://user@example.com" would parse "successfully" here and then never
+	// match a single real request.
+	if strings.Contains(host, "@") {
+		return Origin{}, fmt.Errorf("origin %q must not contain userinfo (drop the \"user@\" part — a browser never sends it)", s)
+	}
 	if hasPort && !isCanonicalPort(port) {
 		return Origin{}, fmt.Errorf("origin %q has an invalid port %q (expected 1-65535 in canonical decimal form)", s, port)
 	}
