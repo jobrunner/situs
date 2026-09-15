@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.0](https://github.com/jobrunner/situs/compare/v0.5.0...v0.6.0) (2026-09-15)
+
+
+### Features
+
+* **explorer:** fill typology selects from GET /v1/typologies ([c826b38](https://github.com/jobrunner/situs/commit/c826b38881a8394190ac88240e6e0cc3d1570cf2))
+* **http:** GET /v1/typologies — die Habitat-Typologien des Index auflisten ([6ca07af](https://github.com/jobrunner/situs/commit/6ca07af19a164dfc75668ba3df52d50f4cb3dda6))
+* **http:** GET /v1/typologies lists every registered typology ([38a81cc](https://github.com/jobrunner/situs/commit/38a81ccc095935f2de484e16db45c174f88bbbcf))
+
 ## [0.5.0](https://github.com/jobrunner/situs/compare/v0.4.0...v0.5.0) (2026-09-15)
 
 
