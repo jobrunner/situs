@@ -95,11 +95,24 @@ func (s *Server) wrapCORS(h http.Handler) http.Handler {
 func (s *Server) corsHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
+		// The response depends on Origin whether or not this particular request
+		// carries one: a shared cache (proxy, CDN) that stored a response to a
+		// request WITHOUT Origin — under a key with no Vary: Origin — could
+		// otherwise hand that same cached response to a later request that DOES
+		// carry an allowed Origin, and the caller gets a response with no
+		// Access-Control-Allow-Origin even though its origin is allowed. Setting
+		// Vary unconditionally closes that gap; Add (not Set) avoids clobbering a
+		// Vary value the handler chain sets further down.
+		w.Header().Add("Vary", "Origin")
+		requestedMethod := r.Header.Get("Access-Control-Request-Method")
+		if requestedMethod != "" {
+			// A preflight response also depends on the requested method — the
+			// allowed methods are derived from it — so two preflights from the
+			// same origin asking about different methods must not share a cache
+			// entry either.
+			w.Header().Add("Vary", "Access-Control-Request-Method")
+		}
 		if origin != "" {
-			// Vary is set for any cross-origin request, allowed or not: the
-			// response depends on Origin, so a shared cache must not hand one
-			// origin's response to another.
-			w.Header().Add("Vary", "Origin")
 			if s.isOriginAllowed(origin) {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				// Advertise the method the ROUTER actually accepts for this
@@ -108,8 +121,8 @@ func (s *Server) corsHandler(next http.Handler) http.Handler {
 				// adds a route with a new method: nothing fails at build time,
 				// and the endpoint is simply unusable from a browser. Deriving
 				// the answer from the route table makes that drift impossible.
-				if m := r.Header.Get("Access-Control-Request-Method"); m != "" && s.routeAllowsMethod(r, m) {
-					w.Header().Set("Access-Control-Allow-Methods", m+", OPTIONS")
+				if requestedMethod != "" && s.routeAllowsMethod(r, requestedMethod) {
+					w.Header().Set("Access-Control-Allow-Methods", requestedMethod+", OPTIONS")
 				}
 				w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Authorization")
 				w.Header().Set("Access-Control-Max-Age", corsMaxAgeSeconds)
@@ -125,7 +138,7 @@ func (s *Server) corsHandler(next http.Handler) http.Handler {
 		// deliberate: without the Allow-Origin header above the browser rejects
 		// the response anyway, and a uniform answer avoids leaking which
 		// origins are configured.
-		if r.Method == http.MethodOptions && origin != "" && r.Header.Get("Access-Control-Request-Method") != "" {
+		if r.Method == http.MethodOptions && origin != "" && requestedMethod != "" {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}

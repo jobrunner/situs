@@ -49,6 +49,15 @@ func ParseOrigin(s string) (Origin, error) {
 	if strings.Contains(rest, "/") {
 		return Origin{}, fmt.Errorf("origin %q must not contain a path", s)
 	}
+	// Query and fragment are not part of a serialized origin either — a browser
+	// never sends them in the Origin header. An entry carrying one would parse
+	// "successfully" and then never match a single real request.
+	if strings.Contains(rest, "?") {
+		return Origin{}, fmt.Errorf("origin %q must not contain a query (drop everything from \"?\" on)", s)
+	}
+	if strings.Contains(rest, "#") {
+		return Origin{}, fmt.Errorf("origin %q must not contain a fragment (drop everything from \"#\" on)", s)
+	}
 
 	host, port, hasPort, err := splitHostPort(rest)
 	if err != nil {
@@ -65,7 +74,31 @@ func ParseOrigin(s string) (Origin, error) {
 		}
 	}
 
+	// A browser serializes an explicit default port away: "https://host:443" and
+	// "http://host:80" are sent as "https://host" and "http://host" in the
+	// Origin header. Normalizing here — not just for https/443 but not for the
+	// OTHER scheme's default port ("https://host:80" stays a distinct origin) —
+	// means an allow-list entry spelled either way still matches.
+	if hasPort && isDefaultPort(scheme, port) {
+		port = ""
+	}
+
 	return Origin{Scheme: scheme, Host: host, Port: port}, nil
+}
+
+// isDefaultPort reports whether port is the scheme's own default — the one a
+// browser omits when serializing an origin. It is deliberately scheme-specific:
+// "https://host:80" is not https's default and must stay distinct from
+// "https://host".
+func isDefaultPort(scheme, port string) bool {
+	switch scheme {
+	case "https":
+		return port == "443"
+	case "http":
+		return port == "80"
+	default:
+		return false
+	}
 }
 
 // splitHostPort separates an optional ":port" from a host, leaving a bracketed

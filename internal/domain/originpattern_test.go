@@ -85,6 +85,41 @@ func TestOriginPatternWildcardRequiresMoreThanTheSuffix(t *testing.T) {
 	}
 }
 
+// TestOriginPatternMatchesDefaultPortEitherWay pins the default-port
+// normalization: an allow-list entry with an explicit ":443" (or ":80") must
+// match a request whose Origin header omits it, and vice versa — a browser
+// never sends the default port in the Origin header.
+func TestOriginPatternMatchesDefaultPortEitherWay(t *testing.T) {
+	withPort, err := ParseOriginPattern("https://example.com:443")
+	if err != nil {
+		t.Fatalf("ParseOriginPattern: %v", err)
+	}
+	if !withPort.MatchesString("https://example.com") {
+		t.Error("pattern with explicit :443 should match an Origin header without a port")
+	}
+
+	withoutPort, err := ParseOriginPattern("https://example.com")
+	if err != nil {
+		t.Fatalf("ParseOriginPattern: %v", err)
+	}
+	if !withoutPort.MatchesString("https://example.com:443") {
+		t.Error("pattern without a port should match an Origin header with explicit :443")
+	}
+}
+
+// TestOriginPatternDoesNotNormalizeTheOtherSchemesDefaultPort pins the
+// boundary: ":80" is http's default, not https's, so "https://example.com:80"
+// must stay a distinct origin from "https://example.com".
+func TestOriginPatternDoesNotNormalizeTheOtherSchemesDefaultPort(t *testing.T) {
+	p, err := ParseOriginPattern("https://example.com:80")
+	if err != nil {
+		t.Fatalf("ParseOriginPattern: %v", err)
+	}
+	if p.MatchesString("https://example.com") {
+		t.Error("https://example.com:80 must not match https://example.com — :80 is not https's default port")
+	}
+}
+
 func TestOriginPatternMatchesStringRejectsMalformedOrigin(t *testing.T) {
 	p, err := ParseOriginPattern("https://example.com")
 	if err != nil {

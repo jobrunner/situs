@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -292,6 +293,48 @@ func TestBareOptionsIsNotSwallowed(t *testing.T) {
 
 	if rec.Code == http.StatusNoContent {
 		t.Error("bare OPTIONS answered 204 by the CORS layer; it must fall through to the router")
+	}
+}
+
+// TestCORSVaryOriginIsSetEvenWithoutAnOriginHeader pins the fix for the gap the
+// review found: a shared cache (proxy, CDN) may store a response to a request
+// that carries no Origin header at all. Without Vary: Origin on THAT response,
+// the cache could later serve it to a request that does carry an allowed
+// Origin, and the caller would get a response with no
+// Access-Control-Allow-Origin even though its origin is allowed.
+func TestCORSVaryOriginIsSetEvenWithoutAnOriginHeader(t *testing.T) {
+	srv := newTestServerWithOptions(t, seededQueryService(), httpapi.Options{
+		CORSAllowedOrigins: []string{"https://allowed.example.test"},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/info", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if got := rec.Header().Values("Vary"); !slices.Contains(got, "Origin") {
+		t.Errorf("Vary = %v, want it to contain %q even without an Origin header on the request", got, "Origin")
+	}
+}
+
+// TestCORSPreflightVariesByRequestedMethod pins the second half of the same
+// gap: a preflight response also depends on Access-Control-Request-Method —
+// the advertised Allow-Methods are derived from it — so two preflights from
+// the same origin asking about different methods must not share one cache
+// entry under Vary: Origin alone.
+func TestCORSPreflightVariesByRequestedMethod(t *testing.T) {
+	const origin = "https://allowed.example.test"
+	srv := newTestServerWithOptions(t, seededQueryService(), httpapi.Options{
+		CORSAllowedOrigins: []string{origin},
+	})
+
+	req := httptest.NewRequest(http.MethodOptions, "/v1/species/habitat-types", nil)
+	req.Header.Set("Origin", origin)
+	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if got := rec.Header().Values("Vary"); !slices.Contains(got, "Access-Control-Request-Method") {
+		t.Errorf("Vary = %v, want it to contain %q on a preflight response", got, "Access-Control-Request-Method")
 	}
 }
 

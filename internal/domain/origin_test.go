@@ -19,13 +19,26 @@ func TestParseOrigin(t *testing.T) {
 		{in: "https://example.com:1", want: Origin{Scheme: "https", Host: "example.com", Port: "1"}},
 		{in: "https://example.com:65535", want: Origin{Scheme: "https", Host: "example.com", Port: "65535"}},
 
+		// A browser serializes an explicit default port away, so an allow-list
+		// entry spelled either way must parse to the same Origin.
+		{in: "https://example.com:443", want: Origin{Scheme: "https", Host: "example.com"}},
+		{in: "http://example.com:80", want: Origin{Scheme: "http", Host: "example.com"}},
+		// The OTHER scheme's default port is not normalized away — it is a
+		// genuinely different, non-default port for this scheme.
+		{in: "https://example.com:80", want: Origin{Scheme: "https", Host: "example.com", Port: "80"}},
+		{in: "http://example.com:443", want: Origin{Scheme: "http", Host: "example.com", Port: "443"}},
+		// A scheme other than http/https has no default port to normalize away.
+		{in: "ftp://example.com:21", want: Origin{Scheme: "ftp", Host: "example.com", Port: "21"}},
+
 		{in: "null", wantErr: true},
 		{in: "example.com", wantErr: true},    // no scheme
 		{in: "://example.com", wantErr: true}, // empty scheme
 		{in: "https://example.com/path", wantErr: true},
-		{in: "https://", wantErr: true},              // no host
-		{in: "https://example.com:", wantErr: true},  // empty port
-		{in: "https://example.com:0", wantErr: true}, // port out of range
+		{in: "https://example.com?x=1", wantErr: true},  // query: a browser never sends this in Origin
+		{in: "https://example.com#frag", wantErr: true}, // fragment: same reason
+		{in: "https://", wantErr: true},                 // no host
+		{in: "https://example.com:", wantErr: true},     // empty port
+		{in: "https://example.com:0", wantErr: true},    // port out of range
 		{in: "https://example.com:70000", wantErr: true},
 		{in: "https://example.com:abc", wantErr: true},
 		{in: "https://[::1]x", wantErr: true}, // junk after the IPv6 bracket, not ":port"

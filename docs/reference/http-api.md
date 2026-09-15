@@ -339,14 +339,23 @@ führende Host-Label durch `*` ersetzt wird. **Schema und Port müssen auch beim
 Platzhalter exakt passen** — `https://*.fieldworksdiary.app` deckt
 `https://app.fieldworksdiary.app`, aber weder `http://app.fieldworksdiary.app`
 (anderes Schema) noch `https://app.fieldworksdiary.app:8443` (anderer Port).
-Ein Eintrag ohne Schema, mit Pfad oder ein bloßes `*` bricht den Start
-**nicht** ab. Er wird beim Start verworfen, mit einer Warnung, die den
-fehlerhaften Eintrag und die nötige Korrektur nennt (`ignoring unusable CORS
-origin pattern`) — der Dienst läuft mit den übrigen, brauchbaren Einträgen
-weiter. Sind **alle** konfigurierten Einträge unbrauchbar, kommt zusätzlich
-eine Fehlermeldung (`CORS was configured but every allowed-origin entry was
-unusable — CORS stays disabled`), weil CORS dann trotz Konfiguration
-vollständig wirkungslos bleibt. Der Prozess startet in beiden Fällen.
+Ein Eintrag ohne Schema, mit Pfad, mit Query (`?...`) oder Fragment (`#...`)
+oder ein bloßes `*` bricht den Start **nicht** ab. Er wird beim Start
+verworfen, mit einer Warnung, die den fehlerhaften Eintrag und die nötige
+Korrektur nennt (`ignoring unusable CORS origin pattern`) — der Dienst läuft
+mit den übrigen, brauchbaren Einträgen weiter. Sind **alle** konfigurierten
+Einträge unbrauchbar, kommt zusätzlich eine Fehlermeldung (`CORS was
+configured but every allowed-origin entry was unusable — CORS stays
+disabled`), weil CORS dann trotz Konfiguration vollständig wirkungslos
+bleibt. Der Prozess startet in beiden Fällen.
+
+Ein Vorgabe-Port wird beim Parsen normalisiert: `https://example.com:443` und
+`https://example.com` (ebenso `http://example.com:80` und
+`http://example.com`) bezeichnen dieselbe Herkunft, weil ein Browser den
+Vorgabe-Port im `Origin`-Header nie mitschickt. Das gilt **nur** für das
+schema-eigene Vorgabe-Paar — `https://example.com:80` bleibt eine andere
+Herkunft als `https://example.com`, weil `:80` das Vorgabe des `http`-Schemas
+ist, nicht des `https`-Schemas.
 
 Es gibt **kein** `Access-Control-Allow-Credentials`: situs kennt keine
 Anmeldung, also gibt es keine Sitzung, die mitgeschickt werden müsste.
