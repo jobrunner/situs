@@ -78,6 +78,7 @@ funktioniert also ohne Netz), `GET /v1/info` und die Lese-Endpunkte:
 
 curl -s 'localhost:8070/v1/info'                        # worauf der Index gebaut ist
 curl -s 'localhost:8070/v1/typologies'                  # welche (typology, code) es überhaupt gibt
+curl -s 'localhost:8070/v1/areas'                       # nach welchen Gebieten gefiltert werden kann
 curl -s 'localhost:8070/v1/habitat-type/eunis@2021/R22?lang=de'
 curl -s 'localhost:8070/v1/habitat-type/annex1/6510'
 curl -s 'localhost:8070/v1/species/<conceptId>/habitat-types'

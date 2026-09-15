@@ -50,3 +50,21 @@ func TestExplorerRoute_DoesNotActAsCatchAll(t *testing.T) {
 		t.Errorf("status = 200 for an unknown path; / is acting as a catch-all")
 	}
 }
+
+// The area filter is a choice, not a guess: the page fills it from /v1/areas
+// so one picks a code the index can actually answer, instead of typing one
+// that comes back as INVALID_QUERY.
+func TestExplorerPage_FillsTheAreaFilterFromTheAreasRoute(t *testing.T) {
+	srv := newTestServer(t, seededQueryService())
+
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `fetch("/v1/areas")`) {
+		t.Error("page does not load /v1/areas; the area filter would stay a free-text guess")
+	}
+	if !strings.Contains(body, `<select id="g-area"`) {
+		t.Error(`the area filter is not a <select id="g-area">`)
+	}
+}

@@ -37,6 +37,10 @@ type IngestTx interface {
 	// UpsertDistribution records that a concept occurs in an area. Idempotent:
 	// a repinned artifact is simply re-ingested.
 	UpsertDistribution(conceptID string, a domain.Area) error
+	// UpsertArea writes the name of one area. Names are an overlay on the
+	// codes species_distribution carries: writing one neither creates nor
+	// requires distribution data.
+	UpsertArea(a domain.NamedArea) error
 	// UpsertTraitValue writes one trait_value row for conceptID. Idempotent
 	// like every other Upsert here: a repinned vocabulary is simply
 	// re-ingested.
@@ -111,6 +115,11 @@ type Repository interface {
 	// filter must be validated against this: an unknown code has to be an
 	// error, not a list of "does not occur".
 	KnownAreaCodes(ctx context.Context, scheme string) ([]string, error)
+	// AreasWithData lists the areas the index has distribution data for,
+	// each with its ingested name — what a client needs to offer an area
+	// filter that can actually answer. An area with a name but no data is
+	// not in it; an area with data but no name keeps an empty name.
+	AreasWithData(ctx context.Context, scheme string) ([]domain.NamedArea, error)
 	// ConceptIDs lists the distinct concept ids the index holds, so the
 	// distribution step knows what to ask for.
 	ConceptIDs(ctx context.Context) ([]string, error)

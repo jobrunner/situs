@@ -16,6 +16,7 @@ decken).
 | `GET /docs` | Swagger-UI für diese Spezifikation, offline-fähig (Assets eingebettet) |
 | `GET /v1/info` | Name, Version und Selbstauskunft des Index |
 | `GET /v1/typologies` | alle geführten Typologien, nach `id` sortiert |
+| `GET /v1/areas` | alle Gebiete mit Verbreitungsdaten (Code + Name), nach `code` sortiert |
 | `GET /v1/habitat-type/{typology}/{code}` | Habitattyp mit Arten, Syntaxa und Crosswalks |
 | `GET /v1/habitat-type/{typology}/{code}/species?role=` | Artenliste, optional nach Rolle gefiltert |
 | `GET /v1/species/search?q=&limit=` | Namenssuche über die im Index geführten `verbatim_name` |
@@ -230,6 +231,34 @@ der Index keine einzige Typologie führt (`[]`, nie `null`). Es gibt keinen
 Filter und keine Parameter: wer eine einzelne Typologie will, kennt danach
 ihre ID und fragt `GET /v1/habitat-type/{typology}/{code}`.
 
+## Gebiete auflisten: `GET /v1/areas`
+
+Der Einstiegspunkt für `?area=`: die Gebiete, zu denen **dieser** Index
+Verbreitungsdaten hat, jedes mit seinem englischen WGSRPD-Namen, **nach
+`code` sortiert**:
+
+```json
+[
+  { "scheme": "wgsrpd_l3", "code": "AUT", "name": "Austria" },
+  { "scheme": "wgsrpd_l3", "code": "GER", "name": "Germany" }
+]
+```
+
+Bewusst **nur Gebiete mit Daten**: ein Gebiet ohne Verbreitungszeilen wäre ein
+Filter, der nur leer antworten kann, und genau diese Codes beantwortet `?area=`
+mit `INVALID_QUERY`. Umgekehrt bleibt ein Code **mit** Daten in der Liste, auch
+wenn zu ihm kein Name eingelesen wurde — dann ist `name` leer. Der Code ist die
+Identität, der Name nur ein Overlay darauf; den Code als Ersatznamen
+auszugeben, würde einen Namen behaupten, den niemand eingelesen hat.
+
+Die Namen stammen aus der WGSRPD-Tabelle selbst (`pipelines/wgsrpd`, an einen
+Commit gepinnt), nicht aus einem anderen Dienst: sie werden beim `ingest` aus
+einer lokalen CSV gelesen. Ohne diese CSV läuft der Ingest normal durch, die
+Codes bleiben dann nur namenlos.
+
+Die Antwort ist immer ein Array, auch wenn der Index keine Verbreitungsdaten
+führt (`[]`, nie `null`). Es gibt keinen Filter und keine Parameter.
+
 ## Die zwei Arten-Pfade
 
 `GET /v1/species/{conceptId}/habitat-types` antwortet **404**, wenn der Index zu
@@ -306,13 +335,10 @@ für den der Index keine Daten hat, ist `INVALID_QUERY` (400) und **nicht** eine
 Liste voller „kommt nicht vor": ein Tippfehler und eine echte Abwesenheit dürfen
 nicht gleich aussehen.
 
-**Welche Codes gültig sind, sagt keine Route.** `areas_with_data` in `/v1/info`
-nennt nur ihre *Anzahl* — daraus lässt sich ablesen, ob überhaupt ein
-Verbreitungs-Ingest gelaufen ist (`0` heißt nein), nicht aber, ob `GER` dabei
-ist. Ein Client, der die Codes braucht, muss sie kennen (WGSRPD Level 3 ist ein
-veröffentlichtes Vokabular) oder am 400 erkennen. Ein Endpunkt, der sie
-auflistet, ist bewusst nicht gebaut, aber die naheliegende Ergänzung, sobald
-jemand sie braucht.
+**Welche Codes gültig sind, sagt `GET /v1/areas`** (siehe oben).
+`areas_with_data` in `/v1/info` nennt weiterhin nur ihre *Anzahl* — daraus
+lässt sich ablesen, ob überhaupt ein Verbreitungs-Ingest gelaufen ist (`0`
+heißt nein), nicht aber, ob `GER` dabei ist.
 
 Mit `?area=` trägt jeder Arteneintrag ein `in_area` mit **drei** Zuständen:
 

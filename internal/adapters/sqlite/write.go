@@ -196,6 +196,20 @@ func (t *ingestTx) UpsertDistribution(conceptID string, a domain.Area) error {
 	return nil
 }
 
+// UpsertArea writes one area name. Idempotent like every other Upsert here,
+// and a repinned artifact whose name changed replaces the old one.
+func (t *ingestTx) UpsertArea(a domain.NamedArea) error {
+	_, err := t.tx.ExecContext(t.ctx,
+		`INSERT INTO area (area_scheme, area_code, name_en)
+		 VALUES (?, ?, ?)
+		 ON CONFLICT(area_scheme, area_code) DO UPDATE SET name_en = excluded.name_en`,
+		a.Scheme, a.Code, a.NameEN)
+	if err != nil {
+		return fmt.Errorf("sqlite: upserting area %s: %w", a.Area, err)
+	}
+	return nil
+}
+
 func (t *ingestTx) Commit() error {
 	if err := t.tx.Commit(); err != nil {
 		return fmt.Errorf("sqlite: committing ingest transaction: %w", err)

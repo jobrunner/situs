@@ -167,6 +167,20 @@ zählen hier deshalb nicht mit. Von den 3142 aufgelösten Namen fallen nur **7**
 paarweise auf dasselbe Konzept zusammen (3142 − 3135). Der Abstand zur Zahl der
 Namen ist also fast ausschließlich die Auflösungslücke, nicht Synonymie.
 
+### Gebietsnamen (`area`)
+
+Die Namen zu diesen Codes kommen aus `pipelines/wgsrpd` (TDWG-Tabelle
+`tblLevel3.txt`, 2. Auflage, an einen Commit gepinnt) — eine lokale CSV, kein
+Dienst. Gemessen am gepinnten Stand: **369** Gebiete, 0 übersprungene Zeilen
+(`output/report.json` der Pipeline).
+
+369 ist das ganze WGSRPD-Level-3-Vokabular, 366 ist die Zahl der Codes mit
+Verbreitungsdaten in diesem Index. `GET /v1/areas` listet die zweite Menge:
+nur Gebiete, nach denen sich auch filtern lässt. Ob zu jedem dieser Codes ein
+Name vorliegt, sagt erst ein vollständiger Ingest-Lauf mit beiden Schritten;
+die Route ist auf den Fall vorbereitet und liefert dann `"name": ""`, statt
+den Code als Ersatznamen auszugeben.
+
 Warum das den Aufwand wert war, an `eunis@2021/R15` mit `?area=GER` gemessen:
 
 | Abfrage | Einträge |

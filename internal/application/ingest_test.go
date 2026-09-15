@@ -450,6 +450,8 @@ type fakeRepo struct {
 	searchErr     error
 	localizations []domain.Localization
 	distribution  []fakeDistribution
+	areas         []domain.NamedArea
+	namedAreas    []domain.NamedArea
 	traitValues   []fakeTraitValue
 	traitVocabs   []fakeTraitVocab
 	committed     bool
@@ -699,6 +701,14 @@ func (r *fakeRepo) UpsertDistribution(conceptID string, a domain.Area) error {
 	return nil
 }
 
+func (r *fakeRepo) UpsertArea(a domain.NamedArea) error {
+	if err := r.failIfNamed("UpsertArea"); err != nil {
+		return err
+	}
+	r.areas = append(r.areas, a)
+	return nil
+}
+
 func (r *fakeRepo) UpsertTraitValue(conceptID string, tv domain.TraitValue) error {
 	if err := r.failIfNamed("UpsertTraitValue"); err != nil {
 		return err
@@ -816,6 +826,22 @@ func (r *fakeRepo) AreasForConcepts(_ context.Context, conceptIDs []string, sche
 			if d.ConceptID == id && d.Area.Scheme == scheme {
 				out[id] = append(out[id], d.Area.Code)
 			}
+		}
+	}
+	return out, nil
+}
+
+// AreasWithData answers from namedAreas, which a test seeds directly: the
+// join of names and distribution rows is the sqlite adapter's job, not this
+// double's.
+func (r *fakeRepo) AreasWithData(_ context.Context, scheme string) ([]domain.NamedArea, error) {
+	if r.areasErr != nil {
+		return nil, r.areasErr
+	}
+	out := []domain.NamedArea{}
+	for _, a := range r.namedAreas {
+		if a.Scheme == scheme {
+			out = append(out, a)
 		}
 	}
 	return out, nil

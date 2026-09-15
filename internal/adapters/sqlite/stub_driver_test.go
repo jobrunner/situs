@@ -68,6 +68,8 @@ func (c *stubConn) Begin() (driver.Tx, error) {
 // serve them all without needing a real SQL engine.
 func (c *stubConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
 	switch {
+	case strings.Contains(query, "LEFT JOIN area"):
+		return &stubRows{cols: []string{"area_code", "name_en"}, mode: c.mode}, nil
 	case strings.Contains(query, "habitat_type_crosswalk"):
 		return &stubRows{cols: []string{"from_typology", "from_code", "to_typology", "to_code", "qualifier"}, mode: c.mode}, nil
 	case strings.Contains(query, "FROM localization"):

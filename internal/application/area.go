@@ -9,6 +9,21 @@ import (
 	"github.com/jobrunner/situs/internal/ports/input"
 )
 
+// Areas lists the areas the ?area= filter can actually answer, each with its
+// ingested name. It is the discovery entry point for that filter, the same
+// role Typologies plays for (typology, code) addressing.
+func (q *QueryService) Areas(ctx context.Context) ([]input.AreaView, error) {
+	areas, err := q.repo.AreasWithData(ctx, domain.SchemeWGSRPDL3)
+	if err != nil {
+		return nil, fmt.Errorf("listing areas: %w", err)
+	}
+	out := make([]input.AreaView, 0, len(areas))
+	for _, a := range areas {
+		out = append(out, input.AreaView{Scheme: a.Scheme, Code: a.Code, Name: a.NameEN})
+	}
+	return out, nil
+}
+
 // areaLookup resolves the filter once per request: it validates the code
 // against the index and returns the areas of the concepts in play. It returns
 // nil, nil when no filter was asked for, so the read path makes no extra
