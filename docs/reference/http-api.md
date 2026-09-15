@@ -320,6 +320,36 @@ hängt kein Upstream-Dienst daran, der ausfallen könnte. Und es gibt kein
 Fehlerfall, sondern eine normale 200-Antwort mit `known: false` und einem
 `reason` — eine unbekannte ID darf nicht die ganze Anfrage verwerfen.
 
+## CORS (optional, standardmäßig aus)
+
+Ohne `SITUS_SERVER_CORS_ALLOWED_ORIGINS` sendet situs **keinerlei**
+CORS-Header — der Dienst verhält sich byte-identisch wie ohne diese
+Funktion. Das ist der korrekte Default: der eingebaute Explorer unter `/`
+wird vom selben Origin ausgeliefert, den er abfragt, und braucht kein CORS.
+
+Gesetzt wird eine kommagetrennte Liste erlaubter Origins:
+
+```bash
+export SITUS_SERVER_CORS_ALLOWED_ORIGINS='http://localhost:5173,https://*.fieldworksdiary.app'
+```
+
+Ein Eintrag ist entweder ein exakter Origin (`http://localhost:5173`) oder ein
+Subdomain-Platzhalter (`https://*.fieldworksdiary.app`), bei dem nur das
+führende Host-Label durch `*` ersetzt wird. **Schema und Port müssen auch beim
+Platzhalter exakt passen** — `https://*.fieldworksdiary.app` deckt
+`https://app.fieldworksdiary.app`, aber weder `http://app.fieldworksdiary.app`
+(anderes Schema) noch `https://app.fieldworksdiary.app:8443` (anderer Port).
+Ein Eintrag ohne Schema, mit Pfad oder ein bloßes `*` lässt den Prozess beim
+Start mit einer Fehlermeldung abbrechen, statt still zu einer Regel zu werden,
+die nie greift.
+
+Es gibt **kein** `Access-Control-Allow-Credentials`: situs kennt keine
+Anmeldung, also gibt es keine Sitzung, die mitgeschickt werden müsste.
+
+`Access-Control-Allow-Methods` wird bei jedem Preflight aus der tatsächlichen
+Routing-Tabelle beantwortet, nie aus einer festen Liste — ein neuer Endpunkt
+ist damit automatisch abgedeckt.
+
 ## Bekannte Grenze: Leseverhalten
 
 Die Arten- und Syntaxon-Pfade lesen pro gefundenem Habitattyp nachträglich
