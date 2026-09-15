@@ -296,30 +296,6 @@ func WarnOnForeignBackbones(ctx context.Context, backbones []string) []string {
 	return foreign
 }
 
-// Typologies lists every typology the index carries, with the measured
-// count of habitat types each one has. It is the discovery entry point for
-// the (typology, code) addressing every habitat-type route uses: a client
-// otherwise has no way to learn that eunis@2012 and annex1 exist alongside
-// eunis@2021.
-func (q *QueryService) Typologies(ctx context.Context) ([]input.TypologyView, error) {
-	summaries, err := q.repo.Typologies(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("listing typologies: %w", err)
-	}
-	out := make([]input.TypologyView, 0, len(summaries))
-	for _, s := range summaries {
-		out = append(out, input.TypologyView{
-			ID:           s.Typology.ID,
-			Scheme:       s.Typology.Scheme,
-			Version:      s.Typology.Version,
-			Name:         s.Typology.Name,
-			SourceRef:    s.Typology.SourceRef,
-			HabitatTypes: s.HabitatTypes,
-		})
-	}
-	return out, nil
-}
-
 // IndexInfo measures what the index holds. Nothing here is configured: a
 // client's whole reason to ask is to find out whether *this* index can answer
 // its concept ids, and a configured claim could not tell it that.
