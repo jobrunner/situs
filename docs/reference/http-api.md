@@ -214,16 +214,18 @@ sortiert**, damit dieselbe Anfrage stabil dieselbe Reihenfolge liefert:
     "name": "Habitats Directive Annex I",
     "source_ref": "https://doi.org/10.2909/...", "habitat_types": 205 },
   { "id": "eunis@2012", "scheme": "eunis", "version": "2012",
-    "name": "EUNIS 2012", "source_ref": "...", "habitat_types": 0 },
+    "name": "EUNIS 2012", "source_ref": "...", "habitat_types": 3783 },
   { "id": "eunis@2021", "scheme": "eunis", "version": "2021",
-    "name": "EUNIS 2021", "source_ref": "...", "habitat_types": 7937 }
+    "name": "EUNIS 2021", "source_ref": "...", "habitat_types": 3949 }
 ]
 ```
 
+Die Zahlen sind der gepinnte Datenstand: 205 + 3783 + 3949 = 7937, die
+Gesamtzahl der Habitattypen im Index.
+
 `habitat_types` ist wie jede Zahl in `/v1/info` **am Index gemessen**, nie
-konfiguriert. Eine `0` ist eine ehrliche Aussage — die Typologie ist
-registriert, aber (noch) nicht gefüllt —, kein Fehler; oben steht
-`eunis@2012` beispielhaft dafür. Die Antwort ist immer ein Array, auch wenn
+konfiguriert. Eine `0` wäre eine ehrliche Aussage — die Typologie ist
+registriert, aber (noch) nicht gefüllt —, kein Fehler. Die Antwort ist immer ein Array, auch wenn
 der Index keine einzige Typologie führt (`[]`, nie `null`). Es gibt keinen
 Filter und keine Parameter: wer eine einzelne Typologie will, kennt danach
 ihre ID und fragt `GET /v1/habitat-type/{typology}/{code}`.
