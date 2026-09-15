@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.5.0](https://github.com/jobrunner/situs/compare/v0.4.0...v0.5.0) (2026-09-15)
+
+
+### Features
+
+* **config:** CORSConfig with a registered viper default ([c6c6f44](https://github.com/jobrunner/situs/commit/c6c6f4444d54b59608861e1df58f23b0f5e37920))
+* **domain:** Origin and OriginPattern value objects for CORS allow-listing ([2c4ee46](https://github.com/jobrunner/situs/commit/2c4ee46dfaf0d07ed6277114d13c9fec40bc1264))
+* **http:** optional CORS, off unless an origin is configured ([e07a53e](https://github.com/jobrunner/situs/commit/e07a53ee93e4edef6e053a77b149f1fa801227d1))
+* **http:** optionales CORS, standardmäßig aus ([d51688b](https://github.com/jobrunner/situs/commit/d51688bbaaff99409532402664652206ab89289c))
+
+
+### Bug Fixes
+
+* close four CORS review findings ([d8f8213](https://github.com/jobrunner/situs/commit/d8f821350ae785f01e799ac6ec809d47cc14e777))
+* close three CORS review findings (wiring test, wildcard advice, case) ([3902322](https://github.com/jobrunner/situs/commit/3902322e4af729301e653c1bbb80839db1917883))
+* **domain:** close three more CORS allow-list entries that can never match ([5e7fd42](https://github.com/jobrunner/situs/commit/5e7fd429dfb63ca910ebe494e943a4ff343767f0))
+* fuzzer for CORS origin patterns + four review findings ([6a80f1c](https://github.com/jobrunner/situs/commit/6a80f1cacb3f330422f7a2750cbaaee06fa4b733))
+* **http,domain:** close three CORS caching/parsing gaps from review ([ba829af](https://github.com/jobrunner/situs/commit/ba829af5411af50276847ba6a1eb752531a5d51f))
+* **http:** log the aggregate consequence when every CORS origin is unusable ([b5d2447](https://github.com/jobrunner/situs/commit/b5d2447f1763e43fd9e2653379b3bfe79a47ac1c))
+
 ## [0.4.0](https://github.com/jobrunner/situs/compare/v0.3.0...v0.4.0) (2026-09-14)
 
 
