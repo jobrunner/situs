@@ -29,6 +29,7 @@ func TestParseOrigin(t *testing.T) {
 		{in: "https://example.com:70000", wantErr: true},
 		{in: "https://example.com:abc", wantErr: true},
 		{in: "https://[::1]x", wantErr: true}, // junk after the IPv6 bracket, not ":port"
+		{in: "https://[::1", wantErr: true},   // unbalanced IPv6 bracket
 	}
 	for _, tc := range tests {
 		got, err := ParseOrigin(tc.in)
@@ -51,16 +52,15 @@ func TestParseOrigin(t *testing.T) {
 	}
 }
 
-func TestOriginUnbalancedIPv6BracketIsTreatedAsHost(t *testing.T) {
-	// An unbalanced "[" is not rejected by splitHostPort itself (it falls back to
-	// treating the whole remainder as the host); it still parses successfully
-	// since nothing else about it is malformed.
+func TestOriginUnbalancedIPv6BracketIsRejected(t *testing.T) {
+	// An unbalanced "[" must be rejected, not passed through as a host: it can
+	// never match a real browser Origin header, so letting it into
+	// corsPatterns would silently and permanently disable CORS for that entry.
 	got, err := ParseOrigin("https://[::1")
-	if err != nil {
-		t.Fatalf("ParseOrigin(%q): unexpected error %v", "https://[::1", err)
+	if err == nil {
+		t.Fatalf("ParseOrigin(%q) = %+v, want error", "https://[::1", got)
 	}
-	want := Origin{Scheme: "https", Host: "[::1"}
-	if got != want {
-		t.Errorf("ParseOrigin(%q) = %+v, want %+v", "https://[::1", got, want)
+	if got != (Origin{}) {
+		t.Errorf("ParseOrigin(%q) = %+v, want zero value on error", "https://[::1", got)
 	}
 }

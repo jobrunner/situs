@@ -10,6 +10,7 @@ Defaults.
 | `server.port` | `SITUS_SERVER_PORT` | `8070` | Listen-Port |
 | `server.read_timeout` | `SITUS_SERVER_READ_TIMEOUT` | `30s` | `http.Server.ReadTimeout`: Frist für das Lesen eines ganzen Requests (`0` = keine, über den Header-Timeout von 10s hinaus) |
 | `server.shutdown_timeout` | `SITUS_SERVER_SHUTDOWN_TIMEOUT` | `15s` | Frist für den geordneten Stop |
+| `server.cors.allowed_origins` | `SITUS_SERVER_CORS_ALLOWED_ORIGINS` | leer (aus) | Kommagetrennte Liste erlaubter Origins für einen Browser-Client (exakt oder `https://*.example.com`-Subdomain-Platzhalter). Leer heißt: kein CORS-Header, byte-identisch zum Verhalten ohne diese Funktion. Ein unbrauchbarer Eintrag (kein Schema, mit Pfad, bloßes `*`, …) wird verworfen und nur gewarnt; erst wenn **alle** Einträge unbrauchbar sind, gibt es zusätzlich eine Fehlermeldung, weil CORS dann trotz Konfiguration wirkungslos bleibt — der Start bricht in keinem Fall ab. Details: `docs/reference/http-api.md#cors-optional-standardmäßig-aus` |
 | `logging.level` | `SITUS_LOGGING_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `logging.format` | `SITUS_LOGGING_FORMAT` | `json` | `json` oder `text` |
 | `index.path` | `SITUS_INDEX_PATH` | `situs.sqlite` | Pfad des lokalen SQLite-Index, aus dem die Lese-API antwortet. `situs ingest` schreibt ohne `--db` in genau diese Datei, damit Ingest und `serve` nicht auf verschiedene Indizes zeigen |

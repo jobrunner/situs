@@ -76,7 +76,7 @@ func splitHostPort(hostPort string) (host, port string, hasPort bool, err error)
 	if after, found := strings.CutPrefix(hostPort, "["); found {
 		literal, rest, closed := strings.Cut(after, "]")
 		if !closed {
-			return hostPort, "", false, nil // unbalanced: treat the whole thing as the host
+			return "", "", false, fmt.Errorf("unbalanced %q — an IPv6 literal needs a closing bracket", hostPort)
 		}
 		// Only ":port" may follow the literal. Anything else is neither host nor
 		// port; letting it through would leave an entry no browser origin can

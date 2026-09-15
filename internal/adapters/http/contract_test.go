@@ -212,7 +212,7 @@ func TestCORSPreflightForEveryWritingRoute(t *testing.T) {
 	}
 
 	for _, o := range ops {
-		t.Run(o.method+" "+o.path, func(t *testing.T) {
+		t.Run(o.method+" "+o.template, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodOptions, o.path, nil)
 			req.Header.Set("Origin", origin)
 			req.Header.Set("Access-Control-Request-Method", o.method)
@@ -238,24 +238,35 @@ func TestCORSPreflightForEveryWritingRoute(t *testing.T) {
 	}
 }
 
-// writingRouteOp is one non-GET/HEAD route the preflight test exercises.
-type writingRouteOp struct{ method, path string }
+// writingRouteOp is one non-GET/HEAD route the preflight test exercises. path
+// is the concrete request path — pathVars already substituted with a
+// placeholder — so it can be handed straight to httptest.NewRequest.
+type writingRouteOp struct{ method, path, template string }
+
+// pathVarPattern matches one gorilla/mux path variable, with or without a
+// regex constraint: "{id}" or "{id:[0-9]+}".
+var pathVarPattern = regexp.MustCompile(`\{[^{}]+\}`)
 
 // writingRouteOps derives the preflight test cases from the route table, so an
-// endpoint added tomorrow is covered without touching the test. Path-var
-// routes are skipped: httptest.NewRequest needs a concrete path, and every
-// writing route in situs today is a fixed path anyway.
+// endpoint added tomorrow is covered without touching the test. A route with
+// path variables is NOT skipped — that would let a future
+// "POST /v1/species/{id}/..." pass the suite without ever being preflighted.
+// Instead each "{var}" is replaced with a concrete placeholder ("1") so the
+// route is actually dispatched; if the placeholder does not satisfy the
+// route's own pattern, the preflight fails to match and the test below fails
+// loudly (wrong-status, not a silent skip) rather than reporting false green.
 func writingRouteOps(t *testing.T, srv *httpapi.Server) []writingRouteOp {
 	t.Helper()
 	var ops []writingRouteOp
 	err := srv.Router().Walk(func(route *mux.Route, _ *mux.Router, _ []*mux.Route) error {
 		tmpl, tErr := route.GetPathTemplate()
-		if tErr == nil && !strings.Contains(tmpl, "{") {
+		if tErr == nil {
+			concrete := pathVarPattern.ReplaceAllString(tmpl, "1")
 			if methods, mErr := route.GetMethods(); mErr == nil {
 				for _, m := range methods {
 					// GET/HEAD are "simple requests" — no preflight, nothing to pin.
 					if m != http.MethodGet && m != http.MethodHead && m != http.MethodOptions {
-						ops = append(ops, writingRouteOp{m, tmpl})
+						ops = append(ops, writingRouteOp{m, concrete, tmpl})
 					}
 				}
 			}

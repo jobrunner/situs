@@ -339,9 +339,14 @@ führende Host-Label durch `*` ersetzt wird. **Schema und Port müssen auch beim
 Platzhalter exakt passen** — `https://*.fieldworksdiary.app` deckt
 `https://app.fieldworksdiary.app`, aber weder `http://app.fieldworksdiary.app`
 (anderes Schema) noch `https://app.fieldworksdiary.app:8443` (anderer Port).
-Ein Eintrag ohne Schema, mit Pfad oder ein bloßes `*` lässt den Prozess beim
-Start mit einer Fehlermeldung abbrechen, statt still zu einer Regel zu werden,
-die nie greift.
+Ein Eintrag ohne Schema, mit Pfad oder ein bloßes `*` bricht den Start
+**nicht** ab. Er wird beim Start verworfen, mit einer Warnung, die den
+fehlerhaften Eintrag und die nötige Korrektur nennt (`ignoring unusable CORS
+origin pattern`) — der Dienst läuft mit den übrigen, brauchbaren Einträgen
+weiter. Sind **alle** konfigurierten Einträge unbrauchbar, kommt zusätzlich
+eine Fehlermeldung (`CORS was configured but every allowed-origin entry was
+unusable — CORS stays disabled`), weil CORS dann trotz Konfiguration
+vollständig wirkungslos bleibt. Der Prozess startet in beiden Fällen.
 
 Es gibt **kein** `Access-Control-Allow-Credentials`: situs kennt keine
 Anmeldung, also gibt es keine Sitzung, die mitgeschickt werden müsste.
