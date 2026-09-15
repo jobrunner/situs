@@ -339,8 +339,18 @@ führende Host-Label durch `*` ersetzt wird. **Schema und Port müssen auch beim
 Platzhalter exakt passen** — `https://*.fieldworksdiary.app` deckt
 `https://app.fieldworksdiary.app`, aber weder `http://app.fieldworksdiary.app`
 (anderes Schema) noch `https://app.fieldworksdiary.app:8443` (anderer Port).
-Ein Eintrag ohne Schema, mit Pfad, mit Query (`?...`) oder Fragment (`#...`)
-oder ein bloßes `*` bricht den Start **nicht** ab. Er wird beim Start
+Leerraum um einen Eintrag ist erlaubt und wird vor dem Parsen entfernt —
+`'http://localhost:5173, https://*.fieldworksdiary.app'` (Leerzeichen nach dem
+Komma, die naheliegende Schreibweise) ergibt dieselben zwei Einträge wie ohne
+Leerzeichen. Ein Eintrag, der nach dem Trimmen leer ist (ein doppeltes Komma,
+ein Komma am Ende), gilt **nicht** als brauchbar und fällt unter dieselbe
+Warnung wie jeder andere kaputte Eintrag — er verschwindet nicht kommentarlos.
+
+Ein Eintrag ohne Schema, mit ungültigem Schema (z. B. `ht/tps://` oder ein
+Schema mit eingebettetem Leerzeichen), mit Pfad, mit Query (`?...`) oder
+Fragment (`#...`), mit einem Port außerhalb 1–65535 oder in nicht-kanonischer
+Form (`:0443`, `:+443` — ein Browser schickt nie eine führende Null oder ein
+`+`) oder ein bloßes `*` bricht den Start **nicht** ab. Er wird beim Start
 verworfen, mit einer Warnung, die den fehlerhaften Eintrag und die nötige
 Korrektur nennt (`ignoring unusable CORS origin pattern`) — der Dienst läuft
 mit den übrigen, brauchbaren Einträgen weiter. Sind **alle** konfigurierten

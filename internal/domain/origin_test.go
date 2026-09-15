@@ -47,6 +47,22 @@ func TestParseOrigin(t *testing.T) {
 		{in: "https://example.com:abc", wantErr: true},
 		{in: "https://[::1]x", wantErr: true}, // junk after the IPv6 bracket, not ":port"
 		{in: "https://[::1", wantErr: true},   // unbalanced IPv6 bracket
+
+		// A scheme is only ever ALPHA *(ALPHA / DIGIT / "+" / "-" / "."); a "://"
+		// substring alone is not enough evidence of one.
+		{in: "ht/tps://kaputt.de", wantErr: true},
+		{in: "https ://example.com", wantErr: true},
+		{in: "1https://example.com", wantErr: true}, // must start with a letter
+		{in: "htt_ps://example.com", wantErr: true}, // "_" invalid anywhere in a scheme
+		{in: "a+b-c.d://example.com", want: Origin{Scheme: "a+b-c.d", Host: "example.com"}},
+		// Boundary values themselves, not just values safely inside the ranges:
+		// 'z' is the last valid letter, '0' and '9' the first/last valid digit.
+		{in: "z09://example.com", want: Origin{Scheme: "z09", Host: "example.com"}},
+
+		// A port kept as a string despite passing Atoi: neither a leading zero
+		// nor a leading "+" is what a browser ever sends.
+		{in: "https://example.com:0443", wantErr: true},
+		{in: "https://example.com:+443", wantErr: true},
 	}
 	for _, tc := range tests {
 		got, err := ParseOrigin(tc.in)

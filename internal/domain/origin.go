@@ -51,6 +51,14 @@ func ParseOrigin(s string) (Origin, error) {
 	// spelled "HTTPS://Example.COM" still matches the lowercase origin a browser
 	// actually sends.
 	scheme = strings.ToLower(scheme)
+	// RFC 3986: scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ). Checking
+	// only "text before ://" accepted junk like "ht/tps" or "https " (a space
+	// smuggled in before the "://") — a browser can never send either as the
+	// scheme of its Origin header, so such an entry would parse and then never
+	// match a real request.
+	if !isValidScheme(scheme) {
+		return Origin{}, fmt.Errorf("origin %q has an invalid scheme %q", s, scheme)
+	}
 	if strings.Contains(rest, "/") {
 		return Origin{}, fmt.Errorf("origin %q must not contain a path", s)
 	}
@@ -71,12 +79,8 @@ func ParseOrigin(s string) (Origin, error) {
 	if host == "" {
 		return Origin{}, fmt.Errorf("origin %q needs a host", s)
 	}
-	// A port outside 1-65535 is one no browser can ever send, so such an entry
-	// would be a rule that silently never matches.
-	if hasPort {
-		if n, convErr := strconv.Atoi(port); convErr != nil || n < 1 || n > 65535 {
-			return Origin{}, fmt.Errorf("origin %q has an invalid port %q (expected 1-65535)", s, port)
-		}
+	if hasPort && !isCanonicalPort(port) {
+		return Origin{}, fmt.Errorf("origin %q has an invalid port %q (expected 1-65535 in canonical decimal form)", s, port)
 	}
 
 	// A browser serializes an explicit default port away: "https://host:443" and
@@ -89,6 +93,35 @@ func ParseOrigin(s string) (Origin, error) {
 	}
 
 	return Origin{Scheme: scheme, Host: strings.ToLower(host), Port: port}, nil
+}
+
+// isValidScheme reports whether scheme is a syntactically valid URI scheme
+// (RFC 3986): a letter, followed by letters, digits, "+", "-" or ".". scheme
+// is already lower-cased by the caller, so only the digit/"+"/"-"/"." case
+// needs an explicit check here. The caller already rejects an empty scheme
+// (strings.Cut's ok is false for one), so an empty string never reaches here.
+func isValidScheme(scheme string) bool {
+	for i, r := range scheme {
+		isLetter := r >= 'a' && r <= 'z'
+		isDigitOrSymbol := i > 0 && (r >= '0' && r <= '9' || r == '+' || r == '-' || r == '.')
+		if !isLetter && !isDigitOrSymbol {
+			return false
+		}
+	}
+	return true
+}
+
+// isCanonicalPort reports whether port is both in range (1-65535, the range a
+// browser can ever send) and written in the exact decimal form a browser
+// would send it in. strconv.Itoa(n) != port catches everything Atoi alone
+// lets through that still is not that canonical form: a leading zero
+// ("0443"), a leading "+" ("+443"), or leading/trailing space Atoi tolerates.
+// Rejecting rather than rewriting "0443" to "443" is more honest — silently
+// normalizing would hide a likely typo (a copy-pasted port with a stray
+// digit) behind a match that still works.
+func isCanonicalPort(port string) bool {
+	n, err := strconv.Atoi(port)
+	return err == nil && n >= 1 && n <= 65535 && strconv.Itoa(n) == port
 }
 
 // isDefaultPort reports whether port is the scheme's own default — the one a

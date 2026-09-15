@@ -22,6 +22,22 @@ type OriginPattern struct {
 // scheme like any other origin, and the "*" must be a whole leading label:
 // "https://*.example.com" is valid, "https://sub*.example.com" is not.
 func ParseOriginPattern(s string) (OriginPattern, error) {
+	// SITUS_SERVER_CORS_ALLOWED_ORIGINS is comma-separated, and writing
+	// "a, b" with a space after the comma is the natural way to write a list —
+	// so a caller splitting on "," hands us entries with leading/trailing
+	// whitespace routinely, not as an edge case. Left untrimmed, the space
+	// becomes part of the scheme ("  https" or "https") or host and the entry
+	// is accepted but can never equal a real Origin header, which never
+	// carries whitespace. Trimming here, not in every caller, keeps the
+	// guarantee in one place regardless of how the list was split.
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return OriginPattern{}, fmt.Errorf(
+			"origin pattern is empty (blank entries are not silently dropped: " +
+				"a stray comma such as \"a,,b\" or a trailing \"a,\" would otherwise " +
+				"vanish without a warning)")
+	}
+
 	// The bare wildcard is rejected by the "*" must be a whole leading host
 	// label check below, but ParseOrigin would reject it first — and its
 	// generic "needs a scheme" advice ("write it as https://*") is itself an
