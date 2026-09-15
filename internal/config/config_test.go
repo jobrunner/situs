@@ -130,6 +130,40 @@ func TestAddrJoinsHostAndPort(t *testing.T) {
 	}
 }
 
+func TestLoadDefaultsToCORSDisabled(t *testing.T) {
+	cfg, err := config.Load("")
+	if err != nil {
+		t.Fatalf("Load(\"\") = %v, want no error", err)
+	}
+	if len(cfg.Server.CORS.AllowedOrigins) != 0 {
+		t.Errorf("server.cors.allowed_origins = %v, want empty", cfg.Server.CORS.AllowedOrigins)
+	}
+	if cfg.Server.CORS.Enabled() {
+		t.Error("CORS.Enabled() = true with no origins configured, want false")
+	}
+}
+
+func TestLoadReadsTheCORSAllowedOriginsFromTheEnvironmentAsACommaSeparatedList(t *testing.T) {
+	t.Setenv("SITUS_SERVER_CORS_ALLOWED_ORIGINS", "https://app.example.test,https://*.fieldworksdiary.app")
+
+	cfg, err := config.Load("")
+	if err != nil {
+		t.Fatalf("Load(\"\") = %v, want no error", err)
+	}
+	want := []string{"https://app.example.test", "https://*.fieldworksdiary.app"}
+	if len(cfg.Server.CORS.AllowedOrigins) != len(want) {
+		t.Fatalf("server.cors.allowed_origins = %v, want %v", cfg.Server.CORS.AllowedOrigins, want)
+	}
+	for i, o := range want {
+		if cfg.Server.CORS.AllowedOrigins[i] != o {
+			t.Errorf("server.cors.allowed_origins[%d] = %q, want %q", i, cfg.Server.CORS.AllowedOrigins[i], o)
+		}
+	}
+	if !cfg.Server.CORS.Enabled() {
+		t.Error("CORS.Enabled() = false with origins configured, want true")
+	}
+}
+
 func TestLoadReadsTheHostusBatchSizeFromTheEnvironment(t *testing.T) {
 	t.Setenv("SITUS_HOSTUS_BATCH_SIZE", "17")
 

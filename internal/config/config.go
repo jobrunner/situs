@@ -45,7 +45,25 @@ type ServerConfig struct {
 	Port            int           `mapstructure:"port"`
 	ReadTimeout     time.Duration `mapstructure:"read_timeout"`
 	ShutdownTimeout time.Duration `mapstructure:"shutdown_timeout"`
+	CORS            CORSConfig    `mapstructure:"cors"`
 }
+
+// CORSConfig lists the browser origins allowed to call the API from another
+// site. Empty (the default) means no CORS headers are sent at all, so the
+// service behaves exactly as it does today — correct as long as the only
+// browser client is the same-origin explorer under "/".
+type CORSConfig struct {
+	// AllowedOrigins holds exact origins ("https://example.com") and wildcard
+	// patterns ("https://*.example.com"). Set via
+	// SITUS_SERVER_CORS_ALLOWED_ORIGINS as a comma-separated list — viper's
+	// decode hook splits it, which is why the key needs a registered default
+	// (see Defaults below).
+	AllowedOrigins []string `mapstructure:"allowed_origins"`
+}
+
+// Enabled reports whether any origin is allowed; the middleware is only wired
+// in when this is true.
+func (c CORSConfig) Enabled() bool { return len(c.AllowedOrigins) > 0 }
 
 // Addr is the listen address of the HTTP server.
 func (c ServerConfig) Addr() string {
@@ -83,6 +101,10 @@ func Defaults(v *viper.Viper) {
 	v.SetDefault("server.port", 8070)
 	v.SetDefault("server.read_timeout", 30*time.Second)
 	v.SetDefault("server.shutdown_timeout", 15*time.Second)
+	// Registering the key is what lets AutomaticEnv pick up
+	// SITUS_SERVER_CORS_ALLOWED_ORIGINS as a comma-separated list; the empty
+	// default keeps CORS off.
+	v.SetDefault("server.cors.allowed_origins", []string{})
 
 	v.SetDefault("logging.level", "info")
 	v.SetDefault("logging.format", "json")
