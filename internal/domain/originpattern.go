@@ -22,6 +22,17 @@ type OriginPattern struct {
 // scheme like any other origin, and the "*" must be a whole leading label:
 // "https://*.example.com" is valid, "https://sub*.example.com" is not.
 func ParseOriginPattern(s string) (OriginPattern, error) {
+	// The bare wildcard is rejected by the "*" must be a whole leading host
+	// label check below, but ParseOrigin would reject it first — and its
+	// generic "needs a scheme" advice ("write it as https://*") is itself an
+	// entry the wildcard check refuses next. Catching it here keeps the advice
+	// actionable.
+	if s == "*" {
+		return OriginPattern{}, fmt.Errorf(
+			"origin pattern %q: a bare \"*\" is not a valid entry — "+
+				"write a scheme and a suffix, e.g. https://*.example.com", s)
+	}
+
 	origin, err := ParseOrigin(s)
 	if err != nil {
 		return OriginPattern{}, err

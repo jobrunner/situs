@@ -1,6 +1,9 @@
 package domain
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseOriginPattern(t *testing.T) {
 	tests := []struct {
@@ -25,6 +28,24 @@ func TestParseOriginPattern(t *testing.T) {
 		if !tc.wantErr && err != nil {
 			t.Errorf("ParseOriginPattern(%q): unexpected error %v", tc.in, err)
 		}
+	}
+}
+
+// TestParseOriginPatternBareWildcardGivesActionableAdvice pins the fix for a
+// dead-end error: the bare "*" must not be told to write itself as "https://*"
+// — that rewritten form is rejected too, by the wildcard-label check. The
+// message must point at a suffix that actually works.
+func TestParseOriginPatternBareWildcardGivesActionableAdvice(t *testing.T) {
+	_, err := ParseOriginPattern("*")
+	if err == nil {
+		t.Fatal("ParseOriginPattern(\"*\") = nil error, want error")
+	}
+	if strings.Contains(err.Error(), "https://*\"") {
+		t.Errorf("error %q still advises the bare https://*, which is itself rejected", err.Error())
+	}
+	// The suggested rewrite must itself parse.
+	if _, rewriteErr := ParseOriginPattern("https://*.example.com"); rewriteErr != nil {
+		t.Fatalf("the suggested rewrite https://*.example.com must itself be valid: %v", rewriteErr)
 	}
 }
 
@@ -127,6 +148,29 @@ func TestOriginPatternMatchesStringRejectsMalformedOrigin(t *testing.T) {
 	}
 	if p.MatchesString("not-an-origin") {
 		t.Error("a malformed Origin header value must never match")
+	}
+}
+
+// TestOriginPatternMatchesStringIsCaseInsensitiveInSchemeAndHost pins the fix
+// for an allow-list entry spelled with any case: scheme and DNS host are
+// case-insensitive, so "HTTPS://Example.COM" must still match the lowercase
+// origin a browser actually sends — and a literally lowercase entry must keep
+// working exactly as before.
+func TestOriginPatternMatchesStringIsCaseInsensitiveInSchemeAndHost(t *testing.T) {
+	upper, err := ParseOriginPattern("HTTPS://Example.COM")
+	if err != nil {
+		t.Fatalf("ParseOriginPattern: %v", err)
+	}
+	if !upper.MatchesString("https://example.com") {
+		t.Error("an upper-cased allow-list entry must match the lowercase origin a browser sends")
+	}
+
+	lower, err := ParseOriginPattern("https://example.com")
+	if err != nil {
+		t.Fatalf("ParseOriginPattern: %v", err)
+	}
+	if !lower.MatchesString("https://example.com") {
+		t.Error("a literally lowercase allow-list entry must still match")
 	}
 }
 

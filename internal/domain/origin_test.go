@@ -14,6 +14,10 @@ func TestParseOrigin(t *testing.T) {
 		{in: "https://[::1]:8443", want: Origin{Scheme: "https", Host: "[::1]", Port: "8443"}},
 		{in: "https://[::1]", want: Origin{Scheme: "https", Host: "[::1]"}},
 		{in: "https://*.example.com", want: Origin{Scheme: "https", Host: "*.example.com"}},
+		// Scheme and host are case-insensitive; an entry spelled with any case must
+		// still parse to the same, lowercase Origin a browser actually sends.
+		{in: "HTTPS://Example.COM", want: Origin{Scheme: "https", Host: "example.com"}},
+		{in: "HtTp://LocalHost:5173", want: Origin{Scheme: "http", Host: "localhost", Port: "5173"}},
 		// Port boundaries: 1 and 65535 are the smallest/largest ports a browser
 		// can send and must be accepted, not just the values one past them.
 		{in: "https://example.com:1", want: Origin{Scheme: "https", Host: "example.com", Port: "1"}},

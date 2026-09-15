@@ -349,6 +349,12 @@ configured but every allowed-origin entry was unusable — CORS stays
 disabled`), weil CORS dann trotz Konfiguration vollständig wirkungslos
 bleibt. Der Prozess startet in beiden Fällen.
 
+Schema und Host werden beim Parsen auf Kleinschreibung normalisiert — beide
+sind laut Spezifikation unabhängig von der Schreibweise gleich. Ein Eintrag
+wie `HTTPS://Example.COM` trifft also dieselbe Herkunft wie
+`https://example.com`. Der Port wird **nicht** normalisiert, da er ohnehin
+nur aus Ziffern besteht.
+
 Ein Vorgabe-Port wird beim Parsen normalisiert: `https://example.com:443` und
 `https://example.com` (ebenso `http://example.com:80` und
 `http://example.com`) bezeichnen dieselbe Herkunft, weil ein Browser den

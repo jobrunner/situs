@@ -46,6 +46,11 @@ func ParseOrigin(s string) (Origin, error) {
 		return Origin{}, fmt.Errorf("origin %q needs a scheme — write it as https://%s",
 			s, strings.TrimPrefix(s, "://"))
 	}
+	// Scheme and DNS host are case-insensitive by spec; the port is a number and
+	// has no case, so it is left untouched. Normalizing here means an entry
+	// spelled "HTTPS://Example.COM" still matches the lowercase origin a browser
+	// actually sends.
+	scheme = strings.ToLower(scheme)
 	if strings.Contains(rest, "/") {
 		return Origin{}, fmt.Errorf("origin %q must not contain a path", s)
 	}
@@ -83,7 +88,7 @@ func ParseOrigin(s string) (Origin, error) {
 		port = ""
 	}
 
-	return Origin{Scheme: scheme, Host: host, Port: port}, nil
+	return Origin{Scheme: scheme, Host: strings.ToLower(host), Port: port}, nil
 }
 
 // isDefaultPort reports whether port is the scheme's own default — the one a
