@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.0](https://github.com/jobrunner/situs/compare/v0.6.0...v0.7.0) (2026-09-15)
+
+
+### Features
+
+* **areas:** GET /v1/areas mit ingesteten WGSRPD-Gebietsnamen ([38d6b7d](https://github.com/jobrunner/situs/commit/38d6b7db5d380b064793cc9d7525bd3ea514cf87))
+* **areas:** GET /v1/areas mit ingesteten WGSRPD-Gebietsnamen ([c9d6b72](https://github.com/jobrunner/situs/commit/c9d6b721e2bfed7bced4e3f27ab42ca100b56408))
+
+
+### Bug Fixes
+
+* **areas:** bare relativen CSV-Pfad lesen, Docstring-Beispiele korrigieren ([dc07e9f](https://github.com/jobrunner/situs/commit/dc07e9f38a0a9362370a27df950e9116af407727))
+* **areas:** Review-Funde aus PR [#34](https://github.com/jobrunner/situs/issues/34) ([45ee0cc](https://github.com/jobrunner/situs/commit/45ee0ccd91a1029217657c1e6798726783f55d58))
+
 ## [0.6.0](https://github.com/jobrunner/situs/compare/v0.5.0...v0.6.0) (2026-09-15)
 
 
