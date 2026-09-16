@@ -13,15 +13,13 @@ Er beantwortet Fakten in beide Richtungen:
   (Anhang I der FFH-Richtlinie), jeweils mit Abdeckungs-Qualifier
   (`=`, `<`, `>`, `#`, `≈`).
 
-Habitattyp-Namen liefert der Index derzeit **nur auf Englisch** (`name_en`).
-Der Mechanismus für deutsche Labels ist gebaut und getestet — Overlay statt
-Ersetzung, `provenance` ∈ `official` | `curated` | `derived`, und Ableitung
-ausschließlich über Qualifier `=` —, aber es ist noch **keine** deutsche
-Namensquelle gepinnt: `localizations.csv` erzeugt bislang niemand, gemessen
-sind entsprechend `Localizations: 0` und `DerivedLabels: 0`. Sobald die
-amtlichen Anhang-I-Bezeichnungen aus EUR-Lex gepinnt sind, erben **29**
-EUNIS-Typen mit `=`-Entsprechung ihr deutsches Label ohne Codeänderung.
-`?lang=de` ist bereits bedienbar und antwortet heute ohne `name_de`.
+Habitattyp-Namen liefert der Index auf Englisch (`name_en`) und **auf Deutsch**
+(`name_de`, abrufbar über `?lang=de`). Deutsch ist dabei Overlay, nie Ersatz:
+`name_en` bleibt die Identität, jede deutsche Zeile trägt ihre
+`provenance` ∈ `official` | `situs` | `derived`, und abgeleitet wird
+ausschließlich über Qualifier `=`. Am Referenzlauf vom 2026-09-16 gemessen:
+**567** Localizations (233 amtlich aus EUR-Lex, 334 von situs verfasst) plus
+**29** über `=` abgeleitete Labels.
 
 ## Wozu
 
@@ -169,8 +167,12 @@ Fundament-Spec und Implementierungsplan liegen unter `docs/`:
 | EUNIS terrestrial habitat classification 2021_1 (EEA) | Habitattypen, Syntaxa-Crosswalk, Versions- und Anhang-I-Crosswalk | EEA-Datenpolitik |
 | EUNIS-ESy `Characteristic-species-combinations` (Zenodo) | Kennarten / konstante / dominante Arten je Habitattyp | CC BY 4.0 |
 | Euroveg Checklist 2016 | Syntaxonomie (Klasse, Ordnung, Verband) | — |
-| FFH-Richtlinie Anhang I, deutsche Fassung (EUR-Lex) | amtliche deutsche LRT-Bezeichnungen — **noch nicht gepinnt**, siehe oben | EU-Recht |
+| FFH-Richtlinie Anhang I, deutsche Fassung (EUR-Lex) | amtliche deutsche LRT-Bezeichnungen (CELEX `01992L0043-20130701`, `pipelines/eurlex`) | EU-Recht (Beschluss 2011/833/EU) |
+| WGSRPD Level 3, 2. Auflage (TDWG) | Namen der Verbreitungsgebiete für `GET /v1/areas` (`pipelines/wgsrpd`) | TDWG-Standard |
 
-Die Artefakte werden **gepinnt** (URL + Prüfsumme in
-`pipelines/eunis/manifest.yaml`, `pipelines/eurovegchecklist/manifest.yaml`)
-und **nicht** ins Repo eingecheckt.
+Die Artefakte werden **gepinnt** und **nicht** ins Repo eingecheckt — je
+Pipeline dort, wo es zur Quelle passt: URL + Prüfsumme in
+`pipelines/eunis/manifest.yaml` und `pipelines/eurovegchecklist/manifest.yaml`,
+die CELEX-Kennung `01992L0043-20130701` in `pipelines/eurlex/fetch.sh`
+(Prüfsumme wird beim Laden verifiziert), der Commit-SHA in
+`pipelines/wgsrpd/build.sh`.
