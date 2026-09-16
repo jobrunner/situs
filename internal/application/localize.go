@@ -34,9 +34,10 @@ const (
 )
 
 // IngestLocalizations loads csvPath (localizations.csv:
-// entity_type,entity_key,lang,field,value,source,provenance) into repo. No
-// source in this foundation produces this file yet — the amtliche German
-// Annex I names come from EUR-Lex, pinned later (spec open point 6) — so a
+// entity_type,entity_key,lang,field,value,source,provenance) into repo.
+// pipelines/eurlex produces it: the official German Annex I names from the
+// pinned CELEX text, merged with the situs-authored EUNIS names in
+// data/localizations-de-situs.csv. Running that pipeline stays optional, so a
 // missing file is "no localizations", not an error: it is logged at info
 // level and the count is 0.
 func IngestLocalizations(ctx context.Context, repo output.Repository, csvPath string) (int, error) {
