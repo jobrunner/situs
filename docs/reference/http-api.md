@@ -146,8 +146,21 @@ kein 404.
 
 Jeder Endpunkt akzeptiert `?lang=de` (alternativ `Accept-Language`), Default ist
 `en`. Lokalisierung ist **additiv**: `name_en` bleibt gesetzt und ist die
-Identität, `name_de` kommt hinzu und trägt mit `name_de_provenance`
-(`official` | `curated` | `derived`) seine Herkunft. Eine nicht unterstützte
+Identität, `name_de` kommt als **Objekt** hinzu und trägt seine Herkunft mit:
+
+```json
+"name_de": {
+  "value": "Entkalkte Dünen mit Empetrum nigrum",
+  "provenance": "derived",
+  "source": "derived-annex1"
+}
+```
+
+`provenance` ist eines von `official` | `curated` | `derived` | `situs`;
+`situs` ist die schwächste Aussage — situs hat selbst übersetzt, keine externe
+Quelle steht dahinter, und ein solches Label darf nie eine Ableitung speisen.
+Ein etablierter deutscher Begriff steht, wo es ihn gibt, zusätzlich in
+`vernacular`. Eine nicht unterstützte
 Sprache ist kein Fehler, sondern fällt auf `en` zurück; ein ausdrückliches
 `?lang=fr` fällt direkt auf `en` zurück und nicht auf ein mitgesendetes
 `Accept-Language` — gefragt war weder Deutsch noch Englisch.

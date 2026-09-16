@@ -140,10 +140,12 @@ hostus export-crosswalk --db <hostus-index.sqlite> --out-dir "$CSV_DIR"
 Das schreibt `eurosl_crosswalk.csv` und `aggregate_members.csv` direkt in den
 `--csv-dir` und meldet die Namenskollisionen, die es **nicht** rät. Am
 Referenzlauf vom 2026-09-16 gemessen: 11618 / 13791 Zeilen aufgelöst
-(84,24 %), 905 geschriebene Mitgliedsarten-Zeilen plus 2 weitere, die eine
-explizite `species_roles.csv`-Zeile verdrängt hat (die 2 sind **nicht** in den
-905 enthalten — es sind die beiden Zweige derselben Entscheidung), 63
-mehrdeutige Namen bewusst offen gelassen. Alle Zahlen in
+(84,24 %), 905 geschriebene Mitgliedsarten-Zeilen plus 2 weitere, deren
+Schlüssel schon belegt war (`SuppressedByExplicit`; die 2 sind **nicht** in den
+905 enthalten — es sind die beiden Zweige derselben Entscheidung). Ob dahinter
+eine explizite `species_roles.csv`-Zeile stand oder zwei Aggregate dieselbe
+Mitgliedsart nennen, unterscheidet der Zähler nicht — der Name des Feldes ist
+enger als das, was es misst. 63 mehrdeutige Namen bleiben bewusst offen. Alle Zahlen in
 `../reference/measured-index.md`.
 
 Nicht aufgelöste Namen werden **nicht verworfen**: `verbatim_name` ist immer

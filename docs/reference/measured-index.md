@@ -158,9 +158,12 @@ bleiben deshalb bewusst unaufgelöst, statt auf eine der beiden geraten zu
 werden.
 
 Dazu kommen **905** abgeleitete Mitgliedsarten-Zeilen aus
-`aggregate_members.csv` (`DerivedRows`), die **200** zusätzliche Konzepte in
-den Index bringen; **2** wurden von einer expliziten `species_roles.csv`-Zeile
-verdrängt (`SuppressedByExplicit`), wie vorgesehen.
+`aggregate_members.csv` (`DerivedRows`), die **193** Konzepte in den Index
+bringen, die sonst fehlten; bei **2** war der Schlüssel schon belegt
+(`SuppressedByExplicit`). Ob dort eine explizite `species_roles.csv`-Zeile
+gewonnen hat oder zwei Aggregate dieselbe Mitgliedsart nennen, unterscheidet
+der Zähler nicht — beides ist derselbe `ON CONFLICT DO NOTHING`, und beides ist
+kein Defekt.
 
 Nicht aufgelöste Namen werden **behalten**, nicht verworfen: `verbatim_name` ist
 immer gesetzt, `concept_id` bleibt NULL.

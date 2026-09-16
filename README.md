@@ -16,7 +16,9 @@ Er beantwortet Fakten in beide Richtungen:
 Habitattyp-Namen liefert der Index auf Englisch (`name_en`) und **auf Deutsch**
 (`name_de`, abrufbar über `?lang=de`). Deutsch ist dabei Overlay, nie Ersatz:
 `name_en` bleibt die Identität, jede deutsche Zeile trägt ihre
-`provenance` ∈ `official` | `situs` | `derived`, und abgeleitet wird
+`provenance` ∈ `official` | `curated` | `derived` | `situs` (am aktuellen
+Datenstand kommen davon `official`, `situs` und `derived` vor), und abgeleitet
+wird
 ausschließlich über Qualifier `=`. Am Referenzlauf vom 2026-09-16 gemessen:
 **567** Localizations (233 amtlich aus EUR-Lex, 334 von situs verfasst) plus
 **29** über `=` abgeleitete Labels.
