@@ -146,8 +146,21 @@ kein 404.
 
 Jeder Endpunkt akzeptiert `?lang=de` (alternativ `Accept-Language`), Default ist
 `en`. Lokalisierung ist **additiv**: `name_en` bleibt gesetzt und ist die
-Identität, `name_de` kommt hinzu und trägt mit `name_de_provenance`
-(`official` | `curated` | `derived`) seine Herkunft. Eine nicht unterstützte
+Identität, `name_de` kommt als **Objekt** hinzu und trägt seine Herkunft mit:
+
+```json
+"name_de": {
+  "value": "Entkalkte Dünen mit Empetrum nigrum",
+  "provenance": "derived",
+  "source": "derived-annex1"
+}
+```
+
+`provenance` ist eines von `official` | `curated` | `derived` | `situs`;
+`situs` ist die schwächste Aussage — situs hat selbst übersetzt, keine externe
+Quelle steht dahinter, und ein solches Label darf nie eine Ableitung speisen.
+Ein etablierter deutscher Begriff steht, wo es ihn gibt, zusätzlich in
+`vernacular`. Eine nicht unterstützte
 Sprache ist kein Fehler, sondern fällt auf `en` zurück; ein ausdrückliches
 `?lang=fr` fällt direkt auf `en` zurück und nicht auf ein mitgesendetes
 `Accept-Language` — gefragt war weder Deutsch noch Englisch.
@@ -160,17 +173,17 @@ statt eine 0 oder ein `false` zu behaupten.
 
 Neben `service` und `version` trägt die Antwort ein `index`-Objekt, dessen
 Zahlen alle **am Index gemessen** sind — keine davon ist konfiguriert. Die
-folgende Antwort ist echt: sie stammt vom vollständigen Ingest des gepinnten
-Datenstands (dieselben Zahlen wie in `measured-index.md`; `version` hängt
-naturgemäß am jeweiligen Build):
+folgende Antwort ist echt: sie stammt vom Referenzlauf 2026-09-16 (dieselben
+Zahlen wie in `measured-index.md`; `version` hängt naturgemäß am jeweiligen
+Build):
 
 ```json
 {
   "service": "situs",
-  "version": "0.1.1",
+  "version": "0.7.0",
   "index": {
-    "concept_backbones": ["wcvp"],
-    "species_with_concept": 3135,
+    "concept_backbones": ["cdm", "eurosl", "wcvp"],
+    "species_with_concept": 3323,
     "area_scheme": "wgsrpd_l3",
     "areas_with_data": 366
   }
@@ -184,11 +197,12 @@ gelaufen ist, steht dort `0`, und dann ist ein `?area=` mit **jedem** Code
 `INVALID_QUERY`.
 
 Wozu die Selbstauskunft taugt und wozu nicht: sie sagt, worauf dieser Index
-gebaut ist, und macht damit einen Bruch sichtbar — beantwortbar sind aber nur
-`wcvp:`-IDs, denn die Batch-Route prüft gegen ein **fest einkompiliertes**
-Präfix (siehe unten). Meldet `concept_backbones` etwas anderes als `["wcvp"]`,
-ist das kein Hinweis darauf, dass diese IDs nun beantwortet würden, sondern ein
-Hinweis darauf, dass Index und Binary nicht zueinander passen.
+gebaut ist — auf der **Batch**-Route beantwortbar sind aber nur `wcvp:`-IDs,
+denn sie prüft gegen ein **fest einkompiliertes** Präfix (siehe unten).
+Meldet `concept_backbones` mehr als `wcvp`, heißt das nicht, dass die Route
+diese IDs nun beantwortet — und, wie der Referenzlauf oben zeigt, auch nicht
+zwingend, dass Index und Binary nicht zusammenpassen: ein Index kann legitim
+einzelne Konzepte aus anderen Backbones führen (siehe die Warnung unten).
 
 Nicht enthalten ist die *Fassung* der Backbone (etwa `wcvp 2026-06-15`): der
 Ingest schreibt sie heute nicht mit, und eine erfundene Fassung wäre schlimmer
@@ -293,12 +307,26 @@ Bezeichnung würde die Suche im falschen System beginnen lassen.
 
 Geprüft wird gegen **`wcvp`, eine Konstante in der Binary** — nicht gegen das,
 was `/v1/info` meldet. Das ist Absicht: eine Ableitung pro Anfrage würde jede
-Batch-Anfrage eine zusätzliche Abfrage kosten, und ein Index mit gemischten
-Backbones ist ohnehin kein Zustand, den dieser Entwurf trägt. Die Folge, die man
-kennen muss: gegen einen Index, der **nicht** auf wcvp gebaut ist, meldet
-`/v1/info` treu dessen Backbone, während jede seiner IDs hier
-`unknown_backbone` bekommt. Die Selbstauskunft macht diesen Bruch sichtbar; sie
-verschiebt die Prüfung nicht.
+Batch-Anfrage eine zusätzliche Abfrage kosten. Die Folge, die man kennen muss:
+gegen einen Index, der **nicht** auf wcvp gebaut ist, meldet `/v1/info` treu
+dessen Backbone, während jede seiner IDs hier `unknown_backbone` bekommt. Die
+Selbstauskunft macht diesen Bruch sichtbar; sie verschiebt die Prüfung nicht.
+
+!!! warning "Gemischte Backbones kommen real vor — und `unknown_backbone` ist für sie unwahr"
+
+    Dieser Entwurf ging davon aus, dass ein Index genau einen Backbone führt.
+    Der Ingest-Lauf vom 2026-09-16 widerlegt das: von 3323 Konzepten lauten
+    **8 nicht auf `wcvp:`** (7 × `eurosl:`, 1 × `cdm:`) — Sammelarten und
+    Sektionen, für die WCVP kein Konzept führt und die
+    `hostus export-crosswalk` deshalb auf ein EuroSL-/CDM-Konzept abbildet.
+    Der Ingest warnt darüber am Laufende.
+
+    Für diese 8 IDs antwortet der Batch-Endpunkt `unknown_backbone`, obwohl der
+    Index ihre Fakten besitzt und `GET /v1/species/{conceptId}/habitat-types`
+    sie normal beantwortet. Die Schuldzuweisung „Fehler des Aufrufers" trifft
+    hier nicht zu. Was daraus folgt, ist offen und wird in
+    [#36](https://github.com/jobrunner/situs/issues/36) verhandelt; Zahlen und
+    die vollständige Liste stehen in `measured-index.md`.
 
 ## Grenzen des Batch-Endpunkts
 

@@ -5,16 +5,20 @@ geschätzt und nicht aus der Spec übernommen. Sie beantworten die offenen Punkt
 1, 2, 3 und 5 der Design-Spec
 (`docs/superpowers/specs/2026-08-18-situs-foundation-design.md`).
 
-!!! warning "Eine Ausnahme: die Crosswalk-Gesamtzahl ist vorhergesagt, nicht gemessen"
+!!! info "Referenzlauf: 2026-09-16, situs 0.7.0"
 
-    Gemessen wurden **4305 ingestierte + 2 übersprungene** Crosswalk-Zeilen. Die
-    2 übersprungenen waren die `≈`-Zeilen, die der Ingest damals verwarf. Seit
-    `≈` ein vollwertiger Qualifier ist, sind **4307 ingestiert und 0
-    übersprungen** zu erwarten — der reale Ingest wurde dafür aber **absichtlich
-    nicht erneut ausgeführt**. Die 4307 unten sind also die erwartete, nicht die
-    beobachtete Zahl; sie ist beim nächsten echten Lauf zu bestätigen. Ebenso
-    kann die Zahl der Typen mit Anhang-I-Bezug dann um bis zu 2 auf höchstens 186
-    steigen. Alle übrigen Zahlen auf dieser Seite sind unverändert gemessen; die
+    Die Zahlen zu Artenrollen, Verbreitung, Gebietsnamen, Zeigerwerten und
+    Labels stammen aus **einem** vollständigen `situs ingest`-Lauf am
+    2026-09-16 gegen situs 0.7.0 (Dauer **5:46**), mit allen Pipeline-CSVs im
+    selben `--csv-dir` und einem lokalen hostus mit den Backbone-Fassungen
+    **wcvp 2026-06-15**, cdm 2026-08-02, eurosl 2024-11-03, germansl 1.5.6 —
+    denselben, die `https://hostus.fieldworksdiary.org` führt. Die
+    Namensauflösung lief dabei erstmals über den
+    `hostus export-crosswalk`-Export, nicht mehr über `/v1/match`; die früher
+    hier stehenden Zahlen des August-Laufs sind damit überholt und ersetzt.
+
+    Die **4307** Crosswalk-Zeilen sind mit diesem Lauf bestätigt (vorher
+    vorhergesagt: 4305 ingestiert + 2 übersprungene `≈`-Zeilen). Die
     `=`-Quote bleibt 29, weil `≈` nach `IsSame()` nicht als volle Entsprechung
     zählt.
 
@@ -31,9 +35,10 @@ python3 xlsx_to_csv.py \
 ```
 
 Das schreibt `out/report.json` mit den Messungen unten. `out/` ist
-gitignoriert — deshalb diese Seite. Die Resolution Rates entstehen erst beim
-Go-Ingest (`situs ingest`, siehe `../how-to/ingest.md`), weil sie hostus
-brauchen.
+gitignoriert — deshalb diese Seite. Die Auflösungsquoten entstehen erst beim
+Go-Ingest (`situs ingest`, siehe `../how-to/ingest.md`): die der Artenrollen
+gegen die lokale `eurosl_crosswalk.csv`, die der Zeigerwerte und die
+Verbreitung gegen einen laufenden hostus.
 
 ## Umfang des Index
 
@@ -41,7 +46,7 @@ brauchen.
 |---|---|
 | Habitattypen (über `eunis@2021` + `eunis@2012` + `annex1`) | **7937** |
 | Maximales Level der eunis@2021-Klassifikationshierarchie | **8** |
-| Crosswalk-Zeilen (Versions- **und** Anhang-I-Crosswalk) | **4307** (vorhergesagt, siehe Warnung oben) |
+| Crosswalk-Zeilen (Versions- **und** Anhang-I-Crosswalk) | **4307** |
 | Syntaxa | **1050** |
 | Habitattyp↔Syntaxon-Verknüpfungen | **1283** |
 | Zeilen in `species_roles.csv` | **13791** |
@@ -94,11 +99,9 @@ ersetzt), **38** blieben ohne Treffer (Name bleibt der historische
 EUNIS-Kombi-String, `Author=""`), **0** Mehrfachtreffer wurden nicht geraten
 (`AmbiguousMatches`).
 
-Gemessen mit einem echten `situs ingest`-Lauf gegen beide Pipelines
-(hostus dabei durch einen lokalen Stub ersetzt, der jede Anfrage mit
-`{"results":[]}` beantwortet — Namensauflösung war für diesen Lauf nicht das
-Ziel, siehe die Namensauflösungs-Zahlen im Abschnitt „Namensauflösung gegen
-hostus" unten, die unverändert aus einem echten hostus-Lauf stammen):
+Gemessen mit einem echten `situs ingest`-Lauf gegen beide Pipelines; der
+Referenzlauf 2026-09-16 bestätigt dieselben Zahlen (die Auflösungsquoten
+stehen im Abschnitt „Namensauflösung" unten):
 
 ```json
 "SyntaxaHierarchy": {
@@ -117,55 +120,89 @@ hostus" unten, die unverändert aus einem echten hostus-Lauf stammen):
 | Habitattypen mit **irgendeiner** Anhang-I-Entsprechung | **184** |
 | davon mit Qualifier `=` | **29** |
 
+Beide Zahlen sind am Referenzlauf **nachgemessen**, jetzt mit beiden
+`≈`-Zeilen im Index: 184 bleibt 184 — die zwei `≈`-Typen (`R1S`, `U28`) haben
+ohnehin schon eine andere Anhang-I-Zeile, erweitern die Menge also nicht.
+
 Die `=`-Quote ist die praktisch wichtige Zahl: nur `=` ist präzise genug, um
-einen deutschen Namen zu leihen. Sobald die amtlichen Anhang-I-Bezeichnungen aus
-EUR-Lex gepinnt sind, erben also **29** EUNIS-Typen ein abgeleitetes deutsches
-Label — ohne Codeänderung. Aktuell gemessen: `Localizations: 0`,
-`DerivedLabels: 0`, weil noch keine deutsche Namensquelle gepinnt ist (offener
-Punkt 6).
+einen deutschen Namen zu leihen. Am Referenzlauf ist das eingetreten:
+`Localizations: 567`, `DerivedLabels: 29` — die 29 EUNIS-Typen erben ihr
+deutsches Label aus dem amtlichen Anhang-I-Namen, ohne Codeänderung. Offener
+Punkt 6 ist damit geschlossen.
 
 Ein Habitattyp **ohne** Anhang-I-Entsprechung ist der Normalfall, nicht ein
 Fehler: fehlende Daten sind Abwesenheit von Zeilen, nie ein Platzhalter-Code.
 
-## Namensauflösung gegen hostus (offener Punkt 3)
+## Namensauflösung (offener Punkt 3)
 
-Gemessen gegen einen vollen hostus-Index (WCVP-Backbone):
+Gemessen am Referenzlauf. Aufgelöst wird seit der Aggregat-Erweiterung **nicht**
+mehr über hostus' `/v1/match`, sondern gegen die lokale, deterministische
+`eurosl_crosswalk.csv` aus `hostus export-crosswalk` (6,1 MB, aus derselben
+hostus-Datenbank exportiert):
 
 | Grundgesamtheit | Aufgelöst | Rate |
 |---|---|---|
-| Zeilen von `species_roles.csv` | 11559 / 13791 (2232 offen) | **83,82 %** |
-| distinkte Artennamen | 3142 / 3587 (445 offen) | **87,59 %** |
+| Zeilen von `species_roles.csv` | 11618 / 13791 (2173 offen) | **84,24 %** |
+| distinkte Artennamen | 3136 / 3587 (451 offen) | **87,43 %** |
 
 Die distinktgewichtete Zahl ist die mit dem ESy-Spike vergleichbare
-Grundgesamtheit: **87,59 %** liegen deutlich über der dort abgeschätzten
+Grundgesamtheit: **87,43 %** liegen deutlich über der dort abgeschätzten
 ~57 %-Untergrenze (`../research/sp9-esy-spike.md`).
+
+Gegenüber dem August-Lauf über `/v1/match` (83,82 % zeilen-, 87,59 %
+namensgewichtet) liegt die Zeilenrate leicht höher, die Namensrate minimal
+niedriger — der Dateiexport rät nicht: **63** Namen tragen in der
+Crosswalk-Datei mehr als eine Konzept-ID (`AmbiguousCrosswalk`, durchweg
+Sammelarten wie `Ranunculus acris aggr.` und `Taraxacum sect. Taraxacum`) und
+bleiben deshalb bewusst unaufgelöst, statt auf eine der beiden geraten zu
+werden.
+
+Dazu kommen **905** abgeleitete Mitgliedsarten-Zeilen aus
+`aggregate_members.csv` (`DerivedRows`), die **193** Konzepte in den Index
+bringen, die sonst fehlten; bei **2** war der Schlüssel schon belegt
+(`SuppressedByExplicit`). Ob dort eine explizite `species_roles.csv`-Zeile
+gewonnen hat oder zwei Aggregate dieselbe Mitgliedsart nennen, unterscheidet
+der Zähler nicht — beides ist derselbe `ON CONFLICT DO NOTHING`, und beides ist
+kein Defekt.
 
 Nicht aufgelöste Namen werden **behalten**, nicht verworfen: `verbatim_name` ist
 immer gesetzt, `concept_id` bleibt NULL.
 
 ## Verbreitung (`species_distribution`)
 
-Gemessen am selben Lauf, gegen denselben hostus-Index. Der Schritt fragt hostus
-einmal pro Konzept, gedrosselt auf 70 ms. Gemessen ist die Dauer des **ganzen**
-`situs ingest`: **5:59,98**. Wie viel davon auf diesen Schritt entfällt, wurde
-nicht einzeln gemessen; rechnerisch sind allein die Drosselpausen
-3135 × 70 ms ≈ 3:40.
+Gemessen am Referenzlauf. Der Schritt fragt hostus einmal pro Konzept,
+gedrosselt auf 70 ms. Gemessen ist die Dauer des **ganzen** `situs ingest`:
+**5:46**. Wie viel davon auf diesen Schritt entfällt, wurde nicht einzeln
+gemessen; rechnerisch sind allein die Drosselpausen 3323 × 70 ms ≈ 3:53.
 
 | Kennzahl | Gemessen |
 |---|---|
-| Konzepte im Index (`Concepts`) | 3135 |
-| davon mit Verbreitungsdaten (`WithAreas`) | 3135 (100 %) |
-| geschriebene Zeilen (`Rows`) | 104581 |
+| Konzepte im Index (`Concepts`) | 3323 |
+| davon mit Verbreitungsdaten (`WithAreas`) | 3315 (99,8 %) |
+| geschriebene Zeilen (`Rows`) | 106068 |
 | unvollständige Gebiete (`Incomplete`) | 0 |
 | übersprungene Konzepte (`DistributionFailed`) | 0 |
 | verschiedene Gebietscodes (`areas_with_data` in `/v1/info`) | 366 |
 
-Woher die **3135** kommen, weil die Zahl auf den ersten Blick niedrig aussieht:
-`species_roles.csv` trägt **3587** verschiedene Artnamen, davon löste hostus
-**3142** auf (siehe oben) — die restlichen **445** haben keine Konzept-ID und
-zählen hier deshalb nicht mit. Von den 3142 aufgelösten Namen fallen nur **7**
-paarweise auf dasselbe Konzept zusammen (3142 − 3135). Der Abstand zur Zahl der
-Namen ist also fast ausschließlich die Auflösungslücke, nicht Synonymie.
+Woher die **3323** kommen, nachgerechnet am Index:
+
+| | |
+|---|---|
+| Konzepte aus den Zeilen von `species_roles.csv` | 3130 |
+| Konzepte, die **nur** über abgeleitete Mitgliedsarten dazukommen | 193 |
+| **Summe** | **3323** |
+
+`species_roles.csv` trägt 3587 verschiedene Artnamen, davon sind 3136
+aufgelöst (siehe oben); diese 3136 Namen fallen auf **3130** Konzepte — nur
+6 Namenspaare treffen dasselbe Konzept. Von den 200 Konzepten, die abgeleitete
+Mitgliedsarten-Zeilen tragen, sind 7 bereits über eine eigene Artenzeile im
+Index, sodass 193 neu sind. Der Abstand zur Zahl der Namen ist also fast
+ausschließlich die Auflösungslücke, nicht Synonymie.
+
+Die **8** Konzepte ohne Verbreitungsdaten sind exakt die 8, die nicht auf
+`wcvp:` lauten (siehe „Ein gemischter Backbone" unten) — hostus führt für sie
+keine Verbreitung, und der Ingest trägt das als Abwesenheit von Zeilen ein,
+nicht als „kommt nirgends vor".
 
 ### Gebietsnamen (`area`)
 
@@ -176,19 +213,22 @@ Dienst. Gemessen am gepinnten Stand: **369** Gebiete, 0 übersprungene Zeilen
 
 369 ist das ganze WGSRPD-Level-3-Vokabular, 366 ist die Zahl der Codes mit
 Verbreitungsdaten in diesem Index. `GET /v1/areas` listet die zweite Menge:
-nur Gebiete, nach denen sich auch filtern lässt. Ob zu jedem dieser Codes ein
-Name vorliegt, sagt erst ein vollständiger Ingest-Lauf mit beiden Schritten;
-die Route ist auf den Fall vorbereitet und liefert dann `"name": ""`, statt
-den Code als Ersatznamen auszugeben.
+nur Gebiete, nach denen sich auch filtern lässt.
+
+**Am Referenzlauf gemessen: alle 366 Codes mit Daten haben einen Namen** — die
+Namensmenge deckt die Datenmenge vollständig, `"name": ""` tritt an diesem
+Datenstand nicht auf. Die Route trägt den Fall trotzdem (ein Code mit Daten,
+aber ohne Namenszeile, bleibt mit leerem `name` in der Liste): 369 zu 366 ist
+eine Eigenschaft *dieser* beiden Quellen, keine Garantie der Route.
 
 Warum das den Aufwand wert war, an `eunis@2021/R15` mit `?area=GER` gemessen:
 
 | Abfrage | Einträge |
 |---|---|
-| ohne Filter / `?area=GER` | 170 (`in_area: true` 78, `false` 83, Feld fehlt 9) |
-| `?area=GER&only_in_area=true` | 87 (die 83 `false` entfernt, alle 9 unentscheidbaren behalten) |
+| ohne Filter / `?area=GER` | 170 (`in_area: true` 78, `false` 82, Feld fehlt 10) |
+| `?area=GER&only_in_area=true` | 88 (die 82 `false` entfernt, alle 10 unentscheidbaren behalten) |
 
-**49 % der Arten dieses Habitattyps kommen in Deutschland nicht vor.** Eine
+**48 % der Arten dieses Habitattyps kommen in Deutschland nicht vor.** Eine
 Artenliste ohne Gebietsfilter schickt einen Nutzer im Gelände also in etwa jedem
 zweiten Fall hinter eine Pflanze, die dort nicht wachsen kann.
 
@@ -197,37 +237,75 @@ zweiten Fall hinter eine Pflanze, die dort nicht wachsen kann.
 Drei Vokabulare (EIVE 1.0, Tichý 2023 v2.0, Midolo 2023 v3), ein
 `hostus.Resolve()`-Aufruf über alle drei Dateien zusammen.
 
-!!! warning "Nur die Zeilenzahlen sind in dieser Umgebung gemessen — Auflösung nicht"
+Gemessen am Referenzlauf, gegen den lokalen hostus:
 
-    In dieser Sandbox war kein erreichbarer hostus-Dienst vorhanden (siehe
-    `../how-to/ingest.md`): `curl http://localhost:8080/v1/info` traf zwar
-    einen laufenden HTTP-Dienst, aber dessen `/v1/info`-Route antwortete 404 —
-    es ist nicht hostus. Ein realer `situs ingest`-Lauf über
-    `--csv-dir` mit den drei Trait-Dateien (`eive_traits.csv`,
-    `tichy_traits.csv`, `midolo_traits.csv`) und einem erreichbaren
-    hostus-Index war deshalb nicht möglich. Die Spalten „Zeilen" unten sind
-    echte, direkt aus den kanonischen Pipeline-Ausgaben gezählte Zahlen
-    (`wc -l pipelines/{eive,tichy,midolo}/output/*-canonical.csv`, minus
-    Kopfzeile). Die Spalten „Aufgelöst"/„Nicht aufgelöst" brauchen einen
-    echten Ingest-Lauf gegen einen laufenden hostus und wurden hier bewusst
-    **nicht** erfunden — ein Operator sollte sie nach dem ersten echten
-    `situs ingest`-Lauf mit den drei Trait-CSVs aus dem JSON-`Traits`-Feld
-    der Ausgabe ergänzen.
-
-| Vokabular | Zeilen (kanonische CSV, gemessen) | Aufgelöst | Nicht aufgelöst |
+| Vokabular | Zeilen | Aufgelöst | Nicht aufgelöst |
 |---|---|---|---|
-| eive | **71266** | noch zu messen (`situs ingest`) | noch zu messen (`situs ingest`) |
-| tichy2023 | **45592** | noch zu messen (`situs ingest`) | noch zu messen (`situs ingest`) |
-| midolo2023 | **31910** | noch zu messen (`situs ingest`) | noch zu messen (`situs ingest`) |
+| eive | **71266** | 69094 (96,95 %) | 2172 |
+| tichy2023 | **45592** | 45224 (99,19 %) | 368 |
+| midolo2023 | **31910** | 31625 (99,11 %) | 285 |
+| **gesamt** | **148768** | **145943 (98,10 %)** | **2825** |
 
-Zeilenzahlen gemessen am 2026-08-30 aus
+Die Auflösungsquote liegt hier deutlich über der der Artenrollen (87,43 %
+namensgewichtet), weil die drei Vokabulare überwiegend akzeptierte
+Binomen führen, während `species_roles.csv` Sammelarten, Sektionen und
+Aggregate trägt, die kein eindeutiges Konzept haben.
+
+Geschriebene `trait_value`-Zeilen im Index: **138599** über **13824**
+Konzepte — weniger als die 145943 aufgelösten Quellzeilen, weil mehrere
+Quellzeilen desselben Vokabulars auf dasselbe (Konzept, Dimension) fallen
+können und der Primärschlüssel sie zusammenführt.
+
+Zeilenzahlen der kanonischen Pipeline-Ausgaben (2026-08-30, unverändert):
 `pipelines/eive/output/eive-canonical.csv`,
-`pipelines/tichy/output/tichy-canonical.csv` und
-`pipelines/midolo/output/midolo-canonical.csv` (jeweils Gesamtzeilen minus
-Kopfzeile, Pipe-delimitiert). Nicht dasselbe wie „Zeilen der Trait-CSVs im
-`--csv-dir`" — der Ingest liest die gleich benannten, aber ggf. anders
-platzierten `eive_traits.csv`/`tichy_traits.csv`/`midolo_traits.csv`; an den
-kanonischen Pipeline-Ausgaben ändert das nichts, sie sind identisch.
+`pipelines/tichy/output/tichy-canonical.csv`,
+`pipelines/midolo/output/midolo-canonical.csv`. Nicht dasselbe wie „Zeilen der
+Trait-CSVs im `--csv-dir`" — der Ingest liest die gleich benannten, aber ggf.
+anders platzierten `eive_traits.csv`/`tichy_traits.csv`/`midolo_traits.csv`; an
+den kanonischen Ausgaben ändert das nichts, sie sind identisch.
+
+## Ein gemischter Backbone (2026-09-16, neu)
+
+Der Referenzlauf hat einen Zustand erzeugt, den der Entwurf ausdrücklich nicht
+vorsah. `/v1/info` meldet:
+
+```json
+"concept_backbones": ["cdm", "eurosl", "wcvp"]
+```
+
+Von **3323** Konzepten lauten **3315** auf `wcvp:`, **7** auf `eurosl:` und
+**1** auf `cdm:`. Es sind durchweg Sammelarten und Sektionen, für die WCVP kein
+Konzept führt:
+
+| Konzept | Name |
+|---|---|
+| `cdm:concept:947bc56d…` | *Salix cinerea* subsp. *cinerea* |
+| `eurosl:concept:18603a73…` | *Achillea millefolium* aggr. |
+| `eurosl:concept:236666d3…` | *Taraxacum* sect. *Alpina* |
+| `eurosl:concept:2e90cf36…` | *Salicornia europaea* aggr. |
+| `eurosl:concept:3363d6dd…` | *Valeriana officinalis* aggr. |
+| `eurosl:concept:4a8b5bf3…` | *Taraxacum* sect. *Palustria* |
+| `eurosl:concept:6174d223…` | *Leucanthemum vulgare* aggr. |
+| `eurosl:concept:fc7d5e20…` | *Polygonum aviculare* aggr. |
+
+Sie stammen aus `hostus export-crosswalk`, das einen Namen auf das Konzept
+abbildet, das ihn trägt — und das ist für ein Aggregat eben ein EuroSL- oder
+CDM-Konzept. Der Ingest warnt darüber am Ende des Laufs
+(`the index holds concept ids the batch route cannot answer`).
+
+**Was daraus folgt.** Die Einzelrouten beantworten diese IDs normal; der
+Batch-Endpunkt `POST /v1/species/habitat-types` prüft das Präfix dagegen gegen
+eine **compile-time-Konstante** `wcvp` und antwortet für sie
+`known: false, reason: unknown_backbone` — obwohl der Index ihre Fakten
+besitzt. Dieselben 8 sind auch die 8 ohne Verbreitungsdaten.
+
+Der Anteil ist mit 0,24 % klein, die Aussage aber falsch: `unknown_backbone`
+heißt „der Fehler liegt beim Aufrufer", und hier liegt er nicht dort. Was daran
+zu tun ist — Prüfung gegen die gemessenen Backbones, ein dritter `reason`, oder
+eine Ingest-Regel, die Nicht-wcvp-Konzepte gar nicht erst schreibt — ist eine
+offene Entwurfsfrage und wird in
+[#36](https://github.com/jobrunner/situs/issues/36) verhandelt, nicht hier
+entschieden.
 
 ## Deutsche Labels (amtlich, aus EUR-Lex)
 
@@ -288,6 +366,7 @@ Gemessen am 2026-08-24 gegen `data/localizations-de-situs.csv`:
 | davon `field = vernacular` | **93** (38 %) |
 | Überschneidung mit den 29 Ableitungen | **0** |
 | Localizations im Index gesamt | **567** (233 `official` + 334 `situs`) |
+| Zeilen in `localization` nach dem Ingest | **596** (567 + 29 `derived`) |
 
 Die 38 % Vernakular-Abdeckung ist keine Lücke, sondern das Ergebnis der Regel:
 ein etablierter deutscher Begriff existiert im Wesentlichen nur, wo der Typ in

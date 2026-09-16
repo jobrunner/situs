@@ -39,9 +39,12 @@ Der Index gehört **nicht** ins Repo. `.gitignore` ignoriert `*.sqlite`
 
 `localizations.csv` (`entity_type,entity_key,lang,field,value,source,provenance`)
 ist optional: fehlt die Datei, ist das **keine** Fehlersituation, sondern
-„keine Localizations" — der Ingest loggt das auf `info` und zählt 0. Derzeit
-erzeugt sie **niemand**; die amtlichen deutschen Anhang-I-Bezeichnungen aus
-EUR-Lex sind noch nicht gepinnt (Design-Spec, offener Punkt 6).
+„keine Localizations" — der Ingest loggt das auf `info` und zählt 0. Erzeugt
+wird sie von `pipelines/eurlex`: `extract.py` holt die amtlichen deutschen
+Anhang-I-Bezeichnungen aus der gepinnten CELEX-Fassung, `merge.py` führt sie
+mit den von situs verfassten EUNIS-Namen (`data/localizations-de-situs.csv`)
+zu **einer** `localizations.csv` zusammen (siehe
+`../../pipelines/eurlex/README.md`).
 
 Zwei Report-Felder betreffen genau das:
 
@@ -51,7 +54,8 @@ Zwei Report-Felder betreffen genau das:
   über `=`; `<`, `>`, `#` und `≈` sind zu unscharf, um einen Namen zu leihen,
   und ein vorhandenes `official`/`curated`-Label wird nie überschrieben.
 
-Am gepinnten Datenstand sind beide gemessen **0**. Siehe
+Am Referenzlauf vom 2026-09-16 gemessen: `Localizations: 567`
+(233 amtlich + 334 von situs verfasst), `DerivedLabels: 29`. Siehe
 `../reference/measured-index.md`.
 
 ## Getrennte Transaktionen, nicht eine
@@ -126,14 +130,23 @@ Die drei neuen Report-Felder:
 | `SuppressedByExplicit` | abgeleitete Zeilen, die wegen einer expliziten CSV-Zeile NICHT geschrieben wurden |
 | `AmbiguousCrosswalk` | Namen mit mehr als einer Concept-ID in `eurosl_crosswalk.csv` |
 
-**Noch nicht messbar:** `eurosl_crosswalk.csv`/`aggregate_members.csv`
-kommen aus einem hostus-seitigen Export, der zum Zeitpunkt dieser Zeilen noch
-nicht existiert (siehe
-`../superpowers/specs/2026-08-29-situs-aggregat-mitgliedsarten-design.md`).
-Bis dahin: `Resolved`, `DerivedRows`, `SuppressedByExplicit` und
-`AmbiguousCrosswalk` sind an keinem echten Datenstand gemessen — genau wie
-`Localizations`/`DerivedLabels` in `../reference/measured-index.md`, solange
-die passende Quelle fehlt.
+**Woher die beiden Dateien kommen:** aus `hostus export-crosswalk`, seit
+hostus 3.5 vorhanden:
+
+```bash
+hostus export-crosswalk --db <hostus-index.sqlite> --out-dir "$CSV_DIR"
+```
+
+Das schreibt `eurosl_crosswalk.csv` und `aggregate_members.csv` direkt in den
+`--csv-dir` und meldet die Namenskollisionen, die es **nicht** rät. Am
+Referenzlauf vom 2026-09-16 gemessen: 11618 / 13791 Zeilen aufgelöst
+(84,24 %), 905 geschriebene Mitgliedsarten-Zeilen plus 2 weitere, deren
+Schlüssel schon belegt war (`SuppressedByExplicit`; die 2 sind **nicht** in den
+905 enthalten — es sind die beiden Zweige derselben Entscheidung). Ob dahinter
+eine explizite `species_roles.csv`-Zeile stand oder zwei Aggregate dieselbe
+Mitgliedsart nennen, unterscheidet der Zähler nicht — der Name des Feldes ist
+enger als das, was es misst. 63 mehrdeutige Namen bleiben bewusst offen. Alle Zahlen in
+`../reference/measured-index.md`.
 
 Nicht aufgelöste Namen werden **nicht verworfen**: `verbatim_name` ist immer
 gesetzt, `concept_id` bleibt NULL.
@@ -145,11 +158,11 @@ ingestierten Konzept-IDs) und füllt `species_distribution` — die Grundlage f�
 `?area=` und `?only_in_area=` auf der Leseseite. Gefragt wird hostus, **einmal
 pro Konzept**: für die Verbreitung gibt es keine Batch-Route. Der Ingest-Pfad
 drosselt deshalb selbst auf ein Konzept je 70 ms, weil hostus oberhalb von
-20 req/s mit 429 antwortet. An den echten Daten sind das **3135** Konzepte
-(gemessen), allein die Drosselung also 3135 × 70 ms ≈ **3:40** — eine
-Untergrenze, die Antwortzeiten kommen obendrauf. Gemessen ist der **ganze**
-`situs ingest` mit **6:00**; die Aufteilung auf die Schritte wurde nicht
-einzeln gemessen und steht deshalb hier nicht.
+20 req/s mit 429 antwortet. An den echten Daten sind das **3323** Konzepte
+(gemessen am Referenzlauf 2026-09-16), allein die Drosselung also
+3323 × 70 ms ≈ **3:53** — eine Untergrenze, die Antwortzeiten kommen obendrauf.
+Gemessen ist der **ganze** `situs ingest` mit **5:46**; die Aufteilung auf die
+Schritte wurde nicht einzeln gemessen und steht deshalb hier nicht.
 
 Das Report-Objekt `Distribution`:
 

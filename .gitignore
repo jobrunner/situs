@@ -10,10 +10,12 @@
 # MkDocs build output
 /site/
 
-# local index + WAL sidecars
+# local index + WAL sidecars, und die Sicherungskopien davon: ein Index ist
+# ein wiederherstellbares Artefakt, kein Repo-Inhalt
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+*.sqlite.bak*
 
 # pinned source artifacts are fetched, never committed; pipeline output is
 # generated from them and never committed either

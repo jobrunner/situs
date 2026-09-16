@@ -37,14 +37,14 @@ The second plan made the read side **autark and area-aware**:
   `internal/app/arch_test.go`, which forbids `internal/app` from even importing
   the hostus adapter. `SITUS_HOSTUS_*` is ingest-only configuration.
 - Each batch entry reports `known` plus, when false, a `reason` of exactly
-  `unknown_backbone` (the id prefix is not `wcvp:` — the caller's fault) or
-  `unknown_concept` (prefix `wcvp:`, no facts — the data's limit). The prefix is
-  checked against a **compile-time constant**, deliberately not against what
-  `/v1/info` measures: deriving it would cost a query per batch, and a
-  mixed-backbone index is not a state this design carries.
+  `unknown_backbone` (the id prefix is not `wcvp:`) or `unknown_concept`
+  (prefix `wcvp:`, no facts — the data's limit). The prefix is checked against
+  a **compile-time constant**, deliberately not against what `/v1/info`
+  measures: deriving it would cost a query per batch. The reference run showed
+  that assumption has a hole — see the mixed-backbone note below and issue #36.
 - `species_distribution` in the index, filled by `IngestDistribution` (one
-  hostus request per concept, paced at 70 ms — measured **3135** concepts, and
-  the whole `situs ingest` measured 6:00). A source outage does **not** abort
+  hostus request per concept, paced at 70 ms — measured **3323** concepts, and
+  the whole `situs ingest` measured 5:46). A source outage does **not** abort
   the ingest: the distribution is extra information, so it is warned about and
   the run continues.
 - `?area=` (WGSRPD level 3) and `?only_in_area=` on the species lists. `in_area`
@@ -57,10 +57,16 @@ The second plan made the read side **autark and area-aware**:
   (e.g. `wcvp 2026-06-15`) — the ingest does not record it, and it is a schema
   extension of its own.
 
-Not in the index yet, deliberately: **no German labels.** The overlay mechanism
-is built and tested, but no German name source is pinned (EUR-Lex is deferred),
-so `Localizations` and `DerivedLabels` are measured 0. See
-`docs/reference/measured-index.md` for every measured figure.
+**German labels are in.** `pipelines/eurlex` pins the official Annex I names
+(CELEX `01992L0043-20130701`) and merges them with the situs-authored EUNIS
+names in `data/localizations-de-situs.csv`; the 2026-09-16 reference run
+measured `Localizations: 567` and `DerivedLabels: 29`.
+
+**The index really does carry mixed backbones.** That run measured
+`concept_backbones: ["cdm", "eurosl", "wcvp"]` — 8 of 3323 concepts are
+aggregates WCVP has no concept for, so the batch route answers
+`unknown_backbone` for ids this very index issued. Open design question, see
+issue #36. See `docs/reference/measured-index.md` for every measured figure.
 
 - `third_party/claude-skills` (git submodule, SSH remote) + `.claude/skills/*`
   symlinks — the `new-go-service` skill resolves through them. The submodule is
