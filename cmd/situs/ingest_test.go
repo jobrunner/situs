@@ -13,7 +13,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -904,28 +903,28 @@ func TestIngestCommandStampsDescriptionProvenancePerFile(t *testing.T) {
 	}
 }
 
-// The Annex I codes situs ships descriptions for. Named here rather than read
-// from the file so nothing derived from a file ends up in a path: the second
-// test below holds the two in sync, which is what would otherwise drift.
-var shippedAnnexOneCodes = []string{"4030", "6210", "6510", "91E0"}
-
-// The shipped descriptions have to land, not be folded into
-// SkippedUnknownCode because their habitat type is missing from the index.
-func TestIngestCommandWritesTheAnnexOneDescriptionsItShips(t *testing.T) {
+// The shipped Annex I descriptions have to land, all of them. Feeding only a
+// handful through would leave the rest silently counted as
+// SkippedUnknownCode, which is exactly the failure this guards against.
+func TestIngestCommandWritesEveryShippedAnnexOneDescription(t *testing.T) {
 	stubHostus(t)
 	dir := seedIngestDir(t)
+	records := shippedAnnexOneRecords(t)
+
 	writeIngestCSV(t, dir, "typologies.csv",
 		"id,scheme,version,name,source_ref\n"+
 			"eunis@2021,eunis,2021,EUNIS 2021,https://example.org\n"+
 			"annex1,annex1,92/43/EEC,Habitats Directive Annex I,https://example.org\n")
-	types := "typology_id,code,level,name_en,parent_code,priority\neunis@2021,R22,3,Hay meadow,R2,\n"
-	descriptions := "typology_id,code,description_en\n"
-	for _, code := range shippedAnnexOneCodes {
-		types += "annex1," + code + ",3,Some Annex I type,,\n"
-		descriptions += "annex1," + code + ",\"A description.\"\n"
+	var types strings.Builder
+	types.WriteString("typology_id,code,level,name_en,parent_code,priority\neunis@2021,R22,3,Hay meadow,R2,\n")
+	var descriptions strings.Builder
+	descriptions.WriteString("typology_id,code,description_en\n")
+	for _, record := range records {
+		types.WriteString("annex1," + record + ",3,Some Annex I type,,\n")
+		descriptions.WriteString("annex1," + record + ",\"A description.\"\n")
 	}
-	writeIngestCSV(t, dir, "habitat_types.csv", types)
-	writeIngestCSV(t, dir, "annex1_descriptions.csv", descriptions)
+	writeIngestCSV(t, dir, "habitat_types.csv", types.String())
+	writeIngestCSV(t, dir, "annex1_descriptions.csv", descriptions.String())
 	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
 
 	root := newRootCmd()
@@ -939,16 +938,27 @@ func TestIngestCommandWritesTheAnnexOneDescriptionsItShips(t *testing.T) {
 	if !strings.Contains(out.String(), `"SkippedUnknownCode": 0`) {
 		t.Errorf("output = %q, want every shipped Annex I row to find its habitat type", out.String())
 	}
-	want := fmt.Sprintf(`"Written": %d`, len(shippedAnnexOneCodes))
+	want := fmt.Sprintf(`"Written": %d`, len(records))
 	if !strings.Contains(out.String(), want) {
-		t.Errorf("output = %q, want %s", out.String(), want)
+		t.Errorf("output = %q, want %s for the %d shipped rows", out.String(), want, len(records))
 	}
 }
 
-// Holds the list above in sync with what data/ actually ships: a new
-// description whose habitat type is missing from the index would otherwise be
-// dropped silently, which is exactly what the test above rules out.
-func TestShippedAnnexOneCodesMatchTheDataFile(t *testing.T) {
+// Every shipped code has to look like an Annex I code (four characters opening
+// with two digits). A stray EUNIS code would be dropped at ingest as an
+// unknown habitat type, and the count above would not notice.
+func TestShippedAnnexOneCodesAreAnnexOneCodes(t *testing.T) {
+	for _, code := range shippedAnnexOneRecords(t) {
+		if len(code) != 4 || code[0] < '0' || code[0] > '9' || code[1] < '0' || code[1] > '9' {
+			t.Errorf("data/annex1_descriptions.csv ships %q, which is not an Annex I code", code)
+		}
+	}
+}
+
+// shippedAnnexOneRecords reads the codes situs ships, so the tests track the
+// data file instead of repeating it.
+func shippedAnnexOneRecords(t *testing.T) []string {
+	t.Helper()
 	shipped, err := os.ReadFile("../../data/annex1_descriptions.csv")
 	if err != nil {
 		t.Fatalf("reading the shipped descriptions: %v", err)
@@ -957,11 +967,12 @@ func TestShippedAnnexOneCodesMatchTheDataFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parsing the shipped descriptions: %v", err)
 	}
-	inFile := make([]string, 0, len(records))
+	if len(records) < 2 {
+		t.Fatal("data/annex1_descriptions.csv carries no rows")
+	}
+	codes := make([]string, 0, len(records)-1)
 	for _, record := range records[1:] {
-		inFile = append(inFile, record[1])
+		codes = append(codes, record[1])
 	}
-	if !slices.Equal(inFile, shippedAnnexOneCodes) {
-		t.Errorf("data/annex1_descriptions.csv ships %v, the test list says %v", inFile, shippedAnnexOneCodes)
-	}
+	return codes
 }

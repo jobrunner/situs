@@ -307,6 +307,35 @@ offene Entwurfsfrage und wird in
 [#36](https://github.com/jobrunner/situs/issues/36) verhandelt, nicht hier
 entschieden.
 
+## Beschreibungen der Habitattypen
+
+Zwei Quellen, zwei Herkünfte, eine Tabelle:
+
+| | Typen | `provenance` | Quelle |
+|---|---|---|---|
+| EUNIS 2021 | **264** | `official` | EUNIS-ESy-Factsheets, Wortlaut unverändert |
+| Anhang I | **205** | `situs` | von situs verfasst aus EUR 28, dem EUNIS-Crosswalk und den Artendaten des Index |
+
+Die Anhang-I-Texte sind **keine** Übersetzung und **keine** Übernahme des
+amtlichen Wortlauts. Das Interpretationshandbuch ist eine Abgrenzungsvorschrift
+für die Rechtsanwendung; es beantwortet die Frage „zählt dieser Bestand als
+6230", nicht die Frage „wovor stehe ich hier". Eine amtliche deutsche Fassung
+existiert ohnehin nicht: weder die Kommission noch das BfN gibt EUR 28 auf
+Deutsch heraus, und die deutschen wie österreichischen Handbücher sind
+eigenständige Texte für ihr Land (93 bzw. 65 Typen), keine Übersetzungen.
+
+Beide Sprachen sind gemessen vollständig: **205** englische Beschreibungen in
+`habitat_description`, **205** deutsche als Overlay in `localization`
+(`field = description`), dazu die 264 deutschen EUNIS-Beschreibungen, zusammen
+**469** Localization-Zeilen dieses Feldes. Textlänge der Anhang-I-Beschreibungen
+(englisch, gemessen): min 625, Median 964, max 1256 Zeichen.
+
+Das Arbeitsmaterial dazu steht in `pipelines/eur28/output/annex1_source.csv`
+und wird **nicht** ingestiert: **233** Einträge aus dem gepinnten Handbuch,
+alle mit Definition, 224 mit Artenliste, 108 mit korrespondierenden Kategorien.
+Der Index führt 205 davon; die übrigen 28 sind marine und Küstentypen, die die
+EEA-Klassifikation dieses Index nicht kennt.
+
 ## Deutsche Labels (amtlich, aus EUR-Lex)
 
 Gemessen am 2026-08-24 gegen CELEX `01992L0043-20130701` (deutsche
