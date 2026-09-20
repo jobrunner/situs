@@ -148,3 +148,15 @@ class BoundaryTest(unittest.TestCase):
         self.assertEqual([e["code"] for e in entries], ["1110"])
         self.assertEqual(skipped, 1)
         self.assertNotIn("1967", [e["code"] for e in entries])
+
+    # duplicate_codes must be read from the raw parse: after deduplication the
+    # list could only ever be empty, and a source that starts repeating codes
+    # would look unchanged in the report.
+    def test_duplicates_are_reported_from_the_raw_parse(self):
+        text = ("6510    Lowland hay meadows\n"
+                "PAL.CLASS.: 38.2\n\n1)      A first entry.\n\n"
+                "6510    Lowland hay meadows\n"
+                "PAL.CLASS.: 38.2\n\n1)      A second entry with the same code.\n")
+        raw = convert.parse_entries(text, deduplicate=False)
+        self.assertEqual(convert.duplicate_codes(raw), ["6510"])
+        self.assertEqual(convert.duplicate_codes(convert.parse_entries(text)), [])

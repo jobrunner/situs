@@ -56,7 +56,7 @@ def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def parse_entries(text: str, count_skipped: bool = False):
+def parse_entries(text: str, count_skipped: bool = False, deduplicate: bool = True):
     """Yields one dict per habitat type, in document order.
 
     The block between two PAL.CLASS. anchors is NOT one entry: it is the
@@ -95,8 +95,20 @@ def parse_entries(text: str, count_skipped: bool = False):
                         "definition": sections.get("1", ""),
                         "species": sections.get("2", ""),
                         "categories": sections.get("3", "")})
+    if not deduplicate:
+        return (entries, skipped) if count_skipped else entries
     entries, dropped = _keep_last_per_code(entries)
     return (entries, skipped + dropped) if count_skipped else entries
+
+
+def duplicate_codes(entries):
+    """Codes appearing more than once, counted BEFORE deduplication."""
+    seen, repeated = set(), set()
+    for entry in entries:
+        if entry["code"] in seen:
+            repeated.add(entry["code"])
+        seen.add(entry["code"])
+    return sorted(repeated)
 
 
 def _keep_last_per_code(entries):
@@ -156,6 +168,7 @@ def main():
         capture_output=True, text=True, check=True,
     ).stdout
 
+    raw_duplicates = duplicate_codes(parse_entries(text, deduplicate=False))
     entries, skipped = parse_entries(text, count_skipped=True)
     with open(out_path, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
@@ -172,8 +185,10 @@ def main():
         "with_species": sum(1 for e in entries if e["species"]),
         "with_categories": sum(1 for e in entries if e["categories"]),
         "without_definition": [e["code"] for e in entries if not e["definition"]],
-        "duplicate_codes": sorted({e["code"] for e in entries
-                                   if [x["code"] for x in entries].count(e["code"]) > 1}),
+        # Reported from the RAW parse: after deduplication this list could
+        # only ever be empty, and a source that starts repeating codes would
+        # look unchanged.
+        "duplicate_codes": raw_duplicates,
         # Anchors whose heading could not be read, plus earlier occurrences of
         # a repeated code (the front matter's specimen entry). A re-pin that
         # changes the layout shows up here instead of silently yielding fewer

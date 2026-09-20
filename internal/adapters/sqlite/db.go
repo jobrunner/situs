@@ -96,8 +96,12 @@ func addMissingColumns(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("checking habitat_description columns: %w", err)
 	}
 	if !descriptions["provenance"] {
+		// The CHECK travels with the column: without it a migrated index would
+		// accept a provenance the schema forbids and the API contract does not
+		// declare, and the difference would only show up on the wire.
 		if _, err := db.ExecContext(ctx,
-			`ALTER TABLE habitat_description ADD COLUMN provenance TEXT NOT NULL DEFAULT 'official'`); err != nil {
+			`ALTER TABLE habitat_description ADD COLUMN provenance TEXT NOT NULL DEFAULT 'official'
+			 CHECK (provenance IN ('official', 'situs'))`); err != nil {
 			return fmt.Errorf("adding habitat_description.provenance: %w", err)
 		}
 	}

@@ -177,6 +177,19 @@ func TestMigrate_AddsDescriptionProvenanceToAnOlderIndex(t *testing.T) {
 		t.Errorf("provenance = %q, want %q for a row written before the column existed",
 			got.Provenance, domain.DescriptionProvenanceOfficial)
 	}
+	// The migrated column carries the same CHECK as a freshly created one:
+	// otherwise an old index would accept what the API contract forbids, and
+	// the difference would only show up on the wire.
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := tx.UpsertDescription(domain.HabitatDescription{
+		Key: r22key, TextEN: "Meadows.", Provenance: "curated",
+	}); err == nil {
+		t.Error("UpsertDescription with an invalid provenance on a migrated index = nil error, want the CHECK to bite")
+	}
 }
 
 // Migrate must surface a failure rather than leave a half-migrated index:
