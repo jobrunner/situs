@@ -1,5 +1,5 @@
 # situs Makefile — every standard task for development and CI.
-.PHONY: all build run test test-coverage pipeline-test lint vet fmt fmt-check arch debt \
+.PHONY: all build run test test-coverage pipeline-test ingest-input lint vet fmt fmt-check arch debt \
         debt-guard debt-coverage mutation print-gremlins-version verify docs docs-serve \
         hooks security vuln licenses release-dry help
 
@@ -34,6 +34,9 @@ test: ## Run all tests
 # The pipeline produces every fact in the index, including the header-drift
 # guard that exists because silently dropping a whole sheet branch already
 # happened once. Stdlib-only python3, so there is nothing to install.
+ingest-input: ## Collect every ingest source into CSV_DIR (default: out/ingest-input)
+	@./scripts/collect-ingest-input.sh "$(or $(CSV_DIR),out/ingest-input)"
+
 pipeline-test: ## Run every pipeline's Python tests
 	cd pipelines/eunis && python3 -m unittest discover
 	cd pipelines/eurlex && python3 -m unittest discover

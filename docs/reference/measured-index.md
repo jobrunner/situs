@@ -316,6 +316,15 @@ Zwei Quellen, zwei Herkünfte, eine Tabelle:
 | EUNIS 2021 | **264** | `official` | EUNIS-ESy-Factsheets, Wortlaut unverändert |
 | Anhang I | **205** | `situs` | von situs verfasst aus EUR 28, dem EUNIS-Crosswalk und den Artendaten des Index |
 
+Beide Textmengen sind **versioniert, nicht erzeugt**: sie entstanden mit
+KI-Unterstützung und sind nicht reproduzierbar, ein erneuter Lauf ergäbe
+andere Formulierungen. Sie liegen deshalb als CSV im Repo
+(`data/annex1_descriptions.csv`, `data/localizations_descriptions.csv`), gehen
+über `make ingest-input` denselben Weg wie jede Pipeline-Ausgabe und werden
+von `cmd/situs/curated_test.go` geprüft, weil keine Pipeline das für sie tut.
+Ein Ingest aus einem gegebenen Repo-Stand liefert damit immer denselben Index,
+ohne dass jemand ein Modell braucht.
+
 Die Anhang-I-Texte sind **keine** Übersetzung und **keine** Übernahme des
 amtlichen Wortlauts. Das Interpretationshandbuch ist eine Abgrenzungsvorschrift
 für die Rechtsanwendung; es beantwortet die Frage „zählt dieser Bestand als
