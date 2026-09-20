@@ -5,6 +5,19 @@ situs ingest --csv-dir pipelines/eunis/out            # nach index.path
 situs ingest --csv-dir pipelines/eunis/out --db situs.sqlite
 ```
 
+Alle Pipelines schreiben in **denselben** `--csv-dir`; zwei Dateien sind
+dagegen im Repo gepflegt und müssen dorthin **kopiert** werden, sonst fehlen
+sie stillschweigend:
+
+```bash
+cp data/localizations_descriptions.csv "$CSV_DIR/"   # deutsche Beschreibungen
+# data/localizations-de-situs.csv geht über pipelines/eurlex/merge.py ein,
+# siehe ../../pipelines/eurlex/README.md
+```
+
+Fehlt die erste Datei, läuft der Ingest normal durch und meldet entsprechend
+weniger `Localizations` — `?lang=de` liefert dann kein `description_de`.
+
 Liest die von `pipelines/eunis/xlsx_to_csv.py` erzeugten CSVs
 (`typologies.csv`, `habitat_types.csv`, `crosswalks.csv`, `syntaxa.csv`,
 `habitat_type_syntaxa.csv`, `species_roles.csv`, optional
@@ -75,7 +88,7 @@ Am Referenzlauf vom 2026-09-16 gemessen: `Localizations: 567`
    der gepinnten TDWG-Tabelle) und schreibt die Namen der Gebietscodes, die
    `GET /v1/areas` neben dem Code liefert. Rein lokal, kein Dienst wird
    gefragt; hängt von nichts ab und nichts hängt davon ab — die Namen sind ein
-   Overlay auf die Codes, die Schritt 5 schreibt. Fehlt die Datei, ist das
+   Overlay auf die Codes, die Schritt 6 schreibt. Fehlt die Datei, ist das
    **keine** Fehlersituation: der Report zählt 0 (`AreaNames.Areas`) und die
    Codes bleiben namenlos. Eine Zeile ohne Code oder mit einem anderen
    Gebietsschema als `wgsrpd_l3` wird übersprungen und gezählt

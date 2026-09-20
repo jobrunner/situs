@@ -107,3 +107,17 @@ class GroupIntroTest(unittest.TestCase):
     # closing bracket, which a letters-only pattern walks straight past.
     def test_detects_a_join_behind_a_closing_bracket(self):
         self.assertTrue(convert.GLUED_RE.search("excluded (U4-3).Hard rock surfaces"))
+
+    # A description that IS (or starts with) one of the listed introductions
+    # must survive: cutting at offset 0 would empty it and drop the row.
+    def test_does_not_empty_a_description_that_starts_with_an_intro(self):
+        text = "Hard rock surfaces, rock jumbles, loose material deposits of volcanic origin."
+        self.assertEqual(convert.strip_group_intro(text), (text, None))
+
+    # U53's join sits behind a closing bracket: "...(U4-3).Hard rock surfaces".
+    def test_cuts_an_intro_glued_behind_a_closing_bracket(self):
+        text = ("Glacial moraines that lost their ice. Excludes moraines where ice dominates (U4-3)."
+                "Hard rock surfaces, rock jumbles, loose material deposits, soils.")
+        got, marker = convert.strip_group_intro(text)
+        self.assertTrue(got.endswith("(U4-3)."))
+        self.assertTrue(marker)

@@ -101,20 +101,26 @@ def _squash(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+# A sentence end directly followed by a capital letter: two blocks the source
+# glued together. The closing bracket matters: U53 ends "...(U4-3).Hard rock
+# surfaces...", and a letters-only pattern walks straight past it.
+GLUED_RE = re.compile(r"[a-z)]\.[A-Z]")
+
+
 def strip_group_intro(text: str):
-    """Cuts a glued-on group introduction; returns (text, cut_marker_or_None)."""
+    """Cuts a glued-on group introduction; returns (text, cut_marker_or_None).
+
+    The cut requires the introduction to FOLLOW a sentence end: that is what
+    "glued on" means here. Matching at any offset would empty a description
+    that legitimately starts with one of these strings -- the row would then
+    vanish from the CSV with only report.json noting it.
+    """
     for intro in GROUP_INTROS:
         index = text.find(intro)
-        if index != -1:
+        if index > 1 and GLUED_RE.fullmatch(text[index - 2:index + 1]):
             return text[:index].rstrip(), intro
     return text, None
 
-
-# A sentence end directly followed by a capital letter: two blocks the source
-# glued together. Reported, never cut automatically -- see GROUP_INTROS.
-# The closing bracket matters: U53 ends "...(U4-3).Hard rock surfaces...", and
-# a letters-only pattern walks straight past it.
-GLUED_RE = re.compile(r"[a-z)]\.[A-Z]")
 
 
 def main():
