@@ -39,7 +39,16 @@ else
   curl -fsSL "${SOURCE_URL}" -o "${SRC_PATH}"
 fi
 
-ACTUAL="$(shasum -a 256 "${SRC_PATH}" | cut -d' ' -f1)"
+# shasum ships with macOS, sha256sum with coreutils on Linux — neither is
+# guaranteed on the other, same fallback as pipelines/eurlex/fetch.sh.
+if command -v shasum >/dev/null 2>&1; then
+  ACTUAL="$(shasum -a 256 "${SRC_PATH}" | cut -d' ' -f1)"
+elif command -v sha256sum >/dev/null 2>&1; then
+  ACTUAL="$(sha256sum "${SRC_PATH}" | cut -d' ' -f1)"
+else
+  echo "factsheets: neither shasum nor sha256sum found — cannot verify the pin." >&2
+  exit 1
+fi
 if [[ "${ACTUAL}" != "${SOURCE_SHA256}" ]]; then
   echo "factsheets: checksum mismatch — the pinned document changed." >&2
   echo "            expected ${SOURCE_SHA256}" >&2
