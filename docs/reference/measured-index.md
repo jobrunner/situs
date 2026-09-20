@@ -393,18 +393,31 @@ amtliche Anhang-I-Name wird an den EUNIS-Typ verliehen, markiert als
 Die verbleibenden **241** EUNIS-Level-3-Typen ohne `=`-Crosswalk haben keine
 amtliche Quelle und tragen `provenance = situs`.
 
-### Die 241 von situs verfassten Namen
+Die Ableitung erreicht **Level 1 und 2 überhaupt nicht**: keiner der 49 Codes
+der Level 1 und 2 trägt einen `=`-Crosswalk nach `annex1` (gemessen gegen
+`crosswalks.csv`). Ohne verfasste Namen bliebe damit genau die Ebene englisch,
+die in einer App als Gruppenknopf zuerst sichtbar ist — `R` und `R5` stünden
+neben einem deutschen `R55`. Deshalb führt `data/localizations-de-situs.csv`
+seit dem 2026-09-21 auch diese 49 Typen.
 
-Gemessen am 2026-08-24 gegen `data/localizations-de-situs.csv`:
+### Die 290 von situs verfassten Namen
+
+Gemessen am 2026-09-21 mit `pipelines/eurlex/merge.py` gegen
+`data/localizations-de-situs.csv`:
 
 | Kennzahl | Wert |
 |---|---|
-| Verfasste Typen (EUNIS L3 ohne `=`-Crosswalk) | **241** |
-| Erzeugte Localization-Zeilen | **334** |
-| davon `field = vernacular` | **93** (38 %) |
+| Verfasste Typen (EUNIS L1–L3 ohne `=`-Crosswalk) | **290** (241 L3 + 49 L1/L2) |
+| Erzeugte Localization-Zeilen | **399** |
+| davon `field = vernacular` | **109** (38 %) |
 | Überschneidung mit den 29 Ableitungen | **0** |
-| Localizations im Index gesamt | **567** (233 `official` + 334 `situs`) |
-| Zeilen in `localization` nach dem Ingest | **596** (567 + 29 `derived`) |
+| Localizations im Index gesamt | **632** (233 `official` + 399 `situs`) |
+| Zeilen in `localization` nach dem Ingest | **661** (632 + 29 `derived`) |
+
+Die beiden letzten Zeilen sind aus der gemessenen `merge.py`-Ausgabe
+**gerechnet**, nicht aus einem Index gezählt: der Referenzlauf vom 2026-09-16
+maß die alten Werte 567 und 596. Der nächste volle `situs ingest` hat sie zu
+bestätigen.
 
 Die 38 % Vernakular-Abdeckung ist keine Lücke, sondern das Ergebnis der Regel:
 ein etablierter deutscher Begriff existiert im Wesentlichen nur, wo der Typ in
