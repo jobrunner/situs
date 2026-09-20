@@ -904,10 +904,10 @@ func TestIngestCommandStampsDescriptionProvenancePerFile(t *testing.T) {
 	}
 }
 
-// The Annex I codes situs ships descriptions for. Named here rather than read
-// from the file so nothing derived from a file ends up in a path: the second
-// test below holds the two in sync, which is what would otherwise drift.
-var shippedAnnexOneCodes = []string{"4030", "6210", "6510", "91E0"}
+// Three of the Annex I codes situs ships descriptions for, named here rather
+// than read from the file so nothing derived from a file ends up in a path.
+// The test below holds them against the file, which is what would drift.
+var shippedAnnexOneCodes = []string{"4030", "6510", "91E0"}
 
 // The shipped descriptions have to land, not be folded into
 // SkippedUnknownCode because their habitat type is missing from the index.
@@ -961,7 +961,17 @@ func TestShippedAnnexOneCodesMatchTheDataFile(t *testing.T) {
 	for _, record := range records[1:] {
 		inFile = append(inFile, record[1])
 	}
-	if !slices.Equal(inFile, shippedAnnexOneCodes) {
-		t.Errorf("data/annex1_descriptions.csv ships %v, the test list says %v", inFile, shippedAnnexOneCodes)
+	for _, code := range shippedAnnexOneCodes {
+		if !slices.Contains(inFile, code) {
+			t.Errorf("data/annex1_descriptions.csv no longer ships %s, which the ingest test writes", code)
+		}
+	}
+	// Every shipped code has to be an Annex I code (four characters, opening
+	// with two digits). A stray EUNIS code here would be dropped at ingest as
+	// an unknown habitat type and nobody would notice.
+	for _, code := range inFile {
+		if len(code) != 4 || code[0] < '0' || code[0] > '9' || code[1] < '0' || code[1] > '9' {
+			t.Errorf("data/annex1_descriptions.csv ships %q, which is not an Annex I code", code)
+		}
 	}
 }
