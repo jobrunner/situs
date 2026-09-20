@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0](https://github.com/jobrunner/situs/compare/v0.7.0...v0.8.0) (2026-09-20)
+
+
+### Features
+
+* **descriptions:** Habitatbeschreibungen aus dem EUNIS-ESy-Factsheet-PDF ([cca200d](https://github.com/jobrunner/situs/commit/cca200d7e48354709d68911a67ec25374dd94b48))
+* **descriptions:** Habitatbeschreibungen aus dem EUNIS-ESy-Factsheet-PDF ([dfb8e80](https://github.com/jobrunner/situs/commit/dfb8e8022c82bd63c8b1f267ee3340ed33ecd17a))
+
+
+### Bug Fixes
+
+* **descriptions:** Prüfsumme portabel berechnen ([fc1cdb2](https://github.com/jobrunner/situs/commit/fc1cdb2476b448b4e20ae1a1c7de8999e58c7243))
+* **descriptions:** Review-Funde aus PR [#38](https://github.com/jobrunner/situs/issues/38) ([25ce4fc](https://github.com/jobrunner/situs/commit/25ce4fc9426b94ddf5f94e153f79be966c7a2219))
+
 ## [0.7.0](https://github.com/jobrunner/situs/compare/v0.6.0...v0.7.0) (2026-09-15)
 
 
