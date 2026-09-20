@@ -39,7 +39,7 @@ func TestIngestDescriptions_WritesEveryRow(t *testing.T) {
 		"eunis@2021,N11,\"Sand beaches.\"\n")
 	repo := repoWithTypes("R22", "N11")
 
-	rep, err := IngestDescriptions(context.Background(), repo, path, "floraveg:2021-06-01")
+	rep, err := IngestDescriptions(context.Background(), repo, path, "floraveg:2021-06-01", domain.DescriptionProvenanceOfficial)
 	if err != nil {
 		t.Fatalf("IngestDescriptions: %v", err)
 	}
@@ -52,6 +52,9 @@ func TestIngestDescriptions_WritesEveryRow(t *testing.T) {
 	if repo.descriptions[0].Source != "floraveg:2021-06-01" {
 		t.Errorf("source = %q, want the artifact the text came from", repo.descriptions[0].Source)
 	}
+	if repo.descriptions[0].Provenance != domain.DescriptionProvenanceOfficial {
+		t.Errorf("provenance = %q, want it set from the call", repo.descriptions[0].Provenance)
+	}
 }
 
 // The factsheets cover habitats this index does not carry (11 marine MA*
@@ -63,7 +66,7 @@ func TestIngestDescriptions_DropsAndCountsUnknownCodes(t *testing.T) {
 		"eunis@2021,MA211,\"Arctic salt marshes.\"\n")
 	repo := repoWithTypes("R22")
 
-	rep, err := IngestDescriptions(context.Background(), repo, path, "src")
+	rep, err := IngestDescriptions(context.Background(), repo, path, "src", domain.DescriptionProvenanceOfficial)
 	if err != nil {
 		t.Fatalf("IngestDescriptions: %v", err)
 	}
@@ -82,7 +85,7 @@ func TestIngestDescriptions_SkipsIncompleteRows(t *testing.T) {
 		"eunis@2021,,\"No code at all.\"\n")
 	repo := repoWithTypes("R22", "N11")
 
-	rep, err := IngestDescriptions(context.Background(), repo, path, "src")
+	rep, err := IngestDescriptions(context.Background(), repo, path, "src", domain.DescriptionProvenanceOfficial)
 	if err != nil {
 		t.Fatalf("IngestDescriptions: %v", err)
 	}
@@ -97,7 +100,7 @@ func TestIngestDescriptions_MalformedTypologyIsASkippedRow(t *testing.T) {
 	path := writeDescCSV(t, descHeader+"eunis@,R22,\"Hay meadows.\"\n")
 	repo := repoWithTypes("R22")
 
-	rep, err := IngestDescriptions(context.Background(), repo, path, "src")
+	rep, err := IngestDescriptions(context.Background(), repo, path, "src", domain.DescriptionProvenanceOfficial)
 	if err != nil {
 		t.Fatalf("IngestDescriptions: %v", err)
 	}
@@ -109,7 +112,7 @@ func TestIngestDescriptions_MalformedTypologyIsASkippedRow(t *testing.T) {
 func TestIngestDescriptions_MissingFileIsNotAnError(t *testing.T) {
 	repo := newFakeRepo()
 
-	rep, err := IngestDescriptions(context.Background(), repo, filepath.Join(t.TempDir(), "absent.csv"), "src")
+	rep, err := IngestDescriptions(context.Background(), repo, filepath.Join(t.TempDir(), "absent.csv"), "src", domain.DescriptionProvenanceOfficial)
 	if err != nil {
 		t.Fatalf("IngestDescriptions on a missing file: %v", err)
 	}
@@ -121,7 +124,7 @@ func TestIngestDescriptions_MissingFileIsNotAnError(t *testing.T) {
 func TestIngestDescriptions_HeaderMismatchIsAnError(t *testing.T) {
 	path := writeDescCSV(t, "typology,code,text\neunis@2021,R22,x\n")
 
-	if _, err := IngestDescriptions(context.Background(), newFakeRepo(), path, "src"); err == nil {
+	if _, err := IngestDescriptions(context.Background(), newFakeRepo(), path, "src", domain.DescriptionProvenanceOfficial); err == nil {
 		t.Fatal("IngestDescriptions with a wrong header = nil error, want an error")
 	}
 }
@@ -131,7 +134,7 @@ func TestIngestDescriptions_LookupErrorIsReturned(t *testing.T) {
 	repo := repoWithTypes("R22")
 	repo.habitatTypeErr = errors.New("index unreadable")
 
-	if _, err := IngestDescriptions(context.Background(), repo, path, "src"); err == nil {
+	if _, err := IngestDescriptions(context.Background(), repo, path, "src", domain.DescriptionProvenanceOfficial); err == nil {
 		t.Fatal("IngestDescriptions with the lookup failing = nil error, want an error")
 	}
 }
@@ -141,7 +144,7 @@ func TestIngestDescriptions_RepositoryErrorRollsBack(t *testing.T) {
 	repo := repoWithTypes("R22")
 	repo.failOn = "UpsertDescription"
 
-	if _, err := IngestDescriptions(context.Background(), repo, path, "src"); err == nil {
+	if _, err := IngestDescriptions(context.Background(), repo, path, "src", domain.DescriptionProvenanceOfficial); err == nil {
 		t.Fatal("IngestDescriptions with UpsertDescription failing = nil error, want an error")
 	}
 	if repo.committed || !repo.rolledBack {
@@ -158,7 +161,7 @@ func TestIngestDescriptions_BeginAndCommitErrorsAreReturned(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			repo := repoWithTypes("R22")
 			prepare(repo)
-			if _, err := IngestDescriptions(context.Background(), repo, path, "src"); err == nil {
+			if _, err := IngestDescriptions(context.Background(), repo, path, "src", domain.DescriptionProvenanceOfficial); err == nil {
 				t.Fatalf("IngestDescriptions with %s failing = nil error, want an error", name)
 			}
 		})
@@ -171,7 +174,7 @@ func TestIngestDescriptions_FailedRollbackIsReportedAlongsideTheCause(t *testing
 	repo.failOn = "UpsertDescription"
 	repo.rollbackErr = errors.New("connection lost")
 
-	_, err := IngestDescriptions(context.Background(), repo, path, "src")
+	_, err := IngestDescriptions(context.Background(), repo, path, "src", domain.DescriptionProvenanceOfficial)
 	if err == nil {
 		t.Fatal("IngestDescriptions = nil error, want an error")
 	}
@@ -184,7 +187,7 @@ func TestIngestDescriptions_UnreadablePathIsAnError(t *testing.T) {
 	notADir := writeDescCSV(t, descHeader)
 
 	if _, err := IngestDescriptions(context.Background(), newFakeRepo(),
-		filepath.Join(notADir, "habitat_descriptions.csv"), "src"); err == nil {
+		filepath.Join(notADir, "habitat_descriptions.csv"), "src", domain.DescriptionProvenanceOfficial); err == nil {
 		t.Fatal("IngestDescriptions on an unreadable path = nil error, want an error")
 	}
 }
@@ -200,7 +203,7 @@ func TestIngestDescriptions_WarnsOnlyWhenRowsWereSkipped(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			log := captureSlog(t)
-			if _, err := IngestDescriptions(context.Background(), repoWithTypes("R22"), writeDescCSV(t, tc.csv), "src"); err != nil {
+			if _, err := IngestDescriptions(context.Background(), repoWithTypes("R22"), writeDescCSV(t, tc.csv), "src", domain.DescriptionProvenanceOfficial); err != nil {
 				t.Fatalf("IngestDescriptions: %v", err)
 			}
 			warned := strings.Contains(log.String(), "skipped malformed rows in the description file")
@@ -225,7 +228,7 @@ func TestIngestDescriptions_LogsDroppedCodesOnlyWhenThereWereAny(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			log := captureSlog(t)
-			if _, err := IngestDescriptions(context.Background(), repoWithTypes("R22"), writeDescCSV(t, tc.csv), "src"); err != nil {
+			if _, err := IngestDescriptions(context.Background(), repoWithTypes("R22"), writeDescCSV(t, tc.csv), "src", domain.DescriptionProvenanceOfficial); err != nil {
 				t.Fatalf("IngestDescriptions: %v", err)
 			}
 			logged := strings.Contains(log.String(), "dropped descriptions for habitat types this index does not carry")
@@ -233,5 +236,21 @@ func TestIngestDescriptions_LogsDroppedCodesOnlyWhenThereWereAny(t *testing.T) {
 				t.Errorf("line logged = %v, want %v; log: %s", logged, tc.wantLog, log)
 			}
 		})
+	}
+}
+
+// Two sources feed the same table: the EUNIS factsheets (official wording)
+// and the Annex I texts situs writes itself. The ingest stamps which is which
+// per file; nothing about the row's content decides it.
+func TestIngestDescriptions_StampsTheProvenanceOfTheFile(t *testing.T) {
+	path := writeDescCSV(t, descHeader+"eunis@2021,R22,\"Hay meadows.\"\n")
+	repo := repoWithTypes("R22")
+
+	if _, err := IngestDescriptions(context.Background(), repo, path, "situs@test",
+		domain.DescriptionProvenanceSitus); err != nil {
+		t.Fatalf("IngestDescriptions: %v", err)
+	}
+	if repo.descriptions[0].Provenance != domain.DescriptionProvenanceSitus {
+		t.Errorf("provenance = %q, want situs", repo.descriptions[0].Provenance)
 	}
 }

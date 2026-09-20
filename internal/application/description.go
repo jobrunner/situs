@@ -18,20 +18,21 @@ import (
 // overlay. A type without a description is the normal case (the factsheets
 // describe EUNIS level 3, the index holds eight levels), so ErrNotFound means
 // "no description" and yields an empty answer, never a failed request.
-func (q *QueryService) descriptionOf(ctx context.Context, key domain.HabitatTypeKey, lang string) (string, *input.GermanLabel, error) {
+func (q *QueryService) descriptionOf(ctx context.Context, key domain.HabitatTypeKey, lang string) (*input.DescriptionText, *input.GermanLabel, error) {
 	d, err := q.repo.Description(ctx, key)
 	if err != nil {
 		if errors.Is(err, output.ErrNotFound) {
-			return "", nil, nil
+			return nil, nil, nil
 		}
-		return "", nil, fmt.Errorf("fetching description of %s: %w", key, err)
+		return nil, nil, fmt.Errorf("fetching description of %s: %w", key, err)
 	}
+	text := &input.DescriptionText{Value: d.TextEN, Provenance: d.Provenance, Source: d.Source}
 	if lang != deLang {
-		return d.TextEN, nil, nil
+		return text, nil, nil
 	}
 	labels, err := q.repo.Localization(ctx, "habitat_type", key.String(), deLang)
 	if err != nil {
-		return "", nil, fmt.Errorf("fetching German description of %s: %w", key, err)
+		return nil, nil, fmt.Errorf("fetching German description of %s: %w", key, err)
 	}
-	return d.TextEN, preferredDescription(labels), nil
+	return text, preferredDescription(labels), nil
 }

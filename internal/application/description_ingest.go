@@ -22,14 +22,16 @@ type DescriptionReport struct {
 	SkippedUnknownCode int
 }
 
-// IngestDescriptions loads csvPath (habitat_descriptions.csv:
-// typology_id,code,description_en, produced by pipelines/floraveg-factsheets)
-// into repo, in one transaction. source names the artifact behind the text and
-// is stored with every row.
+// IngestDescriptions loads csvPath (typology_id,code,description_en) into
+// repo, in one transaction. source names the artifact behind the text and
+// provenance says what kind of text it is; both are stored with every row and
+// come from the CALL, not from the data: which file is being read is what
+// decides whether its wording is an external source's own (the EUNIS
+// factsheets) or written by situs (the Annex I descriptions).
 //
 // A missing csvPath is "no factsheets pinned yet", not an error, mirroring the
 // other optional ingest steps.
-func IngestDescriptions(ctx context.Context, repo output.Repository, csvPath, source string) (DescriptionReport, error) {
+func IngestDescriptions(ctx context.Context, repo output.Repository, csvPath, source, provenance string) (DescriptionReport, error) {
 	if _, err := os.Stat(csvPath); err != nil {
 		if os.IsNotExist(err) {
 			slog.InfoContext(ctx, "no habitat description file, skipping", "path", csvPath)
@@ -43,7 +45,7 @@ func IngestDescriptions(ctx context.Context, repo output.Repository, csvPath, so
 		return DescriptionReport{}, fmt.Errorf("beginning description ingest transaction: %w", err)
 	}
 
-	rep, err := ingestDescriptionRows(ctx, repo, tx, csvPath, source)
+	rep, err := ingestDescriptionRows(ctx, repo, tx, csvPath, source, provenance)
 	if err != nil {
 		if rbErr := tx.Rollback(); rbErr != nil {
 			return DescriptionReport{}, fmt.Errorf("%w (rollback also failed: %w)", err, rbErr)
@@ -70,7 +72,7 @@ func IngestDescriptions(ctx context.Context, repo output.Repository, csvPath, so
 // already holds, and the descriptions are written in their own transaction
 // after every other entity is committed.
 func ingestDescriptionRows(ctx context.Context, repo output.Repository, tx output.IngestTx,
-	csvPath, source string,
+	csvPath, source, provenance string,
 ) (DescriptionReport, error) {
 	dir, file := splitCSVPath(csvPath)
 	var rep DescriptionReport
@@ -97,7 +99,7 @@ func ingestDescriptionRows(ctx context.Context, repo output.Repository, tx outpu
 				return fmt.Errorf("%s:%d: looking up %s: %w", file, line, key, err)
 			}
 			if err := tx.UpsertDescription(domain.HabitatDescription{
-				Key: key, TextEN: text, Source: source,
+				Key: key, TextEN: text, Source: source, Provenance: provenance,
 			}); err != nil {
 				return fmt.Errorf("%s:%d: %w", file, line, err)
 			}

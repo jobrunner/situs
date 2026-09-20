@@ -16,10 +16,10 @@ import (
 func (d *DB) Description(ctx context.Context, key domain.HabitatTypeKey) (domain.HabitatDescription, error) {
 	out := domain.HabitatDescription{Key: key}
 	row := d.QueryRowContext(ctx,
-		`SELECT description_en, source FROM habitat_description
+		`SELECT description_en, source, provenance FROM habitat_description
 		 WHERE typology_id = ? AND code = ?`,
 		string(key.Typology), key.Code)
-	if err := row.Scan(&out.TextEN, &out.Source); err != nil {
+	if err := row.Scan(&out.TextEN, &out.Source, &out.Provenance); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.HabitatDescription{}, fmt.Errorf("sqlite: description of %s: %w", key, output.ErrNotFound)
 		}

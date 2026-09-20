@@ -11,6 +11,7 @@ sie stillschweigend:
 
 ```bash
 cp data/localizations_descriptions.csv "$CSV_DIR/"   # deutsche Beschreibungen
+cp data/annex1_descriptions.csv "$CSV_DIR/"          # Anhang-I-Beschreibungen (EN)
 # data/localizations-de-situs.csv geht über pipelines/eurlex/merge.py ein,
 # siehe ../../pipelines/eurlex/README.md
 ```
@@ -96,7 +97,10 @@ Am Referenzlauf vom 2026-09-16 gemessen: `Localizations: 567`
    mit nichts zusammenfinden, und dieses Schweigen soll im Report stehen.
 4. `IngestDescriptions` — liest optional `habitat_descriptions.csv`
    (`pipelines/floraveg-factsheets`, aus dem gepinnten Factsheet-PDF) und
-   schreibt je Habitattyp seine englische Beschreibung. Läuft nach `IngestCSV`,
+   `annex1_descriptions.csv` (aus `data/`, von situs verfasst) und schreibt je
+   Habitattyp seine englische Beschreibung. **Welche Datei eine Zeile trug,
+   entscheidet ihre `provenance`** (`official` für die Factsheets, `situs` für
+   Anhang I); nichts am Inhalt einer Zeile tut das. Läuft nach `IngestCSV`,
    weil jede Zeile gegen den Habitattyp geprüft wird, zu dem sie gehört: eine
    Beschreibung zu einem Code, den dieser Index nicht führt, wird verworfen und
    gezählt (`Descriptions.SkippedUnknownCode`, am Referenzstand 13). Rein

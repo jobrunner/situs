@@ -968,7 +968,10 @@ func seededQueryService() *fakeQueryService {
 		types: map[string]input.HabitatTypeDetail{
 			"eunis@2021:R22": {
 				HabitatTypeSummary: r22,
-				Description:        "Hay meadows of lowland and montane areas.",
+				Description: &input.DescriptionText{
+					Value:      "Hay meadows of lowland and montane areas.",
+					Provenance: "official", Source: "floraveg:2021-06-01",
+				},
 				DescriptionDE: &input.GermanLabel{
 					Value:      "Mähwiesen der Tief- und mittleren Lagen.",
 					Provenance: "situs", Source: "situs@0.7.0",
@@ -1063,7 +1066,7 @@ func (f *fakeQueryService) HabitatType(_ context.Context, key domain.HabitatType
 	}
 	detail.HabitatTypeSummary = germanOverlay(detail.HabitatTypeSummary, lang)
 	if f.undescribed {
-		detail.Description, detail.DescriptionDE = "", nil
+		detail.Description, detail.DescriptionDE = nil, nil
 	} else if lang != "de" {
 		detail.DescriptionDE = nil
 	}
