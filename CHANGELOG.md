@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.0](https://github.com/jobrunner/situs/compare/v0.9.0...v0.10.0) (2026-09-20)
+
+
+### Features
+
+* **ingest:** Eingabeverzeichnis per Befehl sammeln statt per Kopierliste ([6d46c35](https://github.com/jobrunner/situs/commit/6d46c35107730af7fa2efe4a12543391139c2921))
+* **ingest:** Eingabeverzeichnis per Befehl sammeln statt per Kopierliste ([af4b77a](https://github.com/jobrunner/situs/commit/af4b77aae15599b4da23e1890c8625c54380ddb8))
+
+
+### Bug Fixes
+
+* **ingest:** Review-Funde aus PR [#43](https://github.com/jobrunner/situs/issues/43) ([c7edcf6](https://github.com/jobrunner/situs/commit/c7edcf6b875df0b1e96058fd3cd00cc6d4f5e6c7))
+
 ## [0.9.0](https://github.com/jobrunner/situs/compare/v0.8.0...v0.9.0) (2026-09-20)
 
 
