@@ -34,9 +34,6 @@ test: ## Run all tests
 # The pipeline produces every fact in the index, including the header-drift
 # guard that exists because silently dropping a whole sheet branch already
 # happened once. Stdlib-only python3, so there is nothing to install.
-ingest-input: ## Collect every ingest source into CSV_DIR (default: out/ingest-input)
-	@./scripts/collect-ingest-input.sh "$(or $(CSV_DIR),out/ingest-input)"
-
 pipeline-test: ## Run every pipeline's Python tests
 	cd pipelines/eunis && python3 -m unittest discover
 	cd pipelines/eurlex && python3 -m unittest discover
@@ -44,6 +41,12 @@ pipeline-test: ## Run every pipeline's Python tests
 	cd pipelines/wgsrpd && python3 -m unittest discover
 	cd pipelines/floraveg-factsheets && python3 -m unittest discover
 	cd pipelines/eur28 && python3 -m unittest discover
+
+## The one place that knows what an ingest needs: pipeline outputs plus the
+## two curated files from data/. Prose in a how-to could be skipped a line at
+## a time; this cannot.
+ingest-input: ## Collect every ingest source into CSV_DIR (default: out/ingest-input)
+	@./scripts/collect-ingest-input.sh "$(or $(CSV_DIR),out/ingest-input)"
 
 test-coverage: ## Tests with a coverage report
 	@mkdir -p $(COVERAGE_DIR)

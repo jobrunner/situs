@@ -16,10 +16,17 @@ fehlt eine **optionale**, sagt es, was der Ingest deshalb überspringt. Vorher
 stand diese Liste nur als Prosa hier, und eine übersprungene Zeile ergab
 stillschweigend einen Index ohne die betroffenen Daten.
 
-Drei Dateien erzeugt kein Lauf in diesem Repo und niemand kopiert sie für
-dich: `eurosl_crosswalk.csv` und `aggregate_members.csv` kommen aus
-`hostus export-crosswalk` (siehe unten), `localizations.csv` aus
-`pipelines/eurlex`. Das Skript sagt dir, ob sie im Zielverzeichnis liegen.
+Drei Dateien erzeugt kein Lauf in diesem Repo: `eurosl_crosswalk.csv` und
+`aggregate_members.csv` kommen aus `hostus export-crosswalk` (siehe unten),
+`localizations.csv` aus `pipelines/eurlex`. Fehlt eine davon, **endet das
+Skript mit einem Fehler** und nennt den Befehl, der sie erzeugt: ohne
+`eurosl_crosswalk.csv` bricht der Ingest ab, ohne `localizations.csv` entsteht
+lautlos ein Index ganz ohne deutsche Labels.
+
+Das Zielverzeichnis gehört dem Skript: es entfernt die von ihm verwalteten
+Dateien vor jedem Lauf, damit keine Ausgabe von gestern stehen bleibt und
+ungeprüft mit ingestiert wird. Ein Pipeline- oder `data/`-Verzeichnis als Ziel
+lehnt es ab, weil es dort Quelle auf Quelle kopieren würde.
 
 ### Warum zwei Dateien in `data/` versioniert sind
 

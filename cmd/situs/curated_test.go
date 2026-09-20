@@ -22,7 +22,7 @@ func annexDescriptions(t *testing.T) [][]string {
 	if err != nil {
 		t.Fatalf("reading data/annex1_descriptions.csv: %v", err)
 	}
-	return parseCurated(t, "data/annex1_descriptions.csv", content)
+	return parseCurated(t, "data/annex1_descriptions.csv", content, 3)
 }
 
 func descriptionOverlay(t *testing.T) [][]string {
@@ -31,10 +31,10 @@ func descriptionOverlay(t *testing.T) [][]string {
 	if err != nil {
 		t.Fatalf("reading data/localizations_descriptions.csv: %v", err)
 	}
-	return parseCurated(t, "data/localizations_descriptions.csv", content)
+	return parseCurated(t, "data/localizations_descriptions.csv", content, 7)
 }
 
-func parseCurated(t *testing.T, name string, content []byte) [][]string {
+func parseCurated(t *testing.T, name string, content []byte, columns int) [][]string {
 	t.Helper()
 	records, err := csv.NewReader(bytes.NewReader(content)).ReadAll()
 	if err != nil {
@@ -42,6 +42,12 @@ func parseCurated(t *testing.T, name string, content []byte) [][]string {
 	}
 	if len(records) < 2 {
 		t.Fatalf("%s carries no rows", name)
+	}
+	// encoding/csv only holds rows against the HEADER, so a file edited down
+	// to fewer columns parses cleanly and every index below panics. Checked
+	// once here, the tests report the defect instead of crashing on it.
+	if len(records[0]) != columns {
+		t.Fatalf("%s has %d columns, want %d", name, len(records[0]), columns)
 	}
 	return records
 }
@@ -55,7 +61,10 @@ func TestCuratedTextsFollowTheHouseStyle(t *testing.T) {
 		{"\u2014", "em dash"},
 		{"\u2013", "en dash"},
 		{" - ", "hyphen as punctuation"},
-		{"*", "markup"},
+		// Not a bare "*": the asterisk is the official marker of a priority
+		// habitat type ("*91E0"), and a description may well quote it. Only
+		// the doubled form is markup.
+		{"**", "markup"},
 		{"`", "markup"},
 		{"](", "markup link"},
 	}

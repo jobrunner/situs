@@ -72,8 +72,10 @@ Erreichbar sind außerdem `GET /health/live`, `GET /health/ready`,
 funktioniert also ohne Netz), `GET /v1/info` und die Lese-Endpunkte:
 
 ```bash
+# Das Eingabeverzeichnis füllt ein Befehl (siehe docs/how-to/ingest.md);
 # --db entfällt, wenn index.path (Default: situs.sqlite) passt.
-./situs ingest --csv-dir pipelines/eunis/out
+make ingest-input CSV_DIR=out/ingest-input
+./situs ingest --csv-dir out/ingest-input
 ./situs serve
 
 curl -s 'localhost:8070/v1/info'                        # worauf der Index gebaut ist

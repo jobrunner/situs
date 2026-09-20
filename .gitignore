@@ -17,6 +17,10 @@
 *.sqlite-shm
 *.sqlite.bak*
 
+# das gesammelte Ingest-Eingabeverzeichnis (make ingest-input) und alles
+# andere unter out/: erzeugt, nie eingecheckt
+/out/
+
 # pinned source artifacts are fetched, never committed; pipeline output is
 # generated from them and never committed either
 /pipelines/*/artifacts/

@@ -19,6 +19,16 @@ if [ -z "$DEST" ]; then
   exit 2
 fi
 mkdir -p "$DEST"
+DEST="$(cd "$DEST" && pwd)"
+
+# Ein Pipeline-Verzeichnis als Ziel würde Quelle auf Quelle kopieren und den
+# Lauf mitten im Sammeln abbrechen. Das Ziel ist ein eigenes Verzeichnis.
+case "$DEST" in
+  "$REPO"/pipelines/*|"$REPO"/data|"$REPO"/data/*)
+    echo "collect-ingest-input: $DEST liegt in den Quellen. Nimm ein eigenes" >&2
+    echo "                      Zielverzeichnis, etwa out/ingest-input." >&2
+    exit 2 ;;
+esac
 
 # quelle:zielname. Der Zielname ist der, unter dem der Ingest die Datei sucht;
 # er weicht bei den Zeigerwerten bewusst vom Pipeline-Namen ab.
@@ -53,6 +63,12 @@ EXTERNAL=(
   "localizations.csv"
 )
 
+# Erst die verwalteten Namen entfernen: bliebe eine Ausgabe von gestern
+# liegen, läse der Ingest sie, ohne dass irgendetwas sie als alt ausweist.
+for entry in "${REQUIRED[@]}" "${OPTIONAL[@]}"; do
+  rm -f "$DEST/${entry##*:}"
+done
+
 copy() {
   local src="$REPO/${1%%:*}" dst="$DEST/${1##*:}"
   cp "$src" "$dst"
@@ -75,11 +91,13 @@ for entry in "${OPTIONAL[@]}"; do
 done
 
 echo "Nicht aus diesem Repo (selbst bereitstellen):"
+absent=()
 for name in "${EXTERNAL[@]}"; do
   if [ -f "$DEST/$name" ]; then
     printf '  %-34s vorhanden\n' "$name"
   else
-    printf '  %-34s fehlt\n' "$name"
+    printf '  %-34s FEHLT\n' "$name"
+    absent+=("$name")
   fi
 done
 
@@ -88,6 +106,25 @@ if [ ${#missing[@]} -gt 0 ]; then
   echo "collect-ingest-input: Pflichtquellen fehlen:" >&2
   for m in "${missing[@]}"; do echo "  $m" >&2; done
   echo "Führe die zugehörige Pipeline aus (siehe docs/how-to/ingest.md)." >&2
+  exit 1
+fi
+
+# Ohne eurosl_crosswalk.csv bricht der Ingest ab; ohne localizations.csv
+# entsteht ein Index ganz ohne deutsche Labels, und zwar lautlos. Deshalb
+# meldet das Skript hier keinen Vollzug, sondern was fehlt.
+if [ ${#absent[@]} -gt 0 ]; then
+  echo >&2
+  echo "collect-ingest-input: das Verzeichnis ist NICHT vollständig." >&2
+  for name in "${absent[@]}"; do
+    case "$name" in
+      eurosl_crosswalk.csv|aggregate_members.csv)
+        echo "  $name  <- hostus export-crosswalk --db <hostus.sqlite> --out-dir $DEST" >&2 ;;
+      localizations.csv)
+        echo "  $name  <- pipelines/eurlex (siehe pipelines/eurlex/README.md)" >&2 ;;
+    esac
+  done
+  echo "Ein Ingest ohne diese Dateien bricht ab oder liefert einen Index ohne" >&2
+  echo "Artenrollen beziehungsweise ohne deutsche Labels." >&2
   exit 1
 fi
 
