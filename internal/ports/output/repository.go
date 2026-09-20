@@ -41,6 +41,8 @@ type IngestTx interface {
 	// codes species_distribution carries: writing one neither creates nor
 	// requires distribution data.
 	UpsertArea(a domain.NamedArea) error
+	// UpsertDescription writes one habitat type's prose description.
+	UpsertDescription(d domain.HabitatDescription) error
 	// UpsertTraitValue writes one trait_value row for conceptID. Idempotent
 	// like every other Upsert here: a repinned vocabulary is simply
 	// re-ingested.
@@ -78,6 +80,11 @@ type Repository interface {
 	// typology registered but not (yet) filled — a normal state, not an error.
 	Typologies(ctx context.Context) ([]TypologySummary, error)
 	HabitatType(ctx context.Context, key domain.HabitatTypeKey) (domain.HabitatType, error)
+	// Description returns a habitat type's prose description, or ErrNotFound
+	// when none was ingested. Absence is the normal case — the factsheets
+	// describe EUNIS level 3, the index holds eight levels — so a caller maps
+	// ErrNotFound to "no description", not to a failed request.
+	Description(ctx context.Context, key domain.HabitatTypeKey) (domain.HabitatDescription, error)
 	// CrosswalksTo returns every crosswalk whose To.Typology is typology.
 	CrosswalksTo(ctx context.Context, typology domain.TypologyID) ([]domain.Crosswalk, error)
 	// Crosswalks returns every crosswalk touching key, in either direction —

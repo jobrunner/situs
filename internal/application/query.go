@@ -56,6 +56,11 @@ func (q *QueryService) HabitatType(ctx context.Context, key domain.HabitatTypeKe
 		return input.HabitatTypeDetail{}, err
 	}
 
+	description, descriptionDE, err := q.descriptionOf(ctx, key, lang)
+	if err != nil {
+		return input.HabitatTypeDetail{}, err
+	}
+
 	species := groupByRole(roles)
 	for role, entries := range species {
 		species[role] = markAndFilter(entries, areas, filter)
@@ -63,6 +68,8 @@ func (q *QueryService) HabitatType(ctx context.Context, key domain.HabitatTypeKe
 
 	return input.HabitatTypeDetail{
 		HabitatTypeSummary: summary,
+		Description:        description,
+		DescriptionDE:      descriptionDE,
 		Species:            species,
 		Syntaxa:            syntaxa,
 		Crosswalks:         crosswalks,
@@ -209,6 +216,28 @@ func (q *QueryService) summary(ctx context.Context, key domain.HabitatTypeKey, l
 		s.NameDE = preferredLabel(labels)
 	}
 	return s, nil
+}
+
+// descriptionOf reads the factsheet text and, with lang=de, its German
+// overlay. A type without a description is the normal case (the factsheets
+// describe EUNIS level 3, the index holds eight levels), so ErrNotFound means
+// "no description" and yields an empty answer, never a failed request.
+func (q *QueryService) descriptionOf(ctx context.Context, key domain.HabitatTypeKey, lang string) (string, *input.GermanLabel, error) {
+	d, err := q.repo.Description(ctx, key)
+	if err != nil {
+		if errors.Is(err, output.ErrNotFound) {
+			return "", nil, nil
+		}
+		return "", nil, fmt.Errorf("fetching description of %s: %w", key, err)
+	}
+	if lang != deLang {
+		return d.TextEN, nil, nil
+	}
+	labels, err := q.repo.Localization(ctx, "habitat_type", key.String(), deLang)
+	if err != nil {
+		return "", nil, fmt.Errorf("fetching German description of %s: %w", key, err)
+	}
+	return d.TextEN, preferredDescription(labels), nil
 }
 
 func (q *QueryService) syntaxaOf(ctx context.Context, key domain.HabitatTypeKey) ([]input.SyntaxonRef, error) {

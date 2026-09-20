@@ -41,6 +41,29 @@ func preferredLabel(labels []domain.Localization) *input.GermanLabel {
 	return nil
 }
 
+// preferredDescription picks the German description to serve, by the same
+// ranking as preferredLabel. It carries no vernacular: a description has no
+// short established form to pair with, only a wording and its origin.
+func preferredDescription(labels []domain.Localization) *input.GermanLabel {
+	byProvenance := map[string]domain.Localization{}
+	for _, l := range labels {
+		if l.Field != descriptionField {
+			continue
+		}
+		if _, seen := byProvenance[l.Provenance]; !seen {
+			byProvenance[l.Provenance] = l
+		}
+	}
+	for _, provenance := range []string{
+		provenanceOfficial, provenanceCurated, provenanceDerived, provenanceSitus,
+	} {
+		if l, ok := byProvenance[provenance]; ok {
+			return &input.GermanLabel{Value: l.Value, Provenance: l.Provenance, Source: l.Source}
+		}
+	}
+	return nil
+}
+
 // labelOrigin is what identifies where a label came from. Both halves matter:
 // see the pairing rule on preferredLabel.
 type labelOrigin struct {

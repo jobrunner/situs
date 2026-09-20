@@ -210,6 +210,21 @@ func (t *ingestTx) UpsertArea(a domain.NamedArea) error {
 	return nil
 }
 
+// UpsertDescription writes one habitat type's prose description. Idempotent
+// like every other Upsert here; a repinned factsheet replaces the text.
+func (t *ingestTx) UpsertDescription(d domain.HabitatDescription) error {
+	_, err := t.tx.ExecContext(t.ctx,
+		`INSERT INTO habitat_description (typology_id, code, description_en, source)
+		 VALUES (?, ?, ?, ?)
+		 ON CONFLICT(typology_id, code) DO UPDATE SET
+		   description_en = excluded.description_en, source = excluded.source`,
+		string(d.Key.Typology), d.Key.Code, d.TextEN, d.Source)
+	if err != nil {
+		return fmt.Errorf("sqlite: upserting description of %s: %w", d.Key, err)
+	}
+	return nil
+}
+
 func (t *ingestTx) Commit() error {
 	if err := t.tx.Commit(); err != nil {
 		return fmt.Errorf("sqlite: committing ingest transaction: %w", err)

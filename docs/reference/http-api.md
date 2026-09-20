@@ -273,6 +273,34 @@ Codes bleiben dann nur namenlos.
 Die Antwort ist immer ein Array, auch wenn der Index keine Verbreitungsdaten
 führt (`[]`, nie `null`). Es gibt keinen Filter und keine Parameter.
 
+## Beschreibung eines Habitattyps
+
+`GET /v1/habitat-type/{typology}/{code}` trägt die Beschreibung des Typs aus
+den EUNIS-ESy-Factsheets:
+
+```json
+"description": "Hay meadows of lowland and montane areas …",
+"description_de": {
+  "value": "Mähwiesen der Tief- und mittleren Lagen …",
+  "provenance": "situs",
+  "source": "situs@0.7.0"
+}
+```
+
+`description_de` erscheint nur bei `?lang=de` und ist ein Overlay wie
+`name_de`: der englische Text bleibt die Identität. `provenance: situs` heißt,
+**situs hat selbst übersetzt** — keine externe Quelle steht dahinter.
+
+**Fehlt das Feld, gibt es keine Beschreibung.** Das ist der Normalfall: die
+Factsheets beschreiben EUNIS-**Level 3**, der Index führt acht Level, und
+beschrieben sind damit 264 von 7937 Typen. Eine Beschreibung wird **nicht**
+nach unten vererbt: ein Untertyp ist nicht das, was sein Obertyp ist, und ein
+geerbter Text würde genau das behaupten. Ein leeres Feld gibt es auch nicht —
+absent heißt absent.
+
+Einen eigenen Endpunkt dafür gibt es bewusst nicht: wer den Habitattyp
+abfragt, will seine Beschreibung im selben Aufruf.
+
 ## Die zwei Arten-Pfade
 
 `GET /v1/species/{conceptId}/habitat-types` antwortet **404**, wenn der Index zu

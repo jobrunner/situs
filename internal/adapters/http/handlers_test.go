@@ -866,6 +866,9 @@ type fakeQueryService struct {
 	// areas/areasErr control what Areas returns.
 	areas    []input.AreaView
 	areasErr error
+	// undescribed strips the description fields, standing for the 7673 types
+	// the factsheets do not cover.
+	undescribed bool
 }
 
 func (f *fakeQueryService) Areas(context.Context) ([]input.AreaView, error) {
@@ -965,6 +968,11 @@ func seededQueryService() *fakeQueryService {
 		types: map[string]input.HabitatTypeDetail{
 			"eunis@2021:R22": {
 				HabitatTypeSummary: r22,
+				Description:        "Hay meadows of lowland and montane areas.",
+				DescriptionDE: &input.GermanLabel{
+					Value:      "Mähwiesen der Tief- und mittleren Lagen.",
+					Provenance: "situs", Source: "situs@0.7.0",
+				},
 				Species: map[string][]input.SpeciesEntry{
 					input.RoleDiagnostic: {{ConceptID: "wcvp-1", VerbatimName: "Bromus erectus", Role: input.RoleDiagnostic}},
 					input.RoleConstant:   {},
@@ -1054,6 +1062,11 @@ func (f *fakeQueryService) HabitatType(_ context.Context, key domain.HabitatType
 		return input.HabitatTypeDetail{}, fmt.Errorf("habitat type %s: %w", key, input.ErrNotFound)
 	}
 	detail.HabitatTypeSummary = germanOverlay(detail.HabitatTypeSummary, lang)
+	if f.undescribed {
+		detail.Description, detail.DescriptionDE = "", nil
+	} else if lang != "de" {
+		detail.DescriptionDE = nil
+	}
 	return detail, nil
 }
 

@@ -131,3 +131,14 @@ CREATE TABLE IF NOT EXISTS area (
   name_en     TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (area_scheme, area_code)
 );
+
+-- The prose descriptions from the EUNIS-ESy habitat factsheets
+-- (pipelines/floraveg-factsheets). One row per described habitat type; a type
+-- without a factsheet simply has none, which is the normal case.
+CREATE TABLE IF NOT EXISTS habitat_description (
+  typology_id    TEXT NOT NULL,
+  code           TEXT NOT NULL,
+  description_en TEXT NOT NULL,
+  source         TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (typology_id, code)
+);
