@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,10 +13,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jobrunner/situs/internal/adapters/sqlite"
 	"github.com/jobrunner/situs/internal/domain"
 )
 
@@ -844,5 +847,121 @@ func TestIngestCommandRunsWithoutADescriptionLocalizationFile(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `"Localizations": 0`) {
 		t.Errorf("output = %q, want a present-but-zero Localizations count", out.String())
+	}
+}
+
+// Two description files, two provenances. The EUNIS factsheets are their
+// authors' wording, the Annex I texts are written by situs; which file a row
+// came from is the only thing that decides that.
+func TestIngestCommandStampsDescriptionProvenancePerFile(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t)
+	// The seeded index carries only eunis@2021; the Annex I type has to exist
+	// before a description can attach to it.
+	writeIngestCSV(t, dir, "typologies.csv",
+		"id,scheme,version,name,source_ref\n"+
+			"eunis@2021,eunis,2021,EUNIS 2021,https://example.org\n"+
+			"annex1,annex1,92/43/EEC,Habitats Directive Annex I,https://example.org\n")
+	writeIngestCSV(t, dir, "habitat_types.csv",
+		"typology_id,code,level,name_en,parent_code,priority\n"+
+			"eunis@2021,R22,3,Hay meadow,R2,\n"+
+			"annex1,6510,3,Lowland hay meadows,,\n")
+	writeIngestCSV(t, dir, "habitat_descriptions.csv",
+		"typology_id,code,description_en\neunis@2021,R22,\"Hay meadows.\"\n")
+	writeIngestCSV(t, dir, "annex1_descriptions.csv",
+		"typology_id,code,description_en\nannex1,6510,\"Species-rich hay meadows.\"\n")
+	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", dbPath})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("executing ingest: %v", err)
+	}
+	if !strings.Contains(out.String(), `"Written": 2`) {
+		t.Errorf("output = %q, want both description files counted", out.String())
+	}
+
+	db, err := sqlite.Open(context.Background(), dbPath)
+	if err != nil {
+		t.Fatalf("opening the index: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	for _, tc := range []struct{ typology, code, provenance string }{
+		{"eunis@2021", "R22", domain.DescriptionProvenanceOfficial},
+		{"annex1", "6510", domain.DescriptionProvenanceSitus},
+	} {
+		got, err := db.Description(context.Background(),
+			domain.HabitatTypeKey{Typology: domain.TypologyID(tc.typology), Code: tc.code})
+		if err != nil {
+			t.Fatalf("Description(%s %s): %v", tc.typology, tc.code, err)
+		}
+		if got.Provenance != tc.provenance {
+			t.Errorf("%s %s provenance = %q, want %q", tc.typology, tc.code, got.Provenance, tc.provenance)
+		}
+	}
+}
+
+// The Annex I codes situs ships descriptions for. Named here rather than read
+// from the file so nothing derived from a file ends up in a path: the second
+// test below holds the two in sync, which is what would otherwise drift.
+var shippedAnnexOneCodes = []string{"4030", "6210", "6510", "91E0"}
+
+// The shipped descriptions have to land, not be folded into
+// SkippedUnknownCode because their habitat type is missing from the index.
+func TestIngestCommandWritesTheAnnexOneDescriptionsItShips(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t)
+	writeIngestCSV(t, dir, "typologies.csv",
+		"id,scheme,version,name,source_ref\n"+
+			"eunis@2021,eunis,2021,EUNIS 2021,https://example.org\n"+
+			"annex1,annex1,92/43/EEC,Habitats Directive Annex I,https://example.org\n")
+	types := "typology_id,code,level,name_en,parent_code,priority\neunis@2021,R22,3,Hay meadow,R2,\n"
+	descriptions := "typology_id,code,description_en\n"
+	for _, code := range shippedAnnexOneCodes {
+		types += "annex1," + code + ",3,Some Annex I type,,\n"
+		descriptions += "annex1," + code + ",\"A description.\"\n"
+	}
+	writeIngestCSV(t, dir, "habitat_types.csv", types)
+	writeIngestCSV(t, dir, "annex1_descriptions.csv", descriptions)
+	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", dbPath})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("executing ingest: %v", err)
+	}
+	if !strings.Contains(out.String(), `"SkippedUnknownCode": 0`) {
+		t.Errorf("output = %q, want every shipped Annex I row to find its habitat type", out.String())
+	}
+	want := fmt.Sprintf(`"Written": %d`, len(shippedAnnexOneCodes))
+	if !strings.Contains(out.String(), want) {
+		t.Errorf("output = %q, want %s", out.String(), want)
+	}
+}
+
+// Holds the list above in sync with what data/ actually ships: a new
+// description whose habitat type is missing from the index would otherwise be
+// dropped silently, which is exactly what the test above rules out.
+func TestShippedAnnexOneCodesMatchTheDataFile(t *testing.T) {
+	shipped, err := os.ReadFile("../../data/annex1_descriptions.csv")
+	if err != nil {
+		t.Fatalf("reading the shipped descriptions: %v", err)
+	}
+	records, err := csv.NewReader(bytes.NewReader(shipped)).ReadAll()
+	if err != nil {
+		t.Fatalf("parsing the shipped descriptions: %v", err)
+	}
+	inFile := make([]string, 0, len(records))
+	for _, record := range records[1:] {
+		inFile = append(inFile, record[1])
+	}
+	if !slices.Equal(inFile, shippedAnnexOneCodes) {
+		t.Errorf("data/annex1_descriptions.csv ships %v, the test list says %v", inFile, shippedAnnexOneCodes)
 	}
 }

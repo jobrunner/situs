@@ -18,7 +18,11 @@ func TestHabitatTypeDetail_CarriesDescriptionAndItsGermanOverlay(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	var got struct {
-		Description   string `json:"description"`
+		Description *struct {
+			Value      string `json:"value"`
+			Provenance string `json:"provenance"`
+			Source     string `json:"source"`
+		} `json:"description"`
 		DescriptionDE *struct {
 			Value      string `json:"value"`
 			Provenance string `json:"provenance"`
@@ -28,8 +32,11 @@ func TestHabitatTypeDetail_CarriesDescriptionAndItsGermanOverlay(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decoding body %q: %v", rec.Body, err)
 	}
-	if got.Description != "Hay meadows of lowland and montane areas." {
-		t.Errorf("description = %q, want the English factsheet text", got.Description)
+	if got.Description == nil || got.Description.Value != "Hay meadows of lowland and montane areas." {
+		t.Fatalf("description = %+v, want the English factsheet text", got.Description)
+	}
+	if got.Description.Provenance != "official" {
+		t.Errorf("provenance = %q, want official for the factsheet wording", got.Description.Provenance)
 	}
 	if got.DescriptionDE == nil || got.DescriptionDE.Value != "Mähwiesen der Tief- und mittleren Lagen." {
 		t.Fatalf("description_de = %+v, want the German overlay", got.DescriptionDE)

@@ -162,10 +162,10 @@ func (f AreaFilter) Active() bool { return f.Code != "" }
 // nothing — a role bucket present but empty is information, absence is not.
 type HabitatTypeDetail struct {
 	HabitatTypeSummary
-	// Description is the habitat's prose description from the EUNIS-ESy
-	// factsheets, in English — absent when this type has none. It is never
-	// inherited from a parent type: a subtype is not what its parent is.
-	Description string `json:"description,omitempty"`
+	// Description is the habitat's prose description in English, absent when
+	// this type has none. It is never inherited from a parent type: a subtype
+	// is not what its parent is.
+	Description *DescriptionText `json:"description,omitempty"`
 	// DescriptionDE is the German overlay of Description, same shape and same
 	// rules as NameDE. Present only with ?lang=de, and only where a
 	// translation was ingested.
@@ -238,6 +238,17 @@ type TypologyView struct {
 	Name         string            `json:"name"`
 	SourceRef    string            `json:"source_ref"`
 	HabitatTypes int               `json:"habitat_types"`
+}
+
+// DescriptionText is a habitat type's description together with where its
+// wording comes from. The provenance is not decoration: `official` is an
+// external source's own text (the EUNIS-ESy factsheets), `situs` means situs
+// wrote it from the sources named in Source, and nobody outside situs vouches
+// for that wording.
+type DescriptionText struct {
+	Value      string `json:"value"`
+	Provenance string `json:"provenance"`
+	Source     string `json:"source"`
 }
 
 // AreaView is one distribution area a client can filter by. Name is the

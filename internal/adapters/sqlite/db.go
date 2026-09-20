@@ -90,6 +90,21 @@ func addMissingColumns(ctx context.Context, db *sql.DB) error {
 			return fmt.Errorf("adding species_role.derived_from: %w", err)
 		}
 	}
+
+	descriptions, err := tableColumns(ctx, db, `PRAGMA table_info(habitat_description)`)
+	if err != nil {
+		return fmt.Errorf("checking habitat_description columns: %w", err)
+	}
+	if !descriptions["provenance"] {
+		// The CHECK travels with the column: without it a migrated index would
+		// accept a provenance the schema forbids and the API contract does not
+		// declare, and the difference would only show up on the wire.
+		if _, err := db.ExecContext(ctx,
+			`ALTER TABLE habitat_description ADD COLUMN provenance TEXT NOT NULL DEFAULT 'official'
+			 CHECK (provenance IN ('official', 'situs'))`); err != nil {
+			return fmt.Errorf("adding habitat_description.provenance: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -98,7 +113,14 @@ func addMissingColumns(ctx context.Context, db *sql.DB) error {
 // migrations already ran. table_info is a fixed, static statement: it takes
 // no bound parameter and this function only ever asks about one table.
 func speciesRoleColumns(ctx context.Context, db *sql.DB) (map[string]bool, error) {
-	rows, err := db.QueryContext(ctx, `PRAGMA table_info(species_role)`)
+	return tableColumns(ctx, db, `PRAGMA table_info(species_role)`)
+}
+
+// tableColumns reads one table's actual columns. pragma is a static string
+// supplied by the caller and never built from data — PRAGMA takes no bound
+// parameter, so the statement has to name its table literally.
+func tableColumns(ctx context.Context, db *sql.DB, pragma string) (map[string]bool, error) {
+	rows, err := db.QueryContext(ctx, pragma)
 	if err != nil {
 		return nil, err
 	}

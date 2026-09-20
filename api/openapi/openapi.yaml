@@ -572,6 +572,25 @@ components:
             dahinter.
         source:
           type: string
+    DescriptionText:
+      description: >-
+        Die Beschreibung eines Habitattyps samt Herkunft ihres Wortlauts.
+        `provenance: official` heißt, der Text ist der Wortlaut einer externen,
+        zitierbaren Quelle (die EUNIS-ESy-Factsheets). `provenance: situs`
+        heißt, situs hat den Text aus den unter `source` genannten Quellen
+        verfasst; für diesen Wortlaut steht keine Behörde ein.
+      type: object
+      required: [value, provenance, source]
+      properties:
+        value:
+          type: string
+          example: Hay meadows of lowland and montane areas.
+        provenance:
+          type: string
+          enum: [official, situs]
+        source:
+          type: string
+          example: floraveg:eunis-habitat-factsheets:2021-06-01
     HabitatTypeSummary:
       type: object
       required: [typology, code, name_en]
@@ -712,15 +731,13 @@ components:
           required: [species, syntaxa, crosswalks]
           properties:
             description:
-              type: string
+              allOf:
+                - $ref: "#/components/schemas/DescriptionText"
               description: >-
-                Die Beschreibung des Habitattyps aus den EUNIS-ESy-Factsheets
-                (englisch). **Fehlt**, wenn zu diesem Typ keine vorliegt: die
-                Factsheets beschreiben EUNIS-Level 3, der Index führt acht
-                Level. Eine Beschreibung wird **nie** von einem übergeordneten
-                Typ geerbt — ein Untertyp ist nicht das, was sein Obertyp ist.
-              example: >-
-                Hay meadows of lowland and montane areas.
+                Die Beschreibung des Habitattyps auf Englisch, mit ihrer
+                Herkunft. **Fehlt**, wenn zu diesem Typ keine vorliegt. Eine
+                Beschreibung wird **nie** von einem übergeordneten Typ geerbt:
+                ein Untertyp ist nicht das, was sein Obertyp ist.
             description_de:
               allOf:
                 - $ref: "#/components/schemas/GermanLabel"

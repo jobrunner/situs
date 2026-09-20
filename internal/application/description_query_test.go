@@ -30,8 +30,8 @@ func TestHabitatType_CarriesTheDescription(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HabitatType: %v", err)
 	}
-	if got.Description != "Hay meadows of lowland and montane areas." {
-		t.Errorf("description = %q, want the ingested text", got.Description)
+	if got.Description == nil || got.Description.Value != "Hay meadows of lowland and montane areas." {
+		t.Errorf("description = %+v, want the ingested text", got.Description)
 	}
 	if got.DescriptionDE != nil {
 		t.Errorf("description_de = %+v, want it absent without ?lang=de", got.DescriptionDE)
@@ -48,8 +48,8 @@ func TestHabitatType_WithoutDescriptionLeavesTheFieldEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HabitatType: %v", err)
 	}
-	if got.Description != "" || got.DescriptionDE != nil {
-		t.Errorf("description = %q / %+v, want both absent", got.Description, got.DescriptionDE)
+	if got.Description != nil || got.DescriptionDE != nil {
+		t.Errorf("description = %+v / %+v, want both absent", got.Description, got.DescriptionDE)
 	}
 }
 
@@ -67,8 +67,8 @@ func TestHabitatType_GermanDescriptionIsAnOverlay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HabitatType: %v", err)
 	}
-	if got.Description != "Hay meadows of lowland areas." {
-		t.Errorf("description = %q, want the English text to stay the identity", got.Description)
+	if got.Description == nil || got.Description.Value != "Hay meadows of lowland areas." {
+		t.Errorf("description = %+v, want the English text to stay the identity", got.Description)
 	}
 	if got.DescriptionDE == nil {
 		t.Fatal("description_de is absent, want the German overlay")
@@ -142,5 +142,46 @@ func TestHabitatType_GermanDescriptionLookupErrorIsReturned(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "German description") {
 		t.Errorf("error = %q, want it to name the failing lookup", err)
+	}
+}
+
+// The description now travels with its provenance: the EUNIS factsheets are
+// their authors' wording, the Annex I texts are written by situs. A client
+// that only sees the text cannot tell the difference, so the field carries it.
+func TestHabitatType_DescriptionCarriesProvenanceAndSource(t *testing.T) {
+	repo, key := seedDescribedType(t, "Hay meadows of lowland areas.")
+	repo.descriptions[0].Provenance = domain.DescriptionProvenanceOfficial
+
+	got, err := NewQueryService(repo).HabitatType(context.Background(), key, "", input.AreaFilter{})
+	if err != nil {
+		t.Fatalf("HabitatType: %v", err)
+	}
+	if got.Description == nil {
+		t.Fatal("description is absent, want the text with its provenance")
+	}
+	want := input.DescriptionText{
+		Value:      "Hay meadows of lowland areas.",
+		Provenance: domain.DescriptionProvenanceOfficial,
+		Source:     "floraveg:2021-06-01",
+	}
+	if *got.Description != want {
+		t.Errorf("description = %+v, want %+v", *got.Description, want)
+	}
+}
+
+func TestHabitatType_SitusWrittenDescriptionSaysSo(t *testing.T) {
+	repo, key := seedDescribedType(t, "Closed swards on acidic soils.")
+	repo.descriptions[0].Provenance = domain.DescriptionProvenanceSitus
+	repo.descriptions[0].Source = "situs:derived-from:eur28+eunis@2021"
+
+	got, err := NewQueryService(repo).HabitatType(context.Background(), key, "", input.AreaFilter{})
+	if err != nil {
+		t.Fatalf("HabitatType: %v", err)
+	}
+	if got.Description.Provenance != domain.DescriptionProvenanceSitus {
+		t.Errorf("provenance = %q, want situs", got.Description.Provenance)
+	}
+	if got.Description.Source != "situs:derived-from:eur28+eunis@2021" {
+		t.Errorf("source = %q, want the sources it was derived from", got.Description.Source)
 	}
 }

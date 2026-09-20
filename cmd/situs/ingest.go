@@ -40,6 +40,11 @@ const maxLoggedConceptFailures = 3
 // pipelines/floraveg-factsheets/build.sh; bump both together.
 const factsheetSource = "floraveg:eunis-habitat-factsheets:2021-06-01"
 
+// annex1DescriptionSource names what the Annex I descriptions were written
+// FROM: the official Interpretation Manual, the EUNIS crosswalk of this index
+// and its own species data. situs wrote the wording; these are its sources.
+const annex1DescriptionSource = "situs:derived-from:eur28+eunis@2021"
+
 // pacedDistributionSource wraps a DistributionSource that has no pacing of
 // its own (Areas issues one hostus request per concept) and spaces those
 // requests out, one concept at a time, so a full ingest run does not fail in
@@ -196,12 +201,24 @@ func ingestLocalOverlays(ctx context.Context, db *sqlite.DB, csvDir string) (loc
 	}
 	out.areas = areas
 
-	descriptionCSV := filepath.Join(csvDir, "habitat_descriptions.csv")
-	descriptions, err := application.IngestDescriptions(ctx, db, descriptionCSV, factsheetSource)
-	if err != nil {
-		return localOverlays{}, fmt.Errorf("ingesting habitat descriptions from %q: %w", descriptionCSV, err)
+	// Two description files, two kinds of text. The EUNIS factsheets are their
+	// authors' own wording; the Annex I descriptions are written by situs from
+	// the Interpretation Manual, the EUNIS crosswalk and the index's species
+	// data. Which file a row came from is the only thing that decides its
+	// provenance — never anything about the row itself.
+	for _, src := range []struct{ file, source, provenance string }{
+		{"habitat_descriptions.csv", factsheetSource, domain.DescriptionProvenanceOfficial},
+		{"annex1_descriptions.csv", annex1DescriptionSource, domain.DescriptionProvenanceSitus},
+	} {
+		path := filepath.Join(csvDir, src.file)
+		report, err := application.IngestDescriptions(ctx, db, path, src.source, src.provenance)
+		if err != nil {
+			return localOverlays{}, fmt.Errorf("ingesting habitat descriptions from %q: %w", path, err)
+		}
+		out.descriptions.Written += report.Written
+		out.descriptions.SkippedRows += report.SkippedRows
+		out.descriptions.SkippedUnknownCode += report.SkippedUnknownCode
 	}
-	out.descriptions = descriptions
 
 	return out, nil
 }

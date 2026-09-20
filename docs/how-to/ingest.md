@@ -11,6 +11,7 @@ sie stillschweigend:
 
 ```bash
 cp data/localizations_descriptions.csv "$CSV_DIR/"   # deutsche Beschreibungen
+cp data/annex1_descriptions.csv "$CSV_DIR/"          # Anhang-I-Beschreibungen (EN)
 # data/localizations-de-situs.csv geht über pipelines/eurlex/merge.py ein,
 # siehe ../../pipelines/eurlex/README.md
 ```
@@ -45,7 +46,17 @@ Konfiguration, wie überall in diesem Dienst.
 
 Ein Index, der vor der Syntaxa-Hierarchie-Erweiterung gebaut wurde (ohne die
 Spalte `syntaxon.author`), muss gelöscht und per frischem `situs ingest` neu
-aufgebaut werden — ein erneuter Ingest in einen alten Index ist nicht sicher.
+aufgebaut werden; ein erneuter Ingest in einen alten Index ist nicht sicher.
+
+!!! warning "Vor dem Ausrollen ingestieren, nicht danach"
+
+    `Migrate` läuft **nur** beim `ingest`, nie beim `serve` (siehe
+    `../explanation/architecture.md`). Ein Index aus 0.8.0 trägt noch keine
+    Spalte `habitat_description.provenance`; ein 0.9.0-Binary, das gegen ihn
+    serviert, beantwortet deshalb **jedes**
+    `GET /v1/habitat-type/{typology}/{code}` mit `INTERNAL_ERROR`, nicht nur
+    das Beschreibungsfeld. Reihenfolge beim Upgrade ist also: neues Binary,
+    `situs ingest`, dann `serve`.
 
 Der Index gehört **nicht** ins Repo. `.gitignore` ignoriert `*.sqlite`
 (plus `-wal`/`-shm`), aber keine anderen Endungen — eine Datei namens
@@ -96,11 +107,15 @@ Am Referenzlauf vom 2026-09-16 gemessen: `Localizations: 567`
    mit nichts zusammenfinden, und dieses Schweigen soll im Report stehen.
 4. `IngestDescriptions` — liest optional `habitat_descriptions.csv`
    (`pipelines/floraveg-factsheets`, aus dem gepinnten Factsheet-PDF) und
-   schreibt je Habitattyp seine englische Beschreibung. Läuft nach `IngestCSV`,
+   `annex1_descriptions.csv` (aus `data/`, von situs verfasst) und schreibt je
+   Habitattyp seine englische Beschreibung. **Welche Datei eine Zeile trug,
+   entscheidet ihre `provenance`** (`official` für die Factsheets, `situs` für
+   Anhang I); nichts am Inhalt einer Zeile tut das. Läuft nach `IngestCSV`,
    weil jede Zeile gegen den Habitattyp geprüft wird, zu dem sie gehört: eine
    Beschreibung zu einem Code, den dieser Index nicht führt, wird verworfen und
-   gezählt (`Descriptions.SkippedUnknownCode`, am Referenzstand 13). Rein
-   lokal, kein Dienst wird gefragt.
+   gezählt. `Descriptions.SkippedUnknownCode` ist die **Summe über beide
+   Dateien** (am Referenzstand 13, sämtlich aus den Factsheets: die marinen
+   `MA*`-Codes sowie `N23`/`N24`). Rein lokal, kein Dienst wird gefragt.
 5. `IngestSpeciesRoles` — Artenrollen, aufgelöst gegen eine lokale
    Crosswalk-Datei (`eurosl_crosswalk.csv`), plus abgeleitete
    Mitgliedsarten-Zeilen für Sammelarten (`aggregate_members.csv`). Kein

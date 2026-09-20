@@ -275,11 +275,15 @@ führt (`[]`, nie `null`). Es gibt keinen Filter und keine Parameter.
 
 ## Beschreibung eines Habitattyps
 
-`GET /v1/habitat-type/{typology}/{code}` trägt die Beschreibung des Typs aus
-den EUNIS-ESy-Factsheets:
+`GET /v1/habitat-type/{typology}/{code}` trägt die Beschreibung des Typs, und
+zwar **mit ihrer Herkunft**:
 
 ```json
-"description": "Hay meadows of lowland and montane areas …",
+"description": {
+  "value": "Hay meadows of lowland and montane areas …",
+  "provenance": "official",
+  "source": "floraveg:eunis-habitat-factsheets:2021-06-01"
+},
 "description_de": {
   "value": "Mähwiesen der Tief- und mittleren Lagen …",
   "provenance": "situs",
@@ -287,9 +291,22 @@ den EUNIS-ESy-Factsheets:
 }
 ```
 
+Zwei Herkünfte kommen vor, und sie sind nicht gleichwertig:
+
+| `provenance` | Bedeutung |
+|---|---|
+| `official` | Der Wortlaut einer externen, zitierbaren Quelle, unverändert übernommen: die EUNIS-ESy-Factsheets |
+| `situs` | situs hat den Text aus den unter `source` genannten Quellen **verfasst**; für diesen Wortlaut steht keine Behörde ein |
+
+Die Anhang-I-Beschreibungen tragen `situs` mit
+`source: situs:derived-from:eur28+eunis@2021`: sie entstehen aus dem amtlichen
+Interpretationshandbuch EUR 28, der über den Crosswalk zugeordneten
+EUNIS-Beschreibung und den Artendaten des Index. Der amtliche Wortlaut selbst
+wird nicht ausgeliefert; er ist eine Abgrenzungsvorschrift für die
+Rechtsanwendung und nicht die Beschreibung, die im Gelände weiterhilft.
+
 `description_de` erscheint nur bei `?lang=de` und ist ein Overlay wie
-`name_de`: der englische Text bleibt die Identität. `provenance: situs` heißt,
-**situs hat selbst übersetzt** — keine externe Quelle steht dahinter.
+`name_de`: der englische Text bleibt die Identität.
 
 **Fehlt das Feld, gibt es keine Beschreibung.** Das ist der Normalfall: die
 Factsheets beschreiben EUNIS-**Level 3**, der Index führt acht Level, und
