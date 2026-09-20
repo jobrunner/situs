@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.9.0](https://github.com/jobrunner/situs/compare/v0.8.0...v0.9.0) (2026-09-20)
+
+
+### Features
+
+* **annex1:** Beschreibungen der Lebensraumtypen, Fundament und vier Muster ([a219250](https://github.com/jobrunner/situs/commit/a219250f54a4a62b1c514807be7a91c52a76c6b5))
+* **annex1:** Beschreibungen der Lebensraumtypen, Fundament und vier Muster ([ead8277](https://github.com/jobrunner/situs/commit/ead8277688b6f352d1d2cee00a656cc9fb7af78c))
+* **annex1:** die übrigen 201 Beschreibungen, englisch und deutsch ([ee725b9](https://github.com/jobrunner/situs/commit/ee725b9164db69bfe69888acc522391cae26fbba))
+* **annex1:** die übrigen 201 Beschreibungen, englisch und deutsch ([091de1f](https://github.com/jobrunner/situs/commit/091de1f69b09827dd4dc0ea035a5f89ffc3003b5))
+
+
+### Bug Fixes
+
+* **annex1:** CHECK auch in der Migration, Dubletten aus dem Rohlauf melden ([9670157](https://github.com/jobrunner/situs/commit/9670157634e8432030e61b9cbe7d4033a148ae81))
+* **annex1:** Review-Funde aus PR [#40](https://github.com/jobrunner/situs/issues/40), vor allem am Parser ([79d5aec](https://github.com/jobrunner/situs/commit/79d5aec7a9adeb8cb05aa2bcab59d0ed6b9386cf))
+* **annex1:** Review-Funde aus PR [#42](https://github.com/jobrunner/situs/issues/42) ([6474d16](https://github.com/jobrunner/situs/commit/6474d169713baeabf4e9710b4e065ecb47f91d9d))
+
 ## [0.8.0](https://github.com/jobrunner/situs/compare/v0.7.0...v0.8.0) (2026-09-20)
 
 
