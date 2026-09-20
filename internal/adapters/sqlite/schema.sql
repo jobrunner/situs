@@ -143,6 +143,7 @@ CREATE TABLE IF NOT EXISTS habitat_description (
   -- official (an external source's own wording) or situs (written by situs
   -- from its sources). Defaults to official because that is what every row
   -- written before this column existed was.
-  provenance     TEXT NOT NULL DEFAULT 'official',
+  provenance     TEXT NOT NULL DEFAULT 'official'
+                 CHECK (provenance IN ('official', 'situs')),
   PRIMARY KEY (typology_id, code)
 );

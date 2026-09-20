@@ -254,3 +254,23 @@ func TestIngestDescriptions_StampsTheProvenanceOfTheFile(t *testing.T) {
 		t.Errorf("provenance = %q, want situs", repo.descriptions[0].Provenance)
 	}
 }
+
+// The provenance lands on every row and in every answer, and the OpenAPI
+// contract declares it as an enum. A value outside it has to fail loudly
+// before a single row is read. "curated" is the realistic mistake: it is a
+// valid provenance for a LABEL, and the two vocabularies are not the same.
+func TestIngestDescriptions_RejectsAnUnknownProvenance(t *testing.T) {
+	path := writeDescCSV(t, descHeader+"eunis@2021,R22,\"Hay meadows.\"\n")
+	repo := repoWithTypes("R22")
+
+	_, err := IngestDescriptions(context.Background(), repo, path, "src", "curated")
+	if err == nil {
+		t.Fatal("IngestDescriptions with a provenance outside the vocabulary = nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "curated") {
+		t.Errorf("error = %q, want it to quote the offending value", err)
+	}
+	if len(repo.descriptions) != 0 {
+		t.Errorf("descriptions = %+v, want nothing written", repo.descriptions)
+	}
+}

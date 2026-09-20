@@ -30,9 +30,10 @@ func writeDescription(t *testing.T, db *DB, d domain.HabitatDescription) {
 func TestDescription_RoundTrip(t *testing.T) {
 	db := openTestDB(t)
 	want := domain.HabitatDescription{
-		Key:    r22key,
-		TextEN: "Meadows of lowland and montane areas.",
-		Source: "floraveg:factsheets:2021-06-01",
+		Key:        r22key,
+		TextEN:     "Meadows of lowland and montane areas.",
+		Source:     "floraveg:factsheets:2021-06-01",
+		Provenance: domain.DescriptionProvenanceOfficial,
 	}
 	writeDescription(t, db, want)
 
@@ -59,7 +60,9 @@ func TestDescription_AbsentIsNotFound(t *testing.T) {
 // Same key in another typology is another habitat type entirely.
 func TestDescription_IsScopedToTheTypology(t *testing.T) {
 	db := openTestDB(t)
-	writeDescription(t, db, domain.HabitatDescription{Key: r22key, TextEN: "Meadows."})
+	writeDescription(t, db, domain.HabitatDescription{
+		Key: r22key, TextEN: "Meadows.", Provenance: domain.DescriptionProvenanceOfficial,
+	})
 
 	_, err := db.Description(context.Background(),
 		domain.HabitatTypeKey{Typology: "eunis@2012", Code: "R22"})
@@ -70,15 +73,19 @@ func TestDescription_IsScopedToTheTypology(t *testing.T) {
 
 func TestUpsertDescription_IsIdempotentAndReplacesTheText(t *testing.T) {
 	db := openTestDB(t)
-	writeDescription(t, db, domain.HabitatDescription{Key: r22key, TextEN: "Old.", Source: "a"})
-	writeDescription(t, db, domain.HabitatDescription{Key: r22key, TextEN: "New.", Source: "b"})
+	writeDescription(t, db, domain.HabitatDescription{
+		Key: r22key, TextEN: "Old.", Source: "a", Provenance: domain.DescriptionProvenanceOfficial,
+	})
+	writeDescription(t, db, domain.HabitatDescription{
+		Key: r22key, TextEN: "New.", Source: "b", Provenance: domain.DescriptionProvenanceSitus,
+	})
 
 	got, err := db.Description(context.Background(), r22key)
 	if err != nil {
 		t.Fatalf("Description: %v", err)
 	}
-	if got.TextEN != "New." || got.Source != "b" {
-		t.Errorf("description = %+v, want the re-ingested text and source", got)
+	if got.TextEN != "New." || got.Source != "b" || got.Provenance != domain.DescriptionProvenanceSitus {
+		t.Errorf("description = %+v, want the re-ingested text, source and provenance", got)
 	}
 }
 
@@ -92,7 +99,9 @@ func TestUpsertDescription_WriteErrorIsReturned(t *testing.T) {
 		t.Fatalf("Rollback: %v", err)
 	}
 
-	err = tx.UpsertDescription(domain.HabitatDescription{Key: r22key, TextEN: "Meadows."})
+	err = tx.UpsertDescription(domain.HabitatDescription{
+		Key: r22key, TextEN: "Meadows.", Provenance: domain.DescriptionProvenanceOfficial,
+	})
 	if err == nil {
 		t.Fatal("UpsertDescription on a rolled-back transaction = nil error, want an error")
 	}
@@ -170,25 +179,19 @@ func TestMigrate_AddsDescriptionProvenanceToAnOlderIndex(t *testing.T) {
 	}
 }
 
-// Both halves of the migration have to surface their failure: the caller runs
-// this right before an ingest, and a silently half-migrated index fails later
-// with a "no such column" nobody can trace back.
-func TestMigrateOnAClosedDatabaseFailsForEachStep(t *testing.T) {
-	ctx := context.Background()
-	cases := map[string]func(*DB) error{
-		"species_role":        func(db *DB) error { return db.Migrate(ctx) },
-		"habitat_description": func(db *DB) error { return db.Migrate(ctx) },
+// Migrate must surface a failure rather than leave a half-migrated index:
+// the caller runs it right before an ingest, and a missing column resurfaces
+// later as a "no such column" nobody can trace back. The habitat_description
+// step has its own test below — on a closed database the species_role PRAGMA
+// fails first, so this case cannot reach it.
+func TestMigrateOnAClosedDatabaseFails(t *testing.T) {
+	db := openTestDB(t)
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
 	}
-	for name, call := range cases {
-		t.Run(name, func(t *testing.T) {
-			db := openTestDB(t)
-			if err := db.Close(); err != nil {
-				t.Fatalf("Close: %v", err)
-			}
-			if err := call(db); err == nil {
-				t.Fatal("Migrate on a closed database = nil error, want an error")
-			}
-		})
+
+	if err := db.Migrate(context.Background()); err == nil {
+		t.Fatal("Migrate on a closed database = nil error, want an error")
 	}
 }
 
@@ -211,5 +214,25 @@ func TestMigrateReportsWhichColumnItFailedToAdd(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "habitat_description.provenance") {
 		t.Errorf("error = %q, want it to name the column", err)
+	}
+}
+
+// The schema itself refuses a provenance outside the vocabulary the OpenAPI
+// contract declares. The ingest checks it too, but a second writer would slip
+// past that check, not past this one.
+func TestUpsertDescription_RefusesAProvenanceOutsideTheVocabulary(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	err = tx.UpsertDescription(domain.HabitatDescription{
+		Key: r22key, TextEN: "Meadows.", Provenance: "curated",
+	})
+	if err == nil {
+		t.Fatal("UpsertDescription with a provenance outside the vocabulary = nil error, want the CHECK to bite")
 	}
 }

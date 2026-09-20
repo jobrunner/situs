@@ -32,6 +32,13 @@ type DescriptionReport struct {
 // A missing csvPath is "no factsheets pinned yet", not an error, mirroring the
 // other optional ingest steps.
 func IngestDescriptions(ctx context.Context, repo output.Repository, csvPath, source, provenance string) (DescriptionReport, error) {
+	// Checked before anything is read: the value ends up on every row and in
+	// every answer, and the OpenAPI contract declares it as an enum. A typo
+	// would be written and served without anything noticing.
+	if provenance != domain.DescriptionProvenanceOfficial && provenance != domain.DescriptionProvenanceSitus {
+		return DescriptionReport{}, fmt.Errorf("description provenance %q is neither %q nor %q",
+			provenance, domain.DescriptionProvenanceOfficial, domain.DescriptionProvenanceSitus)
+	}
 	if _, err := os.Stat(csvPath); err != nil {
 		if os.IsNotExist(err) {
 			slog.InfoContext(ctx, "no habitat description file, skipping", "path", csvPath)
