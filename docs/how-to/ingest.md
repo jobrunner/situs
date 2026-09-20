@@ -1,23 +1,42 @@
 # Index aufbauen (`situs ingest`)
 
 ```bash
-situs ingest --csv-dir pipelines/eunis/out            # nach index.path
-situs ingest --csv-dir pipelines/eunis/out --db situs.sqlite
+make ingest-input CSV_DIR=out/ingest-input   # Eingabeverzeichnis füllen
+situs ingest --csv-dir out/ingest-input      # nach index.path
+situs ingest --csv-dir out/ingest-input --db situs.sqlite
 ```
 
-Alle Pipelines schreiben in **denselben** `--csv-dir`; zwei Dateien sind
-dagegen im Repo gepflegt und müssen dorthin **kopiert** werden, sonst fehlen
-sie stillschweigend:
+Das Eingabeverzeichnis füllt **ein Befehl**, nicht eine Liste von
+Kopierschritten:
 
-```bash
-cp data/localizations_descriptions.csv "$CSV_DIR/"   # deutsche Beschreibungen
-cp data/annex1_descriptions.csv "$CSV_DIR/"          # Anhang-I-Beschreibungen (EN)
-# data/localizations-de-situs.csv geht über pipelines/eurlex/merge.py ein,
-# siehe ../../pipelines/eurlex/README.md
-```
+`scripts/collect-ingest-input.sh` ist die eine Stelle, die weiß, was in das
+Verzeichnis gehört: die Ausgaben aller Pipelines und die beiden kuratierten
+Dateien aus `data/`. Fehlt eine **Pflichtquelle**, bricht es ab und nennt sie;
+fehlt eine **optionale**, sagt es, was der Ingest deshalb überspringt. Vorher
+stand diese Liste nur als Prosa hier, und eine übersprungene Zeile ergab
+stillschweigend einen Index ohne die betroffenen Daten.
 
-Fehlt die erste Datei, läuft der Ingest normal durch und meldet entsprechend
-weniger `Localizations` — `?lang=de` liefert dann kein `description_de`.
+Drei Dateien erzeugt kein Lauf in diesem Repo: `eurosl_crosswalk.csv` und
+`aggregate_members.csv` kommen aus `hostus export-crosswalk` (siehe unten),
+`localizations.csv` aus `pipelines/eurlex`. Fehlt eine davon, **endet das
+Skript mit einem Fehler** und nennt den Befehl, der sie erzeugt: ohne
+`eurosl_crosswalk.csv` bricht der Ingest ab, ohne `localizations.csv` entsteht
+lautlos ein Index ganz ohne deutsche Labels.
+
+Das Zielverzeichnis gehört dem Skript: es entfernt die von ihm verwalteten
+Dateien vor jedem Lauf, damit keine Ausgabe von gestern stehen bleibt und
+ungeprüft mit ingestiert wird. Ein Pipeline- oder `data/`-Verzeichnis als Ziel
+lehnt es ab, weil es dort Quelle auf Quelle kopieren würde.
+
+### Warum zwei Dateien in `data/` versioniert sind
+
+`data/annex1_descriptions.csv` und `data/localizations_descriptions.csv`
+werden von **keiner** Pipeline erzeugt. Sie sind mit KI-Unterstützung verfasst
+und damit **nicht reproduzierbar**: ein erneuter Lauf ergäbe andere Texte.
+Deshalb sind sie versioniert statt erzeugt, und deshalb liefert ein Ingest
+aus einem gegebenen Repo-Stand immer denselben Index, ohne dass jemand ein
+Modell braucht. Geprüft werden sie von `cmd/situs/curated_test.go`, weil keine
+Pipeline das für sie tut.
 
 Liest die von `pipelines/eunis/xlsx_to_csv.py` erzeugten CSVs
 (`typologies.csv`, `habitat_types.csv`, `crosswalks.csv`, `syntaxa.csv`,
