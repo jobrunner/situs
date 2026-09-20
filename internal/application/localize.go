@@ -19,6 +19,9 @@ const (
 	nameField = "name"
 	// vernacular carries the established German term next to the faithful name.
 	vernacularField = "vernacular"
+	// description localizes the factsheet prose, not a label. It shares the
+	// localization table with the names and must never be served as one.
+	descriptionField = "description"
 )
 
 // The provenance vocabulary of localization: an overlay is either the official

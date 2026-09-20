@@ -127,6 +127,8 @@ internal/
 pipelines/eunis/    # XLSX -> normalized CSV (python3, stdlib only)
 pipelines/eurovegchecklist/ # FloraVeg.EU XLSX -> syntaxa_hierarchy.csv (python3, stdlib only)
 pipelines/wgsrpd/   # TDWG tblLevel3.txt -> wgsrpd_areas.csv (python3, stdlib only)
+pipelines/floraveg-factsheets/ # EUNIS-ESy factsheet PDF -> habitat_descriptions.csv
+                    # (python3 stdlib + poppler's pdftohtml, an external CLI tool)
 ```
 
 Boundaries are enforced by depguard in the linter (`make arch`), not convention.

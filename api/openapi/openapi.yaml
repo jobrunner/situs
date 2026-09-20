@@ -711,6 +711,24 @@ components:
         - type: object
           required: [species, syntaxa, crosswalks]
           properties:
+            description:
+              type: string
+              description: >-
+                Die Beschreibung des Habitattyps aus den EUNIS-ESy-Factsheets
+                (englisch). **Fehlt**, wenn zu diesem Typ keine vorliegt: die
+                Factsheets beschreiben EUNIS-Level 3, der Index führt acht
+                Level. Eine Beschreibung wird **nie** von einem übergeordneten
+                Typ geerbt — ein Untertyp ist nicht das, was sein Obertyp ist.
+              example: >-
+                Hay meadows of lowland and montane areas.
+            description_de:
+              allOf:
+                - $ref: "#/components/schemas/GermanLabel"
+              description: >-
+                Deutsche Übersetzung von `description`, nur bei `?lang=de` und
+                nur, wo eine eingelesen wurde. Overlay wie `name_de`: der
+                englische Text bleibt die Identität, `provenance: situs`
+                bedeutet, dass situs selbst übersetzt hat.
             species:
               description: >-
                 Nach Rolle gruppiert; die drei bekannten Rollen sind immer

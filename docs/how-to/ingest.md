@@ -5,11 +5,26 @@ situs ingest --csv-dir pipelines/eunis/out            # nach index.path
 situs ingest --csv-dir pipelines/eunis/out --db situs.sqlite
 ```
 
+Alle Pipelines schreiben in **denselben** `--csv-dir`; zwei Dateien sind
+dagegen im Repo gepflegt und müssen dorthin **kopiert** werden, sonst fehlen
+sie stillschweigend:
+
+```bash
+cp data/localizations_descriptions.csv "$CSV_DIR/"   # deutsche Beschreibungen
+# data/localizations-de-situs.csv geht über pipelines/eurlex/merge.py ein,
+# siehe ../../pipelines/eurlex/README.md
+```
+
+Fehlt die erste Datei, läuft der Ingest normal durch und meldet entsprechend
+weniger `Localizations` — `?lang=de` liefert dann kein `description_de`.
+
 Liest die von `pipelines/eunis/xlsx_to_csv.py` erzeugten CSVs
 (`typologies.csv`, `habitat_types.csv`, `crosswalks.csv`, `syntaxa.csv`,
 `habitat_type_syntaxa.csv`, `species_roles.csv`, optional
 `localizations.csv`) plus, ebenfalls optional, `wgsrpd_areas.csv` von
-`pipelines/wgsrpd` und `syntaxa_hierarchy.csv` von
+`pipelines/wgsrpd`, `habitat_descriptions.csv` von
+`pipelines/floraveg-factsheets`, `localizations_descriptions.csv` (aus
+`data/`) und `syntaxa_hierarchy.csv` von
 `pipelines/eurovegchecklist/xlsx_to_csv.py` und die drei Zeigerwert-CSVs
 (`eive_traits.csv`, `tichy_traits.csv`, `midolo_traits.csv` — erzeugt von
 `pipelines/{eive,tichy,midolo}`) — alle Pipelines schreiben in denselben
@@ -73,31 +88,42 @@ Am Referenzlauf vom 2026-09-16 gemessen: `Localizations: 567`
    der gepinnten TDWG-Tabelle) und schreibt die Namen der Gebietscodes, die
    `GET /v1/areas` neben dem Code liefert. Rein lokal, kein Dienst wird
    gefragt; hängt von nichts ab und nichts hängt davon ab — die Namen sind ein
-   Overlay auf die Codes, die Schritt 5 schreibt. Fehlt die Datei, ist das
+   Overlay auf die Codes, die Schritt 6 schreibt. Fehlt die Datei, ist das
    **keine** Fehlersituation: der Report zählt 0 (`AreaNames.Areas`) und die
    Codes bleiben namenlos. Eine Zeile ohne Code oder mit einem anderen
    Gebietsschema als `wgsrpd_l3` wird übersprungen und gezählt
    (`AreaNames.SkippedRows`) statt geschrieben: sie würde auf der Leseseite
    mit nichts zusammenfinden, und dieses Schweigen soll im Report stehen.
-4. `IngestSpeciesRoles` — Artenrollen, aufgelöst gegen eine lokale
+4. `IngestDescriptions` — liest optional `habitat_descriptions.csv`
+   (`pipelines/floraveg-factsheets`, aus dem gepinnten Factsheet-PDF) und
+   schreibt je Habitattyp seine englische Beschreibung. Läuft nach `IngestCSV`,
+   weil jede Zeile gegen den Habitattyp geprüft wird, zu dem sie gehört: eine
+   Beschreibung zu einem Code, den dieser Index nicht führt, wird verworfen und
+   gezählt (`Descriptions.SkippedUnknownCode`, am Referenzstand 13). Rein
+   lokal, kein Dienst wird gefragt.
+5. `IngestSpeciesRoles` — Artenrollen, aufgelöst gegen eine lokale
    Crosswalk-Datei (`eurosl_crosswalk.csv`), plus abgeleitete
    Mitgliedsarten-Zeilen für Sammelarten (`aggregate_members.csv`). Kein
    hostus-Aufruf mehr in diesem Schritt.
-5. `IngestDistribution` — die Verbreitung der aufgelösten Konzepte (siehe unten).
-6. `IngestTraits` — die Zeigerwerte (EIVE, Tichý, Midolo) der aufgelösten
+6. `IngestDistribution` — die Verbreitung der aufgelösten Konzepte (siehe unten).
+7. `IngestTraits` — die Zeigerwerte (EIVE, Tichý, Midolo) der aufgelösten
    Konzepte, gelesen aus `eive_traits.csv`, `tichy_traits.csv` und
    `midolo_traits.csv` im `--csv-dir`, ebenfalls über hostus-Namensauflösung.
-7. `IngestLocalizations` und `DeriveGermanLabels` — der Label-Overlay.
+8. `IngestLocalizations` und `DeriveGermanLabels` — der Label-Overlay. Gelesen
+   werden **zwei** Dateien über denselben Code-Pfad: `localizations.csv` (die
+   Labels, aus `pipelines/eurlex`) und `localizations_descriptions.csv` (die
+   deutschen Beschreibungen, gepflegt in `data/`). Beide sind optional, ihre
+   Zeilen werden im Report zusammengezählt.
 
-Fehlt `eurosl_crosswalk.csv`, bricht `ingest` beim **vierten** Schritt
-(`IngestSpeciesRoles`) mit einem Fehler ab — aber die **ersten drei**
+Fehlt `eurosl_crosswalk.csv`, bricht `ingest` beim **fünften** Schritt
+(`IngestSpeciesRoles`) mit einem Fehler ab — aber die **ersten vier**
 Schritte sind zu diesem Zeitpunkt bereits committed
 (Typologien/Habitattypen/Crosswalks/Syntaxa inklusive der
-FloraVeg-Hierarchie-Anreicherung und die Gebietsnamen, aber keine
-Artenrollen). hostus wird dabei gar nicht erst kontaktiert: die
+FloraVeg-Hierarchie-Anreicherung, die Gebietsnamen und die Beschreibungen,
+aber keine Artenrollen). hostus wird dabei gar nicht erst kontaktiert: die
 Namensauflösung ist seit der Aggregat-Mitgliedsarten-Erweiterung rein
-dateibasiert, hostus kommt erst ab Schritt 5 (`IngestDistribution`) ins
-Spiel. Ein fehlgeschlagener vierter Schritt ist kein Datenverlust: jeder
+dateibasiert, hostus kommt erst ab Schritt 6 (`IngestDistribution`) ins
+Spiel. Ein fehlgeschlagener fünfter Schritt ist kein Datenverlust: jeder
 `Upsert*` ist idempotent, ein erneuter
 `situs ingest`-Lauf gegen denselben Index holt ihn einfach nach. Ein
 Operator, der nach einem fehlgeschlagenen Lauf den Index inspiziert, sollte

@@ -171,10 +171,12 @@ Fundament-Spec und Implementierungsplan liegen unter `docs/`:
 | Euroveg Checklist 2016 | Syntaxonomie (Klasse, Ordnung, Verband) | — |
 | FFH-Richtlinie Anhang I, deutsche Fassung (EUR-Lex) | amtliche deutsche LRT-Bezeichnungen (CELEX `01992L0043-20130701`, `pipelines/eurlex`) | EU-Recht (Beschluss 2011/833/EU) |
 | WGSRPD Level 3, 2. Auflage (TDWG) | Namen der Verbreitungsgebiete für `GET /v1/areas` (`pipelines/wgsrpd`) | TDWG-Standard |
+| EUNIS Habitat Factsheets 2021-06-01 (FloraVeg.EU / EUNIS-ESy) | Beschreibung je Habitattyp (`pipelines/floraveg-factsheets`) | CC BY 4.0 |
 
 Die Artefakte werden **gepinnt** und **nicht** ins Repo eingecheckt — je
 Pipeline dort, wo es zur Quelle passt: URL + Prüfsumme in
 `pipelines/eunis/manifest.yaml` und `pipelines/eurovegchecklist/manifest.yaml`,
 die CELEX-Kennung `01992L0043-20130701` in `pipelines/eurlex/fetch.sh`
 (Prüfsumme wird beim Laden verifiziert), der Commit-SHA in
-`pipelines/wgsrpd/build.sh`.
+`pipelines/wgsrpd/build.sh` und die SHA-256-Summe des Factsheet-PDFs in
+`pipelines/floraveg-factsheets/build.sh`.

@@ -39,6 +39,7 @@ pipeline-test: ## Run every pipeline's Python tests
 	cd pipelines/eurlex && python3 -m unittest discover
 	cd pipelines/eurovegchecklist && python3 -m unittest discover
 	cd pipelines/wgsrpd && python3 -m unittest discover
+	cd pipelines/floraveg-factsheets && python3 -m unittest discover
 
 test-coverage: ## Tests with a coverage report
 	@mkdir -p $(COVERAGE_DIR)

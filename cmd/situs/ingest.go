@@ -35,6 +35,11 @@ const hostusDistributionPause = 70 * time.Millisecond
 // this call must not put thousands of nearly identical lines in the log.
 const maxLoggedConceptFailures = 3
 
+// factsheetSource names the artifact behind every ingested description, so a
+// reader can tell which factsheet version stands behind the text. Pinned in
+// pipelines/floraveg-factsheets/build.sh; bump both together.
+const factsheetSource = "floraveg:eunis-habitat-factsheets:2021-06-01"
+
 // pacedDistributionSource wraps a DistributionSource that has no pacing of
 // its own (Areas issues one hostus request per concept) and spaces those
 // requests out, one concept at a time, so a full ingest run does not fail in
@@ -165,7 +170,58 @@ type ingestOutput struct {
 	DerivedLabels      int
 	SyntaxaHierarchy   application.SyntaxaHierarchyReport
 	AreaNames          application.AreaReport
+	Descriptions       application.DescriptionReport
 	Traits             application.TraitReport
+}
+
+// localOverlays bundles the two ingest steps that read nothing but a local
+// CSV and ask no service at all.
+type localOverlays struct {
+	areas        application.AreaReport
+	descriptions application.DescriptionReport
+}
+
+// ingestLocalOverlays writes the area names and the habitat descriptions.
+// Area names depend on nothing and nothing depends on them: they are a pure
+// overlay on the area codes the distribution step writes later. Descriptions
+// must run after IngestCSV, because every row is checked against the habitat
+// type it belongs to, and those have to be in the index first.
+func ingestLocalOverlays(ctx context.Context, db *sqlite.DB, csvDir string) (localOverlays, error) {
+	var out localOverlays
+
+	areaCSV := filepath.Join(csvDir, "wgsrpd_areas.csv")
+	areas, err := application.IngestAreas(ctx, db, areaCSV)
+	if err != nil {
+		return localOverlays{}, fmt.Errorf("ingesting area names from %q: %w", areaCSV, err)
+	}
+	out.areas = areas
+
+	descriptionCSV := filepath.Join(csvDir, "habitat_descriptions.csv")
+	descriptions, err := application.IngestDescriptions(ctx, db, descriptionCSV, factsheetSource)
+	if err != nil {
+		return localOverlays{}, fmt.Errorf("ingesting habitat descriptions from %q: %w", descriptionCSV, err)
+	}
+	out.descriptions = descriptions
+
+	return out, nil
+}
+
+// ingestLocalizationFiles reads both localization files through the same code
+// path and sums their rows: localizations.csv carries the labels (produced by
+// pipelines/eurlex), localizations_descriptions.csv the German factsheet
+// descriptions (hand-curated in data/). Keeping them apart keeps eurlex'
+// strict merge from having to know about descriptions; both are optional.
+func ingestLocalizationFiles(ctx context.Context, db *sqlite.DB, csvDir string) (int, error) {
+	total := 0
+	for _, name := range []string{"localizations.csv", "localizations_descriptions.csv"} {
+		path := filepath.Join(csvDir, name)
+		n, err := application.IngestLocalizations(ctx, db, path)
+		if err != nil {
+			return 0, fmt.Errorf("ingesting localizations from %q: %w", path, err)
+		}
+		total += n
+	}
+	return total, nil
 }
 
 func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath, crosswalkPath, aggregateMembersPath string) error {
@@ -201,13 +257,9 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath, crosswalk
 		return fmt.Errorf("ingesting syntaxa hierarchy from %q: %w", hierarchyCSV, err)
 	}
 
-	// Area names depend on nothing and nothing depends on them: they are a
-	// pure overlay on the area codes the distribution step writes later, and
-	// a local CSV is their only source — no service is asked at any point.
-	areaCSV := filepath.Join(csvDir, "wgsrpd_areas.csv")
-	areaReport, err := application.IngestAreas(ctx, db, areaCSV)
+	overlays, err := ingestLocalOverlays(ctx, db, csvDir)
 	if err != nil {
-		return fmt.Errorf("ingesting area names from %q: %w", areaCSV, err)
+		return err
 	}
 
 	speciesReport, err := application.IngestSpeciesRoles(ctx, db,
@@ -238,9 +290,9 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath, crosswalk
 		return fmt.Errorf("ingesting traits: %w", err)
 	}
 
-	localizations, err := application.IngestLocalizations(ctx, db, filepath.Join(csvDir, "localizations.csv"))
+	localizations, err := ingestLocalizationFiles(ctx, db, csvDir)
 	if err != nil {
-		return fmt.Errorf("ingesting localizations from %q: %w", csvDir, err)
+		return err
 	}
 
 	// Derivation runs last: it depends on both the crosswalks (ingested
@@ -269,7 +321,8 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath, crosswalk
 		Localizations:      localizations,
 		DerivedLabels:      derivedLabels,
 		SyntaxaHierarchy:   hierarchyReport,
-		AreaNames:          areaReport,
+		AreaNames:          overlays.areas,
+		Descriptions:       overlays.descriptions,
 		Traits:             traitReport,
 	}
 	enc := json.NewEncoder(cmd.OutOrStdout())

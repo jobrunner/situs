@@ -162,9 +162,17 @@ func (f AreaFilter) Active() bool { return f.Code != "" }
 // nothing — a role bucket present but empty is information, absence is not.
 type HabitatTypeDetail struct {
 	HabitatTypeSummary
-	Species    map[string][]SpeciesEntry `json:"species"`
-	Syntaxa    []SyntaxonRef             `json:"syntaxa"`
-	Crosswalks []CrosswalkRef            `json:"crosswalks"`
+	// Description is the habitat's prose description from the EUNIS-ESy
+	// factsheets, in English — absent when this type has none. It is never
+	// inherited from a parent type: a subtype is not what its parent is.
+	Description string `json:"description,omitempty"`
+	// DescriptionDE is the German overlay of Description, same shape and same
+	// rules as NameDE. Present only with ?lang=de, and only where a
+	// translation was ingested.
+	DescriptionDE *GermanLabel              `json:"description_de,omitempty"`
+	Species       map[string][]SpeciesEntry `json:"species"`
+	Syntaxa       []SyntaxonRef             `json:"syntaxa"`
+	Crosswalks    []CrosswalkRef            `json:"crosswalks"`
 }
 
 // HabitatTypeRole is a habitat type together with the role the queried species

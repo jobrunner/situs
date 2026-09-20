@@ -451,6 +451,7 @@ type fakeRepo struct {
 	localizations []domain.Localization
 	distribution  []fakeDistribution
 	areas         []domain.NamedArea
+	descriptions  []domain.HabitatDescription
 	namedAreas    []domain.NamedArea
 	traitValues   []fakeTraitValue
 	traitVocabs   []fakeTraitVocab
@@ -491,6 +492,9 @@ type fakeRepo struct {
 	traitsErr error
 	// traitsForConceptsErr fails TraitsForConcepts.
 	traitsForConceptsErr error
+	// descriptionErr fails Description, exercising the detail route's
+	// description error path.
+	descriptionErr error
 }
 
 // fakeDistribution is one recorded UpsertDistribution call.
@@ -707,6 +711,28 @@ func (r *fakeRepo) UpsertArea(a domain.NamedArea) error {
 	}
 	r.areas = append(r.areas, a)
 	return nil
+}
+
+func (r *fakeRepo) UpsertDescription(d domain.HabitatDescription) error {
+	if err := r.failIfNamed("UpsertDescription"); err != nil {
+		return err
+	}
+	r.descriptions = append(r.descriptions, d)
+	return nil
+}
+
+// Description answers from what UpsertDescription recorded, so a query test
+// can seed one by writing it.
+func (r *fakeRepo) Description(_ context.Context, key domain.HabitatTypeKey) (domain.HabitatDescription, error) {
+	if r.descriptionErr != nil {
+		return domain.HabitatDescription{}, r.descriptionErr
+	}
+	for _, d := range r.descriptions {
+		if d.Key == key {
+			return d, nil
+		}
+	}
+	return domain.HabitatDescription{}, output.ErrNotFound
 }
 
 func (r *fakeRepo) UpsertTraitValue(conceptID string, tv domain.TraitValue) error {

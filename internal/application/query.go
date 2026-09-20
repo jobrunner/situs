@@ -56,6 +56,11 @@ func (q *QueryService) HabitatType(ctx context.Context, key domain.HabitatTypeKe
 		return input.HabitatTypeDetail{}, err
 	}
 
+	description, descriptionDE, err := q.descriptionOf(ctx, key, lang)
+	if err != nil {
+		return input.HabitatTypeDetail{}, err
+	}
+
 	species := groupByRole(roles)
 	for role, entries := range species {
 		species[role] = markAndFilter(entries, areas, filter)
@@ -63,6 +68,8 @@ func (q *QueryService) HabitatType(ctx context.Context, key domain.HabitatTypeKe
 
 	return input.HabitatTypeDetail{
 		HabitatTypeSummary: summary,
+		Description:        description,
+		DescriptionDE:      descriptionDE,
 		Species:            species,
 		Syntaxa:            syntaxa,
 		Crosswalks:         crosswalks,

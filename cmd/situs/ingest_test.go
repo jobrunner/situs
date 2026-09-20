@@ -738,3 +738,111 @@ func TestIngestCommandFailsOnMalformedAreaNames(t *testing.T) {
 		t.Errorf("error = %q, want it to name the area name ingest step", err)
 	}
 }
+
+func TestIngestCommandIngestsHabitatDescriptions(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t)
+	// R22 is the type seedIngestDir writes; MA211 is not in the index, so it
+	// stands for the 13 factsheets whose habitat this index does not carry.
+	writeIngestCSV(t, dir, "habitat_descriptions.csv",
+		"typology_id,code,description_en\n"+
+			"eunis@2021,R22,\"Hay meadows of lowland and montane areas.\"\n"+
+			"eunis@2021,MA211,\"Arctic coastal saltmarsh.\"\n")
+	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", dbPath})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("executing ingest: %v", err)
+	}
+	if !strings.Contains(out.String(), `"Written": 1`) {
+		t.Errorf("output = %q, want one written description", out.String())
+	}
+	if !strings.Contains(out.String(), `"SkippedUnknownCode": 1`) {
+		t.Errorf("output = %q, want the unknown habitat code counted", out.String())
+	}
+}
+
+func TestIngestCommandRunsWithoutADescriptionFile(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t) // no habitat_descriptions.csv written
+	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", dbPath})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("executing ingest without habitat_descriptions.csv: %v", err)
+	}
+	if !strings.Contains(out.String(), `"Descriptions"`) {
+		t.Errorf("output = %q, want a present-but-zero Descriptions report", out.String())
+	}
+}
+
+func TestIngestCommandFailsOnMalformedDescriptions(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t)
+	writeIngestCSV(t, dir, "habitat_descriptions.csv", "typology,code,text\neunis@2021,R22,x\n")
+	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
+
+	root := newRootCmd()
+	root.SetOut(&bytes.Buffer{})
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", dbPath})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("executing ingest with a malformed habitat_descriptions.csv = nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "ingesting habitat descriptions") {
+		t.Errorf("error = %q, want it to name the description ingest step", err)
+	}
+}
+
+// The German descriptions live in their own localizations file: they are
+// hand-curated in data/, while localizations.csv is produced by
+// pipelines/eurlex. Both go through the same ingest, and the report sums them.
+func TestIngestCommandReadsBothLocalizationFiles(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t)
+	header := "entity_type,entity_key,lang,field,value,source,provenance\n"
+	writeIngestCSV(t, dir, "localizations.csv",
+		header+"habitat_type,eunis@2021:R22,de,name,Mähwiese,situs@test,situs\n")
+	writeIngestCSV(t, dir, "localizations_descriptions.csv",
+		header+"habitat_type,eunis@2021:R22,de,description,Wiesen der Tieflagen.,situs@test,situs\n")
+	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", dbPath})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("executing ingest: %v", err)
+	}
+	if !strings.Contains(out.String(), `"Localizations": 2`) {
+		t.Errorf("output = %q, want both localization files counted", out.String())
+	}
+}
+
+func TestIngestCommandRunsWithoutADescriptionLocalizationFile(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t) // neither localizations file written
+	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", dbPath})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("executing ingest: %v", err)
+	}
+	if !strings.Contains(out.String(), `"Localizations": 0`) {
+		t.Errorf("output = %q, want a present-but-zero Localizations count", out.String())
+	}
+}
