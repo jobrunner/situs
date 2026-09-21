@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Convert the pinned FloraVeg.EU EuroVegChecklist XLSX into
-syntaxa_hierarchy.csv (code|rank|name|author|parent_code).
+syntaxa_hierarchy.csv (code|rank|name|author|parent_code|alt_code).
 
 Same rationale as pipelines/eunis/xlsx_to_csv.py: an .xlsx is a zip of XML the
 stdlib reads, so no spreadsheet library joins situs' dependency list.
@@ -23,7 +23,7 @@ NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 _R_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
 
 CSV_HEADERS = {
-    "syntaxa_hierarchy.csv": ["code", "rank", "name", "author", "parent_code"],
+    "syntaxa_hierarchy.csv": ["code", "rank", "name", "author", "parent_code", "alt_code"],
 }
 
 # Maps a row's rank to its counter key in the report dict below. Explicit on
@@ -59,21 +59,22 @@ _CLASS_RE = re.compile(r"^[A-Z]{2}$")
 _ORDER_RE = re.compile(r"^[A-Z]{2}[0-9]{2}$")
 _ALLIANCE_RE = re.compile(r"^[A-Z]{2}[0-9]{2}[A-Z]$")
 
-# The real FloraVeg export's Code cell carries both the primary EVC code and a
-# legacy/alternate code in parentheses, e.g. "AA01A (KOB-01A)". Only the
-# primary code follows the class/order/alliance pattern this pipeline derives
-# rank and parent from, so it is extracted here — the parenthesized alternate
-# is dropped, since the five-column CSV schema has no place for it.
-_CODE_CELL_RE = re.compile(r"^(\S+)\s*\([^)]*\)\s*$")
+# Die Code-Zelle der echten FloraVeg-Ausgabe traegt neben dem primaeren
+# EVC-Code den historischen EEA-Code in Klammern, z. B. "AA01A (PAP-01A)".
+# Dieser Klammerteil IST das Codeschema der EEA-EUNIS-Quelle und damit der
+# exakte Join-Schluessel zwischen beiden Quellen — deshalb wird er
+# ausgegeben statt verworfen.
+_CODE_CELL_RE = re.compile(r"^(\S+)\s*\(([^)]*)\)\s*$")
 
 
-def primary_code(cell):
-    """Strip a trailing "(ALT-CODE)" annotation off a Code cell, if present.
-    A cell with no such annotation (e.g. the in-memory test fixtures) is
-    returned unchanged."""
+def split_code(cell):
+    """Zerlegt eine Code-Zelle in (Primaercode, Altcode). Eine Zelle ohne
+    Klammerteil liefert einen leeren Altcode — kein Fehler."""
     cell = cell.strip()
     m = _CODE_CELL_RE.match(cell)
-    return m.group(1) if m else cell
+    if m:
+        return m.group(1), m.group(2).strip()
+    return cell, ""
 
 
 class HeaderError(RuntimeError):
@@ -101,14 +102,31 @@ def _cell_text(c, shared):
     return v.text
 
 
+def col_index(ref):
+    """Rechnet den Spaltenteil eines Zellbezugs ("AB7") in einen
+    0-basierten Spaltenindex um. Excel laesst leere Zellen in der XML weg;
+    ohne diese Umrechnung verschiebt eine Luecke alle folgenden Spalten."""
+    n = 0
+    for ch in ref:
+        if not ch.isalpha():
+            break
+        n = n * 26 + (ord(ch.upper()) - 64)
+    return n - 1
+
+
 def read_sheet(src, sheet_path):
-    """Return the sheet as a list of equal-length string rows."""
+    """Return the sheet as a list of equal-length string rows, each cell at
+    the column its own r-attribute names."""
     with zipfile.ZipFile(src) as zf:
         shared = _shared_strings(zf)
         root = ET.fromstring(zf.read(sheet_path))
     rows = []
     for row in root.iter(f"{{{NS['m']}}}row"):
-        rows.append([_cell_text(c, shared) for c in row.findall("m:c", NS)])
+        cells = {}
+        for c in row.findall("m:c", NS):
+            cells[col_index(c.get("r") or "A")] = _cell_text(c, shared)
+        width = max(cells) + 1 if cells else 0
+        rows.append([cells.get(i, "") for i in range(width)])
     width = max((len(r) for r in rows), default=0)
     for r in rows:
         r.extend([""] * (width - len(r)))
@@ -174,6 +192,11 @@ def convert(xlsx_path, out_dir):
     rows_out = []
     counts = {"classes": 0, "orders": 0, "alliances": 0}
     skipped = []
+    # Tracks which primary code first claimed an alt_code, so a second,
+    # different primary code claiming the same alt_code is a real collision —
+    # not just the same row's alt_code seen twice.
+    alt_seen = {}
+    collisions = set()
 
     for sheet_name, sheet_path in _data_sheets(xlsx_path):
         rows = read_sheet(xlsx_path, sheet_path)
@@ -185,11 +208,15 @@ def convert(xlsx_path, out_dir):
             raw_code = _cell(row, idx, "Code")
             if not raw_code:
                 continue
-            code = primary_code(raw_code)
+            code, alt = split_code(raw_code)
             rank, parent_code = rank_and_parent(code)
             if not rank:
                 skipped.append((sheet_name, code))
                 continue
+            if alt:
+                if alt in alt_seen and alt_seen[alt] != code:
+                    collisions.add(alt)
+                alt_seen[alt] = code
             counts[_RANK_COUNTER_KEY[rank]] += 1
             rows_out.append({
                 "code": code,
@@ -197,6 +224,7 @@ def convert(xlsx_path, out_dir):
                 "name": _cell(row, idx, "Name"),
                 "author": _cell(row, idx, "Author"),
                 "parent_code": parent_code,
+                "alt_code": alt,
             })
 
     for sheet_name, code in skipped:
@@ -216,6 +244,8 @@ def convert(xlsx_path, out_dir):
         "alliances": counts["alliances"],
         "total_rows": len(rows_out),
         "skipped_rows": len(skipped),
+        "alt_codes": sum(1 for r in rows_out if r["alt_code"]),
+        "alt_code_collisions": sorted(collisions),
     }
     with open(os.path.join(out_dir, "report.json"), "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False, sort_keys=True)

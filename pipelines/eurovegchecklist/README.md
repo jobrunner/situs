@@ -30,11 +30,13 @@ python3 xlsx_to_csv.py \
   --out-dir out
 ```
 
-Schreibt `out/syntaxa_hierarchy.csv` (`code,rank,name,author,parent_code`) und
-`out/report.json` (Klassen/Ordnungen/Verbände/übersprungene Zeilen). Gemessen
-gegen die reale, am 2026-08-30 gepinnte Datei (siehe `manifest.yaml`): 150
-Klassen, 381 Ordnungen, 1310 Verbände, 1841 Zeilen insgesamt, 0 übersprungene
-Zeilen — deckt sich exakt mit dem Design-Spec-Spike (Zeile 20-21).
+Schreibt `out/syntaxa_hierarchy.csv`
+(`code,rank,name,author,parent_code,alt_code`) und `out/report.json`
+(Klassen/Ordnungen/Verbände/übersprungene Zeilen/Altcodes/Altcode-Kollisionen).
+Gemessen gegen die reale, am 2026-08-30 gepinnte Datei (siehe
+`manifest.yaml`): 150 Klassen, 381 Ordnungen, 1310 Verbände, 1841 Zeilen
+insgesamt, 0 übersprungene Zeilen, 1841 Altcodes, 0 Altcode-Kollisionen — deckt
+sich exakt mit dem Design-Spec-Spike (Zeile 20-21).
 
 `rank` und `parent_code` werden **ausschließlich** aus dem Code-Muster
 abgeleitet (`AA` Klasse → `AA01` Ordnung → `AA01A` Verband, Elternteil durch
@@ -46,15 +48,21 @@ FloraVegs eigener Spalte, nie eine Textzerlegung eines Kombi-Strings.
 Die echte Kopfzeile weicht von einem naiven `Code/Name/Author`-Schema ab:
 
 - `Code` trägt zusätzlich einen alternativen/historischen Code in Klammern,
-  z. B. `AA01A (KOB-01A)`. Der Parser extrahiert davon nur den führenden,
-  primären Code (`AA01A`) — der Klammerteil hat in den fünf CSV-Spalten keinen
-  Platz und wird verworfen, nie erraten.
+  z. B. `AA01A (PAP-01A)`. Der Parser zerlegt die Zelle in Primärcode
+  (`AA01A`) und Altcode (`PAP-01A`) und schreibt beide in eigene CSV-Spalten —
+  der Klammerteil ist das Codeschema der EEA-EUNIS-Quelle und damit der
+  exakte Join-Schlüssel zwischen beiden Quellen, wird also ausgegeben statt
+  verworfen.
 - Name und Autor liegen doppelt vor: als ursprüngliche EVC-Fassung (Mucina et
   al. 2016) und als aktualisierte Fassung — in der gepinnten Datei tragen
   deren Spaltenköpfe selbst das Datum `EVC, version 2025-06-12`.
   `_HEADER_ALIASES` in `xlsx_to_csv.py` bevorzugt diese aktualisierten
   Spalten und fällt nur auf die Original-Spalten zurück, falls ein älterer
   Export sie nicht mitführt.
+- `read_sheet` liest jede Zelle über ihren eigenen Zellbezug (`r`-Attribut,
+  z. B. `AB7`) statt positionell: Excel lässt leere Zellen in der Sheet-XML
+  weg, und positionelles Lesen würde eine solche Lücke fälschlich als
+  Spaltenverschiebung in die folgenden Zellen übertragen.
 
 ## Tests
 

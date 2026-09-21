@@ -4,7 +4,8 @@ import tempfile
 import unittest
 import zipfile
 
-from xlsx_to_csv import HeaderError, convert, primary_code, rank_and_parent
+import xlsx_to_csv
+from xlsx_to_csv import HeaderError, col_index, convert, rank_and_parent, split_code
 
 
 def _xml_escape(value):
@@ -62,15 +63,63 @@ class RankAndParentTest(unittest.TestCase):
         self.assertEqual(rank_and_parent("not-a-code"), ("", ""))
 
 
-class PrimaryCodeTest(unittest.TestCase):
-    def test_strips_a_parenthesized_legacy_code(self):
-        self.assertEqual(primary_code("AA01A (KOB-01A)"), "AA01A")
+class SplitCodeTest(unittest.TestCase):
+    def test_split_code_trennt_primaercode_und_altcode(self):
+        self.assertEqual(split_code("AA01A (PAP-01A)"), ("AA01A", "PAP-01A"))
+        self.assertEqual(split_code("  AA01 (PAP-01)  "), ("AA01", "PAP-01"))
 
     def test_strips_a_legacy_code_with_no_space_before_the_paren(self):
-        self.assertEqual(primary_code("AA01A(KOB-01A)"), "AA01A")
+        self.assertEqual(split_code("AA01A(KOB-01A)"), ("AA01A", "KOB-01A"))
 
-    def test_a_bare_code_with_no_parens_is_unchanged(self):
-        self.assertEqual(primary_code("AA"), "AA")
+    def test_split_code_ohne_klammer_liefert_leeren_altcode(self):
+        self.assertEqual(split_code("AA01A"), ("AA01A", ""))
+
+
+class ColIndexTest(unittest.TestCase):
+    def test_col_index_rechnet_zellbezug_in_spalte(self):
+        self.assertEqual(col_index("A1"), 0)
+        self.assertEqual(col_index("Z9"), 25)
+        self.assertEqual(col_index("AA1"), 26)
+        self.assertEqual(col_index("EF12"), 135)
+
+
+class ReadSheetTest(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.tmp = self._tmpdir.name
+        self.addCleanup(self._tmpdir.cleanup)
+
+    def _write_xlsx_with_sheet(self, sheet_xml):
+        """Schreibt eine minimale XLSX mit genau diesem sheet1.xml."""
+        path = os.path.join(self.tmp, "sheet.xlsx")
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr(
+                "xl/workbook.xml",
+                '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+                ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                '<sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>',
+            )
+            zf.writestr(
+                "xl/_rels/workbook.xml.rels",
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                '<Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>',
+            )
+            zf.writestr("xl/worksheets/sheet1.xml", sheet_xml)
+        return path
+
+    def test_read_sheet_haelt_luecken_offen(self):
+        # Eine Zeile, in der Excel die zweite Zelle weglaesst: B fehlt, C ist
+        # belegt. Positionelles Lesen wuerde "x" nach B schieben.
+        sheet = (
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            '<sheetData>'
+            '<row r="1"><c r="A1" t="inlineStr"><is><t>A</t></is></c>'
+            '<c r="C1" t="inlineStr"><is><t>x</t></is></c></row>'
+            '</sheetData></worksheet>'
+        )
+        path = self._write_xlsx_with_sheet(sheet)
+        rows = xlsx_to_csv.read_sheet(path, "xl/worksheets/sheet1.xml")
+        self.assertEqual(rows[0], ["A", "", "x"])
 
 
 class ConvertTest(unittest.TestCase):
@@ -92,9 +141,9 @@ class ConvertTest(unittest.TestCase):
 
             with open(os.path.join(out_dir, "syntaxa_hierarchy.csv"), encoding="utf-8") as f:
                 content = f.read()
-            self.assertIn("AA,class,Salicetea purpureae,Moor 1958,\n", content)
-            self.assertIn("AA01,order,Salicetalia purpureae,Moor 1958,AA\n", content)
-            self.assertIn("AA01A,alliance,Salicion albae,Soó 1930,AA01\n", content)
+            self.assertIn("AA,class,Salicetea purpureae,Moor 1958,,\n", content)
+            self.assertIn("AA01,order,Salicetalia purpureae,Moor 1958,AA,\n", content)
+            self.assertIn("AA01A,alliance,Salicion albae,Soó 1930,AA01,\n", content)
             self.assertEqual(report["classes"], 1)
             self.assertEqual(report["orders"], 1)
             self.assertEqual(report["alliances"], 1)
@@ -146,7 +195,7 @@ class ConvertTest(unittest.TestCase):
             with open(os.path.join(out_dir, "syntaxa_hierarchy.csv"), encoding="utf-8") as f:
                 content = f.read()
             self.assertIn(
-                "AA01A,alliance,Salicion albae (2025 name),Soó 1930 emend. 2025 (2025 author),AA01\n",
+                "AA01A,alliance,Salicion albae (2025 name),Soó 1930 emend. 2025 (2025 author),AA01,KOB-01A\n",
                 content,
             )
             self.assertNotIn("2016 name", content)
@@ -160,6 +209,30 @@ class ConvertTest(unittest.TestCase):
             os.makedirs(out_dir)
             with self.assertRaises(HeaderError):
                 convert(xlsx, out_dir)
+
+    def _convert_rows(self, rows):
+        """Baut eine XLSX aus Zeilen-Dicts (Schluessel Code/Name/Author) und
+        liefert das Report-Dict von convert()."""
+        with tempfile.TemporaryDirectory() as tmp:
+            xlsx = os.path.join(tmp, "floraveg.xlsx")
+            header = ["Code", "Name", "Author"]
+            make_workbook(
+                [header] + [[row.get(h, "") for h in header] for row in rows],
+                xlsx,
+            )
+            out_dir = os.path.join(tmp, "out")
+            os.makedirs(out_dir)
+            return convert(xlsx, out_dir)
+
+    def test_report_zaehlt_altcodes_und_kollisionen(self):
+        rows = [
+            {"Code": "AA (PAP)", "Name": "K", "Author": ""},
+            {"Code": "AA01 (PAP-01)", "Name": "O", "Author": ""},
+            {"Code": "AB01 (PAP-01)", "Name": "O2", "Author": ""},
+        ]
+        report = self._convert_rows(rows)
+        self.assertEqual(report["alt_codes"], 3)
+        self.assertEqual(report["alt_code_collisions"], ["PAP-01"])
 
 
 if __name__ == "__main__":
