@@ -208,6 +208,61 @@ func TestOpenReadOnlyExplainsAWALIndexOnAReadOnlyMount(t *testing.T) {
 	}
 }
 
+// One table with the right name is not an index. A foreign database can carry a
+// habitat_type of its own, and an index from an older release carries every
+// table but not every column — both would pass a one-table probe and then fail
+// on the first real request.
+func TestOpenReadOnlyRefusesAForeignDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "foreign.sqlite")
+	execOn(t, path, `CREATE TABLE habitat_type (whatever TEXT)`)
+
+	err := openReadOnlyExpectingRefusal(t, path)
+	if !strings.Contains(err.Error(), "species_role") {
+		t.Errorf("error = %v, want it to name a table the read paths need", err)
+	}
+}
+
+func TestOpenReadOnlyRefusesAnIndexFromAnOlderRelease(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.sqlite")
+	seedIndex(t, path)
+	// Rebuild habitat_description the way 0.8.0 had it: same table, no
+	// provenance column.
+	execOn(t, path,
+		`DROP TABLE habitat_description`,
+		`CREATE TABLE habitat_description (typology_id TEXT NOT NULL, code TEXT NOT NULL, lang TEXT NOT NULL, value TEXT NOT NULL)`)
+
+	err := openReadOnlyExpectingRefusal(t, path)
+	if !strings.Contains(err.Error(), "provenance") {
+		t.Errorf("error = %v, want it to name the missing column", err)
+	}
+}
+
+// execOn runs statements against path through a plain read-write handle, to
+// build the damaged indexes the two tests above need.
+func execOn(t *testing.T, path string, statements ...string) {
+	t.Helper()
+	db, err := sql.Open(DriverName, fileURI(path))
+	if err != nil {
+		t.Fatalf("opening %q: %v", path, err)
+	}
+	defer func() { _ = db.Close() }()
+	for _, stmt := range statements {
+		if _, err := db.ExecContext(t.Context(), stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+}
+
+func openReadOnlyExpectingRefusal(t *testing.T, path string) error {
+	t.Helper()
+	db, err := OpenReadOnly(t.Context(), path)
+	if err == nil {
+		_ = db.Close()
+		t.Fatalf("OpenReadOnly(%q) succeeded, want the unusable index refused", path)
+	}
+	return err
+}
+
 // A path is data, not URI syntax. Unescaped, modernc.org/sqlite truncates the
 // DSN at the first '?' and SQLite percent-decodes '%' — so both openers have to
 // escape, and both have to end up at the file the caller named.
@@ -458,6 +513,29 @@ func TestReadOnlyHintStaysSilentOnEverythingElse(t *testing.T) {
 	} {
 		if hint := readOnlyHint(tc.err); hint != "" {
 			t.Errorf("%s: readOnlyHint = %q, want empty", tc.name, hint)
+		}
+	}
+}
+
+// The schema check reads a row set, so it has the three failure modes every row
+// loop has. None of them may pass for "the index is fine".
+func TestVerifyServeSchemaReportsRowFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		mode stubMode
+		want string
+	}{
+		{"Abfrage scheitert", stubModeQueryErr, "reading the table list"},
+		{"Zeile nicht lesbar", stubModeScanErr, "scanning the table list"},
+		{"Iteration scheitert", stubModeRowsErr, "iterating the table list"},
+	} {
+		err := verifyServeSchema(t.Context(), newStubDB(t, tc.mode))
+		if err == nil {
+			t.Errorf("%s: verifyServeSchema = nil, want an error", tc.name)
+			continue
+		}
+		if !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: error = %v, want it to mention %q", tc.name, err, tc.want)
 		}
 	}
 }

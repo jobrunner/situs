@@ -30,6 +30,9 @@ const (
 	// quiet database and then fails the journal_mode switch — the one
 	// FinalizeForServing branch that needs the first statement to succeed.
 	stubModeCheckpointedThenFails
+	// stubModeQueryErr fails every query outright, which is how a statement
+	// that cannot even be prepared reaches its caller.
+	stubModeQueryErr
 )
 
 // newStubDB builds a *sql.DB backed by the stub driver — no schema, no file,
@@ -71,7 +74,7 @@ func (c *stubConn) Begin() (driver.Tx, error) {
 // text — every list read queries one table (or one join), so this is enough to
 // serve them all without needing a real SQL engine.
 func (c *stubConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
-	if rows, err := c.finalizeRows(query); rows != nil || err != nil {
+	if rows, err := c.openTimeRows(query); rows != nil || err != nil {
 		return rows, err
 	}
 	switch {
@@ -139,9 +142,21 @@ func (r *stubRows) Next(dest []driver.Value) error {
 	return nil
 }
 
+// openTimeRows answers the statements the two openers run — the schema check's
+// table list and, in the mode built for it, FinalizeForServing's two pragmas.
+// (nil, nil) means "not mine": the query falls through to the read-side switch.
+func (c *stubConn) openTimeRows(query string) (driver.Rows, error) {
+	if c.mode == stubModeQueryErr {
+		return nil, errStubQuery
+	}
+	if strings.Contains(query, "sqlite_master") {
+		return &stubRows{cols: []string{"name"}, mode: c.mode}, nil
+	}
+	return c.finalizeRows(query)
+}
+
 // finalizeRows answers the two statements FinalizeForServing runs, but only in
-// the mode built for it. (nil, nil) means "not mine" — every other query falls
-// through to the read-side switch above.
+// the mode built for it.
 func (c *stubConn) finalizeRows(query string) (driver.Rows, error) {
 	if c.mode != stubModeCheckpointedThenFails {
 		return nil, nil
@@ -154,6 +169,9 @@ func (c *stubConn) finalizeRows(query string) (driver.Rows, error) {
 	}
 	return nil, nil
 }
+
+// errStubQuery is what a database that cannot run the statement at all answers.
+var errStubQuery = errors.New("stub: query failed")
 
 // errStubJournalMode is what a database that cannot leave WAL answers.
 var errStubJournalMode = errors.New("stub: journal_mode switch failed")

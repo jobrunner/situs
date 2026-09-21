@@ -30,10 +30,16 @@ das Image, lässt `docker compose up -d` den laufenden Container stehen — und 
 bedient, wie unten beschrieben, weiter seine alte Inode. Der Tausch käme nie an.
 
 Schritt 1 und 2 sind **zwei** Schritte, und das ist der Punkt: `mv` innerhalb
-desselben Verzeichnisses ist ein atomarer Rename. Der laufende Container behält
-seine alte Inode und bedient bis zur letzten Sekunde ungestört den alten Stand;
-der neue Container öffnet die neue Datei. Es gibt keinen Moment, in dem jemand
-eine halbe Datei sieht.
+desselben Verzeichnisses ist ein atomarer Rename. Niemand sieht je eine halbe
+Datei — jede Antwort kommt aus einem vollständigen Index.
+
+Aus **welchem** vollständigen Index, ist im Fenster zwischen Schritt 2 und 3
+allerdings nicht festgelegt: die Verbindungen, die der laufende Prozess schon
+offen hat, bedienen weiter die alte Inode; öffnet der Pool unter Last eine
+weitere Verbindung, landet die bei der neuen Datei. Ein Prozess kann in diesen
+Sekunden also beide Stände bedienen. Genau deshalb steht Schritt 3 unmittelbar
+dahinter — und deshalb ist die Reihenfolge „erst tauschen, dann Container
+ersetzen" nur so lange richtig, wie zwischen beiden nichts anderes passiert.
 
 !!! warning "Nicht über die servierte Datei kopieren"
 
@@ -72,10 +78,18 @@ eigene Wechselerkennung abschalten, die hier die zweite Absicherung ist.
 
 ## Nicht in den servierten Index ingestieren
 
-`situs ingest --db` schreibt read-write. Läuft dabei ein `serve` auf derselben
-Datei, liest dieses aus einem Index, der sich gerade unter ihm ändert — dieselbe
-halbe Datei wie beim `scp` oben, nur länger. Der Ingest baut deshalb immer eine
-**neue** Datei, die erst fertig an ihren Platz gezogen wird.
+`situs ingest --db` schreibt read-write **in genau den Pfad, den es bekommt** —
+und ohne `--db` ist das `index.path`, also die servierte Datei. Läuft dabei ein
+`serve` darauf, liest dieses aus einem Index, der sich gerade unter ihm ändert:
+dieselbe halbe Datei wie beim `scp` oben, nur über Minuten.
+
+Das verhindert kein Schalter, sondern nur die Aufrufkonvention: **immer einen
+neuen Nachbarpfad angeben** und ihn erst nach dem Lauf an seinen Platz ziehen.
+
+```bash
+situs ingest --csv-dir out/ingest-input --db /srv/situs/data/situs.sqlite.neu
+mv /srv/situs/data/situs.sqlite.neu /srv/situs/data/situs.sqlite
+```
 
 ## Pfade mit Sonderzeichen
 

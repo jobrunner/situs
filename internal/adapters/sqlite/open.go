@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	sqlitedriver "modernc.org/sqlite"
@@ -72,16 +73,12 @@ func OpenReadOnly(ctx context.Context, path string) (*DB, error) {
 			fmt.Errorf("opening sqlite index %q read-only%s: %w", path, readOnlyHint(err), err),
 			sqlDB.Close())
 	}
-	// A ping is not enough. An empty file, a half-finished copy and an
-	// anonymous temporary database all open without complaint, and the service
-	// would then come up green and answer INTERNAL_ERROR for every query. One
-	// statement against the table every read path needs turns all three into a
-	// startup failure that names the file.
-	var n int
-	if err := sqlDB.QueryRowContext(ctx, `SELECT count(*) FROM habitat_type`).Scan(&n); err != nil {
-		return nil, errors.Join(fmt.Errorf(
-			"sqlite index %q is not usable (no habitat_type table — an empty file, an interrupted copy, or not a situs index): %w",
-			path, err), sqlDB.Close())
+	// A ping is not enough. An empty file, a half-finished copy, a foreign
+	// database and the anonymous temporary database of an empty path all open
+	// without complaint, and the service would then come up green and answer
+	// INTERNAL_ERROR for every query.
+	if err := verifyServeSchema(ctx, sqlDB); err != nil {
+		return nil, errors.Join(fmt.Errorf("sqlite index %q is not usable: %w", path, err), sqlDB.Close())
 	}
 	return &DB{DB: sqlDB}, nil
 }
@@ -108,6 +105,102 @@ func readOnlyHint(err error) string {
 	default:
 		return ""
 	}
+}
+
+// schemaTables is the table list schema.sql actually creates, read from the
+// embedded statements rather than repeated here. A hand-kept copy would drift
+// the first time someone adds a table, and it would drift silently — the check
+// below would keep passing.
+var schemaTables = regexp.MustCompile(`CREATE TABLE IF NOT EXISTS ([a-z_]+)`)
+
+// migratedColumns are the columns Migrate adds to an existing index, each with
+// the static PRAGMA that reads its table. They are where version skew actually
+// shows up: an index from 0.8.0 carries every table but not
+// habitat_description.provenance, and a 0.9.0 binary serving it answers every
+// habitat-type request with INTERNAL_ERROR. Checking tables alone would let
+// that through.
+//
+// The PRAGMA is spelled out per entry rather than built from the table name:
+// every statement in this package is a literal, and PRAGMA takes no bound
+// parameter.
+var migratedColumns = []struct {
+	table   string
+	pragma  string
+	columns []string
+}{
+	{"species_role", `PRAGMA table_info(species_role)`, []string{"provenance", "derived_from"}},
+	{"habitat_description", `PRAGMA table_info(habitat_description)`, []string{"provenance"}},
+}
+
+// verifyServeSchema reports whether the opened file is an index this binary can
+// serve. It is deliberately more than a "does one table exist" probe: a foreign
+// SQLite file may well have a habitat_type table of its own.
+func verifyServeSchema(ctx context.Context, db *sql.DB) error {
+	if err := verifyTables(ctx, db); err != nil {
+		return err
+	}
+	return verifyMigratedColumns(ctx, db)
+}
+
+// verifyTables checks that every table schema.sql creates is there.
+func verifyTables(ctx context.Context, db *sql.DB) error {
+	present, err := tableNames(ctx, db)
+	if err != nil {
+		return err
+	}
+	missing := []string{}
+	for _, m := range schemaTables.FindAllStringSubmatch(schema, -1) {
+		if !present[m[1]] {
+			missing = append(missing, m[1])
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf(
+			"missing table(s) %s — an empty file, an interrupted copy, an index from an older release, or not a situs index at all; run `situs ingest` with this release",
+			strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+// tableNames reads the table names the opened file actually carries.
+func tableNames(ctx context.Context, db *sql.DB) (map[string]bool, error) {
+	rows, err := db.QueryContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'table'`)
+	if err != nil {
+		return nil, fmt.Errorf("reading the table list: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	present := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("scanning the table list: %w", err)
+		}
+		present[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating the table list: %w", err)
+	}
+	return present, nil
+}
+
+// verifyMigratedColumns checks the columns an older index is missing even when
+// every table is there.
+func verifyMigratedColumns(ctx context.Context, db *sql.DB) error {
+	for _, t := range migratedColumns {
+		columns, err := tableColumns(ctx, db, t.pragma)
+		if err != nil {
+			return fmt.Errorf("reading %s columns: %w", t.table, err)
+		}
+		for _, want := range t.columns {
+			if !columns[want] {
+				return fmt.Errorf(
+					"%s has no %s column — the index predates this release; run `situs ingest` with it",
+					t.table, want)
+			}
+		}
+	}
+	return nil
 }
 
 // uriEscaper turns the three characters that mean something else inside a
