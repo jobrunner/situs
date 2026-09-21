@@ -55,6 +55,9 @@ OPTIONAL=(
   "pipelines/eive/output/eive-canonical.csv:eive_traits.csv"
   "pipelines/tichy/output/tichy-canonical.csv:tichy_traits.csv"
   "pipelines/midolo/output/midolo-canonical.csv:midolo_traits.csv"
+  "pipelines/evc-distribution/out/syntaxon_distribution.csv:syntaxon_distribution.csv"
+  "pipelines/evc-distribution/out/syntaxon_distribution_coverage.csv:syntaxon_distribution_coverage.csv"
+  "pipelines/evc-distribution/out/evc_territories.csv:evc_territories.csv"
 )
 
 # Diese beiden erzeugt kein Pipeline-Lauf in diesem Repo: eurosl_crosswalk.csv

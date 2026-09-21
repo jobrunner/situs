@@ -1,0 +1,38 @@
+# Pinned source artifact for the EVC alliance-distribution pipeline.
+#
+# Plain text like pipelines/eurovegchecklist/manifest.yaml — no YAML parser
+# needed, no YAML parser used.
+#
+# Not committed: pipelines/evc-distribution/artifacts/ is gitignored. Run
+# build.sh (or the curl command in README.md) to re-download.
+
+sources:
+  - id: evc-alliance-distribution-v2
+    file: Distribution-maps-of-vegetation-alliances-in-Europe_ver-2_2024-06-12_database.xlsx
+    description: >
+      Occurrence of the 1115 European vegetation alliances across 136
+      territories (states and biogeographical parts of them, most with their
+      own coastal column). Cell values per the "Read me" sheet: 1 = verified
+      occurrence, U = uncertain occurrence, empty cell = absence. Version 2
+      matches, per that same sheet, EuroVegChecklist version 3 (2024-06-12).
+      Only the database file is read; the 82 MB ZIP of rendered maps is not
+      something situs needs.
+    dataset_record: https://zenodo.org/records/11580949
+    url: "https://zenodo.org/records/11580949/files/Distribution-maps-of-vegetation-alliances-in-Europe_ver-2_2024-06-12_database.xlsx?download=1"
+    license: "CC-BY 4.0 — https://creativecommons.org/licenses/by/4.0/"
+    # BOTH publications, deliberately. The record names the 2022 original; the
+    # "Read me" sheet of version 2 names the 2024 paper as its reference.
+    # Under CC-BY, dropping either one is not merely impolite.
+    citation:
+      - >
+        Preislerová Z. et al. (2022) Distribution maps of vegetation
+        alliances in Europe. Applied Vegetation Science 25: e12642.
+        https://doi.org/10.1111/avsc.12642
+      - >
+        Preislerová Z. et al. (2024) Structural, ecological and
+        biogeographical attributes of European vegetation alliances.
+        Applied Vegetation Science 27: e12766.
+        https://doi.org/10.1111/avsc.12766
+    retrieved: "2026-09-21"
+    sha256: f395b2ce984148dd05d5ec661dfc616f668f6e20c43f3cfb0f1de0362b75665e
+    size_bytes: 233454
