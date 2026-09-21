@@ -670,9 +670,9 @@ git commit -m "feat(domain,sqlite): Syntaxon um Altcode, Quelle, Elternteil-Prov
 
 **Files:**
 - Modify: `internal/ports/output/repository.go`
-- Modify: `internal/adapters/sqlite/ingest_tx.go` (die Datei, die `IngestTx` implementiert — Name gemäß Repo)
+- Modify: `internal/adapters/sqlite/write.go` (dort liegt die `IngestTx`-Implementierung)
 - Modify: `internal/adapters/sqlite/read_syntaxon.go`
-- Test: `internal/adapters/sqlite/read_syntaxon_test.go`, `internal/adapters/sqlite/ingest_tx_test.go`
+- Test: `internal/adapters/sqlite/read_syntaxon_test.go`, `internal/adapters/sqlite/write_test.go`
 
 **Interfaces:**
 - Consumes: `domain.Syntaxon` (Task 3).
@@ -685,11 +685,11 @@ git commit -m "feat(domain,sqlite): Syntaxon um Altcode, Quelle, Elternteil-Prov
 
 - [ ] **Step 1: Die failing Tests schreiben**
 
-In `internal/adapters/sqlite/ingest_tx_test.go`:
+In `internal/adapters/sqlite/write_test.go`:
 
 ```go
 func TestUpsertSyntaxonSchreibtAlleFelder(t *testing.T) {
-	db := newTestDB(t) // existing helper of the package
+	db := openTestDB(t) // existing helper of the package
 	tx, err := db.Begin(context.Background())
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
@@ -715,7 +715,7 @@ func TestUpsertSyntaxonSchreibtAlleFelder(t *testing.T) {
 }
 
 func TestSetSyntaxonParentSetztNurElternteilUndProvenienz(t *testing.T) {
-	db := newTestDB(t)
+	db := openTestDB(t)
 	tx, _ := db.Begin(context.Background())
 	_ = tx.UpsertSyntaxon(domain.Syntaxon{
 		ID: "NAR-01E", Rank: domain.SyntaxonRankAlliance, Name: "Campanulo-Nardion",
@@ -736,7 +736,7 @@ func TestSetSyntaxonParentSetztNurElternteilUndProvenienz(t *testing.T) {
 }
 
 func TestRelinkSyntaxonSchreibtKanteUm(t *testing.T) {
-	db := newTestDB(t)
+	db := openTestDB(t)
 	tx, _ := db.Begin(context.Background())
 	key := domain.HabitatTypeKey{Typology: domain.TypologyEUNIS2021, Code: "U36"}
 	_ = tx.LinkSyntaxon(key, "ASP-03")
@@ -762,7 +762,7 @@ func TestRelinkSyntaxonIstIdempotentBeiBestehenderZielkante(t *testing.T) {
 	// Both edges already exist: U36 -> ASP-03 AND U36 -> KC03. The
 	// rewrite must not fail on the primary key — it must simply remove
 	// the source edge.
-	db := newTestDB(t)
+	db := openTestDB(t)
 	tx, _ := db.Begin(context.Background())
 	key := domain.HabitatTypeKey{Typology: domain.TypologyEUNIS2021, Code: "U36"}
 	_ = tx.LinkSyntaxon(key, "ASP-03")
@@ -787,7 +787,7 @@ In `internal/adapters/sqlite/read_syntaxon_test.go`:
 
 ```go
 func TestSyntaxonIDsByAltCode(t *testing.T) {
-	db := newTestDB(t)
+	db := openTestDB(t)
 	tx, _ := db.Begin(context.Background())
 	_ = tx.UpsertSyntaxon(domain.Syntaxon{ID: "AA01A", Rank: domain.SyntaxonRankAlliance,
 		Name: "X", AltCode: "PAP-01A", Source: domain.SyntaxonSourceEVC,
@@ -1919,7 +1919,7 @@ git commit -m "feat(ingest,api): IngestSyntaxa verdrahten, Herkunftsfelder ausli
 // without a parent, and every one reaches a formation in at most three
 // steps.
 func TestHierarchieHatKeineWaisen(t *testing.T) {
-	db := newTestDB(t)
+	db := openTestDB(t)
 	seedHierarchy(t, db) // Formation C, class CA, order CA01, alliance CA01A,
 	                     // plus one EEA-only row with a derived parent
 
@@ -1946,7 +1946,7 @@ func TestHierarchieHatKeineWaisen(t *testing.T) {
 }
 
 func TestJedeZeileErreichtEineFormation(t *testing.T) {
-	db := newTestDB(t)
+	db := openTestDB(t)
 	seedHierarchy(t, db)
 
 	all, err := db.AllSyntaxa(context.Background())

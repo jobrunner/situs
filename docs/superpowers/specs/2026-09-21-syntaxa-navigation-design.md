@@ -139,11 +139,11 @@ Gelöst wird es mit **einem** statischen Statement, das die Wurzel rekursiv
 sucht:
 
 ```sql
-WITH RECURSIVE up(id, root) AS (
-  SELECT id, id FROM syntaxon
+WITH RECURSIVE up(id, root, steps) AS (
+  SELECT id, id, 0 FROM syntaxon
   UNION ALL
-  SELECT u.id, s.parent_id FROM up u JOIN syntaxon s ON s.id = u.root
-  WHERE s.parent_id <> ''
+  SELECT u.id, s.parent_id, u.steps + 1 FROM up u JOIN syntaxon s ON s.id = u.root
+  WHERE s.parent_id <> '' AND u.steps < 3
 )
 SELECT s.id, s.rank, s.name, s.author, s.parent_id, s.alt_code, s.source,
        s.parent_provenance, s.life_form_group
@@ -153,6 +153,14 @@ JOIN syntaxon f ON f.id = up.root AND f.rank = 'formation'
 WHERE s.rank = ? AND f.life_form_group = ?
 ORDER BY s.id
 ```
+
+Die Schrittgrenze `u.steps < 3` ist nicht Zierde. Ein `parent_id`-Zykel —
+genau der Indexdefekt, den Abschnitt 4 als `INTERNAL_ERROR` behandelt — würde
+die Rekursion sonst unbegrenzt laufen lassen: die Abfrage **hängt**, statt zu
+scheitern, und das ist das schlechtere Verhalten von beiden. Die Grenze ist
+dieselbe gemessene Maximaltiefe wie `maxSyntaxonAncestors`, steht als
+statisches Literal im Statement (kein Platzhalter, kein aus Go gebauter Wert)
+und ändert für jeden azyklischen Index nichts am Ergebnis.
 
 Ein rekursiver CTE ist neu für dieses Paket, aber die Alternative wäre ein
 Statement je Rang — vier fast gleiche Literale, die bei einem weiteren Rang
@@ -171,7 +179,7 @@ SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string) ([]input.Syntaxon
 // SyntaxonChildren returns the direct children, sorted by id.
 SyntaxonChildren(ctx context.Context, parentID string) ([]domain.Syntaxon, error)
 // SyntaxonAncestors walks parent_id to the root, OUTERMOST first. Fails
-// after maxSyntaxonDepth steps: a cycle in the parent_id graph is an
+// after maxSyntaxonAncestors steps: a cycle in the parent_id graph is an
 // index defect, not a reason for an infinite loop.
 SyntaxonAncestors(ctx context.Context, id string) ([]domain.Syntaxon, error)
 // SyntaxaByRank filters by rank and, when non-empty, by the life-form
@@ -179,6 +187,10 @@ SyntaxonAncestors(ctx context.Context, id string) ([]domain.Syntaxon, error)
 SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string) ([]domain.Syntaxon, error)
 // HabitatTypeCountForSyntaxon counts the edges without loading them.
 HabitatTypeCountForSyntaxon(ctx context.Context, syntaxonID string) (int, error)
+// SyntaxonRanks returns the ranks the index actually carries
+// (SELECT DISTINCT rank), sorted. The handler validates ?rank= against
+// this instead of hard-wiring a list — see section 3.
+SyntaxonRanks(ctx context.Context) ([]string, error)
 ```
 
 `maxSyntaxonAncestors` ist eine Konstante mit Wert **3**: so viele Schritte
