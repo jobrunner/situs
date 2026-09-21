@@ -202,9 +202,18 @@ remain stdlib-only.
   container. `situs ingest` ends with `FinalizeForServing` (checkpoint +
   `journal_mode=DELETE`) so the shipped index is a single file.
   `immutable=1` is deliberately NOT set: it would switch off SQLite's own change
-  detection. Opening also probes `habitat_type`, so an empty file, an
-  interrupted copy or a foreign database fails at startup instead of serving
-  `INTERNAL_ERROR` behind a green health check.
+  detection. Opening also verifies the schema (every table `schema.sql` creates
+  plus the columns `Migrate` adds), so an empty file, an interrupted copy, a
+  foreign database or an index from an older release fails at startup instead of
+  serving `INTERNAL_ERROR` behind a green health check.
+- **A failed read-only open is diagnosed from the FILE, never from the result
+  code.** The same broken index answers `SQLITE_READONLY_DIRECTORY (1544)` from
+  a chmod'ed directory and `SQLITE_CANTOPEN (14)` from a read-only bind mount —
+  and 14 is also what a missing file returns. `indexFileHint` reads the header
+  instead: byte 18 == 2 means WAL, which is what every index built before 0.11.0
+  carries and the single most likely reason a container will not start after the
+  upgrade. Mapping a code to a guess sent operators to check permissions that
+  were fine.
 - **Index paths are escaped into the SQLite URI**, `%` first, then `?` and `#`
   (`fileURI`), on BOTH openers. Measured against modernc.org/sqlite v1.56.0:
   unescaped, the driver truncates the DSN at the first `?` — an ingest to

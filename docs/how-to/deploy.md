@@ -107,5 +107,60 @@ wie es CI-Checkouts anlegen, zeigte damit auf einen Pfad, den es nicht gibt.
   jeder Lesepfad braucht, und bricht ab, statt bei grünem `/health/ready` auf
   jede Abfrage `INTERNAL_ERROR` zu antworten.
 - **Ein Index mit WAL-Modus auf einem schreibgeschützten Verzeichnis** — der
-  braucht die `-shm`-Beiwagendatei. Das trifft Indizes, die vor diesem Release
-  gebaut wurden; die Fehlermeldung nennt den `situs ingest`, der sie finalisiert.
+  braucht die `-shm`-Beiwagendatei, und ein `:ro`-Mount kann keine haben. Das
+  trifft **jeden Index, der vor 0.11.0 gebaut wurde**; siehe den Abschnitt
+  gleich darunter.
+
+- **Ein Index mit einer liegengebliebenen `-journal`/`-wal`-Datei** eines
+  abgestürzten Schreibers. Die muss zurückgerollt werden, bevor irgendetwas
+  gelesen werden darf, und das ist ein Schreibvorgang. Die Beiwagendatei zu
+  löschen ist **nicht** der Ausweg — sie ist die Aufzeichnung dessen, was noch
+  rückgängig zu machen ist. Einmal mit beschreibbarem Verzeichnis starten, dann
+  erledigt SQLite es selbst.
+
+Welchen SQLite-Code der WAL-Fall auslöst, hängt an der Umgebung und nicht an
+der Ursache: ein `chmod`-geschütztes Verzeichnis meldet
+`SQLITE_READONLY_DIRECTORY (1544)`, ein `:ro`-Bind-Mount meldet
+`SQLITE_CANTOPEN (14)` — derselbe Fehler, den auch eine fehlende Datei
+auslöst. `serve` liest deshalb den Dateikopf und sagt, was wirklich los ist,
+statt aus dem Code zu raten.
+
+## Upgrade von vor 0.11.0: den Index einmal finalisieren
+
+Bis 0.10.x hinterließ der Ingest den Index im **WAL-Modus**. `serve` öffnete ihn
+damals read-write und legte die Beiwagen selbst an; seit 0.11.0 öffnet es
+read-only und kann das nicht mehr. Ein solcher Index bricht den Start ab:
+
+```
+Error: opening the index "/db/situs.sqlite": opening sqlite index
+"/db/situs.sqlite" read-only (this index is still in WAL mode, and a read-only
+handle on it needs a -shm sidecar it cannot create here — …): unable to open
+database file (14)
+```
+
+Zwei Wege heraus. Der gründliche ist ein frischer `situs ingest` mit 0.11.0 — er
+finalisiert am Ende selbst. Der schnelle ist eine Zeile auf dem Host, wo die
+Datei beschreibbar ist, bei gestopptem Container:
+
+```bash
+sqlite3 /pfad/situs.sqlite 'PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;'
+# Ausgabe muss auf "delete" enden. Steht dort "wal", war die Datenbank belegt.
+rm -f /pfad/situs.sqlite-shm
+```
+
+**Die Ausgabe ist die Prüfung, nicht der Exit-Code.** `journal_mode=DELETE`
+antwortet mit dem Modus, der danach gilt — steht dort weiter `wal`, hielt noch
+jemand die Datenbank offen, und dann darf **nichts** gelöscht werden: die
+`-wal` trägt in dem Fall Daten, die noch nicht in der Datenbank stehen.
+
+Nach einem erfolgreichen Wechsel ist die `-wal` schon weg (gemessen), die
+`-shm` bleibt liegen und ist bedeutungslos — sie trägt nur den WAL-Index im
+Shared Memory, keine Daten. Ein `serve` stört sie nicht; das `rm` ist
+Kosmetik.
+
+Ob ein Index betroffen ist, sagt Byte 18 seines Headers — `2` heißt WAL, `1`
+heißt finalisiert:
+
+```bash
+xxd -s 18 -l 1 -p /pfad/situs.sqlite
+```
