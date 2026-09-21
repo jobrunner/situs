@@ -77,9 +77,14 @@ Die 136 Spalten sind keine WGSRPD-Gebiete. Sie sind teils Staaten
 eigene Küstenspalte (`Albania_coast`) — die Publikation zählt 82
 Territorialeinheiten, die Tabelle spaltet sie in 136 Spalten auf.
 
-Sie ziehen deshalb als **zweites `area_scheme`** ein, `evc-territory`, neben
-dem bestehenden `wgsrpd-l3`. Eine Abbildung zwischen beiden Schemata gibt es
-nicht und soll es nicht geben: dieselbe Haltung, die `CLAUDE.md` schon für
+Sie ziehen deshalb als **zweites `area_scheme`** ein, `evc_territory`, neben
+dem bestehenden `wgsrpd_l3`. Der Unterstrich ist keine Geschmacksfrage: die
+bestehende Konstante heißt `domain.SchemeWGSRPDL3 = "wgsrpd_l3"`, und ein
+einzelnes Schema mit Bindestrich wäre eine Sorte Uneinheitlichkeit, die man
+später nicht mehr los wird. Neben die bestehende Konstante tritt
+`domain.SchemeEVCTerritory = "evc_territory"`.
+
+Eine Abbildung zwischen beiden Schemata gibt es nicht und soll es nicht geben: dieselbe Haltung, die `CLAUDE.md` schon für
 ISO↔WGSRPD festhält. Wer nach Artverbreitung filtert, benutzt WGSRPD-Codes;
 wer nach Syntaxa-Verbreitung filtert, Territoriumscodes. Die beiden Fragen
 werden nicht vermischt, und keine Antwort behauptet eine Umrechnung, die
@@ -110,8 +115,21 @@ Die vierte Zeile ist nicht theoretisch: die Quelle deckt ausdrücklich nur
 *vascular-plant dominated vegetation* ab. Von den 1310 EVC-Verbänden tragen
 1114 eine Verbreitungszeile, **196 nicht** — darunter alle 137 Moos- und
 Flechtenverbände und 51 der 53 Algenverbände, also genau die Vegetation, die
-Teilprojekt A überhaupt erst in den Index holt. Für sie ist jede Aussage über
-jedes Territorium `unknown`, und sie darf niemals als `absence` erscheinen.
+Teilprojekt A überhaupt erst in den Index holt. Dazu kommen die 16 Verbände,
+die nur die EEA-Quelle führt und die in der Verbreitungsdatei folglich auch
+nicht stehen: im Index sind damit **212 der 1326 Verbände** ohne jede
+Verbreitungsaussage. Für sie ist jede Aussage über jedes Territorium
+`unknown`, und sie darf niemals als `absence` erscheinen.
+
+Beide Tabellen werden in **`schema.sql`** angelegt, nicht in `Migrate`. Das
+ist keine Stilfrage: `verifyTables` beim schreibgeschützten Öffnen liest die
+zu prüfende Tabellenliste per Regex aus dem eingebetteten `schema.sql`, eine
+dort deklarierte Tabelle wird also automatisch geprüft — eine nur in `Migrate`
+angelegte gar nicht. Läge sie in `Migrate`, würde ein Dienst mit einem Index
+von vor diesem Teilprojekt bei grüner Gesundheitsprüfung starten und für jedes
+Syntaxon `distribution` weglassen, also „niemand hat nachgesehen" behaupten,
+wo in Wahrheit die Tabelle fehlt. Genau diese Verwechslung soll das Spec
+verhindern.
 
 Deshalb zwei Tabellen:
 
@@ -158,6 +176,12 @@ xlsx_to_csv.py --xlsx artifacts/…database.xlsx --out-dir out
   → out/report.json
 ```
 
+**Die Übersetzung `1` → `verified` und `U` → `uncertain` macht die Pipeline**,
+nicht der Go-Ingest: die CSV trägt schon die Langform, die der `CHECK` aus
+Abschnitt 3 erwartet. Nur so kann die Pipeline eine unbekannte Zellbelegung
+überhaupt erkennen und den Lauf abbrechen — ein Go-Ingest, der `1`/`U`
+übersetzt, müsste denselben Abgleich ein zweites Mal führen.
+
 `report.json` führt: `alliances` (Zeilen mit gültigem Code), `territories`,
 `verified`, `uncertain`, `slug_collisions`, `skipped_rows` sowie
 `value_histogram` — die tatsächlich vorgefundene Wertemenge der Gebietszellen.
@@ -168,6 +192,17 @@ Fehlzuordnung durchzulaufen. Eine unbekannte Zellbelegung bricht den Lauf ab.
 
 `manifest.yaml` pinnt URL, SHA-256, Größe, Lizenz (CC-BY 4.0) und beide
 Zitate, wie die anderen Pipelines.
+
+Drei Stellen verdrahten die neue Pipeline, wie bei jeder anderen:
+`scripts/collect-ingest-input.sh` bekommt beide Ausgaben als **`OPTIONAL`**
+(`pipelines/evc-distribution/out/syntaxon_distribution.csv:syntaxon_distribution.csv`
+und `.../out/evc_territories.csv:evc_territories.csv` — optional, weil eine
+fehlende Verbreitung laut Abschnitt 7 nur eine Warnung ist), der
+`pipeline-test`-Ziel im `Makefile` bekommt eine Zeile für das neue Verzeichnis
+(die CI ruft `make pipeline-test`, braucht also keine eigene Änderung), und
+`README.md` entsteht nach dem Muster von `pipelines/eurovegchecklist/`.
+Außerdem nennt der Architektur-Abschnitt in `CLAUDE.md` die Pipelines
+einzeln — `pipelines/evc-distribution/` kommt dort dazu.
 
 ## 5. Ingest
 
@@ -203,7 +238,11 @@ Report benennt ihn, statt ihn wegzurunden.
 
 Der Fassungsunterschied gehört in `docs/reference/measured-index.md`: die
 Verbreitungsdatei nennt EVC-Fassung 3 (2024-06-12), die Hierarchie-Datei
-trägt Spaltenköpfe mit Stand 2025-06-12. Die gemessene Überdeckung von
+heißt `..._version_4.xlsx` und trägt in ihren Spaltenköpfen den Stand
+`EVC, version 2025-06-12`. Beide Angaben zur Hierarchie-Datei sind gemessen
+und meinen Verschiedenes — Dateifassung gegen EVC-Stand —, weshalb sie
+nebeneinander genannt werden müssen und nicht zu einer verrechnet werden
+dürfen. Die gemessene Überdeckung von
 1114/1115 ist die belastbare Aussage darüber; die Fassungsnummern allein sind
 es nicht.
 
@@ -228,21 +267,69 @@ type SyntaxonDistribution struct {
 aufgezählt: 136 minus die belegten Codes wäre eine erfundene Liste, und der
 Client kennt das Schema über die bestehende Areas-Route.
 
-Zusätzlich nimmt `GET /v1/syntaxa` aus Teilprojekt B einen Parameter
-`?area=` (ein `evc-territory`-Code) plus `?include=` mit den Werten
-`verified` (Vorgabe) und `verified,uncertain`. Gefiltert wird auf Syntaxa mit
-einer entsprechenden Zeile; Syntaxa **ohne Coverage** werden dabei
-mitgeführt, nicht entfernt — dieselbe Regel, die `only_in_area` bei den Arten
-befolgt: eine Liste, die stillschweigend wegwirft, was sie nicht beurteilen
-kann, ist unehrlich saubergemacht. Ein Code, den das Schema nicht kennt, ist
-`INVALID_QUERY`.
+Zusätzlich nimmt `GET /v1/syntaxa` aus Teilprojekt B den Parameter `?area=`
+(ein `evc_territory`-Code) und dazu `?include=`.
+
+`include` ist eine **kommagetrennte Menge** aus `verified` und `uncertain`,
+in beliebiger Reihenfolge; die Vorgabe ist `verified`. `include=uncertain`
+allein ist gültig und liefert die unsicheren Vorkommen. Ein unbekanntes
+Element, ein leerer Eintrag und ein doppelt angegebener Parameter sind
+`INVALID_QUERY` — eine stillschweigend ignorierte Filterangabe wäre
+schlimmer als eine abgelehnte. Ohne `?area=` ist `?include=` wirkungslos und
+deshalb ebenfalls `INVALID_QUERY`, statt vorzugeben, es hätte gewirkt.
+
+Gefiltert wird auf Syntaxa mit einer passenden Zeile; Syntaxa **ohne
+Coverage** werden mitgeführt, nicht entfernt — dieselbe Regel, die
+`only_in_area` bei den Arten befolgt. Damit ein Client die Mitgeführten
+erkennt, tragen die Listeneinträge das Feld `occurrence` mit den Werten
+`verified` oder `uncertain`; **fehlt** es, liegt keine Aussage vor. Das ist
+dieselbe Dreiwertigkeit wie bei `in_area`, und ohne sie wäre die mitgeführte
+Zeile von einer bestätigten nicht zu unterscheiden — eine Liste, die alles
+behält, aber nichts kennzeichnet, ist genauso unehrlich wie eine, die
+wegwirft.
+
+Mit dem Vorgabewert `rank=formation` aus Teilprojekt B ist `?area=`
+wirkungslos: Formationen tragen keine Verbreitung. Die Kombination ist
+deshalb `INVALID_QUERY` mit dem Hinweis, dass `?area=` einen `rank` braucht,
+der Verbreitungsdaten trägt (heute `alliance`). Ein Code, den das Schema
+nicht kennt, ist ebenso `INVALID_QUERY`.
 
 `GET /v1/info` bekommt unter `index` zwei gemessene Felder:
-`syntaxon_area_scheme` und `syntaxa_with_distribution`.
+`syntaxon_area_scheme` und `syntaxa_with_distribution`. Das bestehende Feld
+heißt `area_scheme` (Einzahl) und meint das der Artverbreitung; es wird
+**nicht** umbenannt, weil ein Feldname in einer veröffentlichten Antwort keine
+Geschmacksfrage ist. Die beiden Namen stehen damit nebeneinander, und die
+Beschreibung im OpenAPI sagt bei beiden ausdrücklich, wessen Verbreitung sie
+betreffen.
 
-Die bestehende `AreasWithData`-Route und `area`-Tabelle sind schon
-schemaparametrisiert und tragen die Territorien ohne Änderung mit; nur der
-Aufruf bekommt das zweite Schema.
+### Drei Stellen, an denen das zweite Schema heute auflaufen würde
+
+Die `area`-Tabelle ist schemaparametrisiert (Primärschlüssel
+`(area_scheme, area_code)`) und trägt die Territorien ohne Änderung. Der Weg
+dorthin und zurück ist es **nicht**:
+
+1. **`IngestAreas` verwirft fremde Schemata.** `internal/application/area_ingest.go`
+   prüft `a.Scheme != domain.SchemeWGSRPDL3` und überspringt die Zeile samt
+   Zählung. Alle 136 Territorien würden als übersprungen gemeldet und die
+   `area`-Tabelle bliebe leer. Die Prüfung war richtig, solange es ein Schema
+   gab — sie wird zu einer Prüfung gegen die Menge der **bekannten** Schemata
+   (`wgsrpd_l3`, `evc_territory`), damit ein Tippfehler weiterhin auffällt.
+   Damit lädt `IngestAreas` auch `evc_territories.csv`, und die Pipeline aus
+   Abschnitt 4 braucht keinen zweiten Gebietslader.
+2. **`AreasWithData` leitet die Abdeckung aus `species_distribution` ab.**
+   `internal/adapters/sqlite/area.go` fragt `SELECT DISTINCT area_scheme,
+   area_code FROM species_distribution WHERE area_scheme = ?`. Für
+   `evc_territory` gibt es dort nie eine Zeile, die Territorien blieben also
+   unter jedem Schema-Argument unsichtbar. Die Methode bekommt einen zweiten
+   Zweig über `syntaxon_distribution`; welche Tabelle sie befragt, entscheidet
+   das Schema.
+3. **`QueryService.Areas(ctx)` und `GET /v1/areas` kennen kein Schema.** Der
+   Eingangsport nimmt keinen Parameter, und `handleAreas` gibt keinen weiter.
+   `/v1/areas` bekommt deshalb `?scheme=` mit Vorgabewert `wgsrpd_l3` — damit
+   bleibt jede heutige Anfrage unverändert beantwortet, und die Antwort mischt
+   nie Codes zweier Schemata in eine flache Liste, was sie mehrdeutig machen
+   würde. Ein unbekanntes Schema ist `INVALID_QUERY`. `openapi.yaml` (beide
+   Kopien) und `docs/reference/http-api.md` wachsen mit.
 
 ## 7. Fehlerbehandlung
 

@@ -71,8 +71,12 @@ Die 25 Sektionsnamen sind die einzige Angabe dieses Specs, die nicht aus dem
 gepinnten Artefakt ableitbar ist — die XLSX führt sie nicht mit. Sie werden
 als versionierte Datendatei `data/syntaxa_formations.csv` im Repo geführt,
 mit `pipelines/eurovegchecklist/manifest.yaml` als Herkunftsnachweis auf
-floraveg.eu/vegetation. Sie sind Quellangabe, nicht situs-Erfindung, und
-tragen deshalb `provenance = official`.
+floraveg.eu/vegetation. Sie sind eine Quellangabe, nicht situs-Erfindung —
+abgetippt von der Übersichtsseite, nicht aus dem gepinnten Artefakt
+gewonnen, weshalb die Datei ihre Herkunft im Manifest trägt. Eine
+`provenance`-Spalte bekommt `syntaxon` deswegen **nicht**: die Tabelle
+speichert Syntaxa, keine Labels, und die einzige Herkunftsfrage, die sich
+hier stellt, betrifft das Elternteil (`parent_provenance`).
 
 ## 3. Datenfluss
 
@@ -155,7 +159,8 @@ type Syntaxon struct {
 	// LifeFormGroup ist "phanerogam" | "bryophyte_lichen" | "algae" und wird
 	// AUSSCHLIESSLICH auf Formationszeilen gesetzt. Bewusst nicht auf jede
 	// Zeile denormalisiert: die Gruppe ist eine Eigenschaft der Formation,
-	// und eine Korrektur müsste sonst über 1841 Zeilen nachgezogen werden.
+	// und eine Korrektur müsste sonst über alle 1882 Zeilen nachgezogen
+	// werden.
 	// Ein Filter joint über höchstens drei Ebenen nach oben.
 	LifeFormGroup string
 }
@@ -172,27 +177,69 @@ zentrale prüfbare Zusage (Abschnitt 8).
 ALTER TABLE syntaxon ADD COLUMN alt_code          TEXT NOT NULL DEFAULT '';
 ALTER TABLE syntaxon ADD COLUMN source            TEXT NOT NULL DEFAULT 'evc';
 ALTER TABLE syntaxon ADD COLUMN parent_provenance TEXT NOT NULL DEFAULT 'official';
-ALTER TABLE syntaxon ADD COLUMN life_form_group   TEXT NOT NULL DEFAULT '';
-
-CREATE INDEX IF NOT EXISTS idx_syntaxon_parent   ON syntaxon(parent_id);
-CREATE INDEX IF NOT EXISTS idx_syntaxon_alt_code ON syntaxon(alt_code);
-CREATE INDEX IF NOT EXISTS idx_syntaxon_rank     ON syntaxon(rank);
+ALTER TABLE syntaxon ADD COLUMN life_form_group   TEXT NOT NULL DEFAULT ''
+  CHECK (life_form_group IN ('', 'phanerogam', 'bryophyte_lichen', 'algae'));
 ```
 
-Kein `CHECK` auf `rank`: die bestehende Tabelle hat keinen, und ein künftiger
-Rang (Unterverband) soll eine Datenzeile sein, keine Schemaänderung — dieselbe
-Haltung wie bei `habitat_typology`. `parent_provenance` und `life_form_group`
-bekommen dagegen ein `CHECK` auf ihre geschlossene Wertemenge, weil dort ein
-Tippfehler eine stille Falschaussage wäre und die Mengen fachlich feststehen.
+Jede `ALTER`-Anweisung trägt ihren `CHECK` mit, wie es
+`habitat_description.provenance` schon vormacht: ein migrierter Index soll
+keine Werte annehmen, die `schema.sql` einem neu angelegten verbietet — der
+Unterschied fiele erst auf der Leitung auf. `source` bekommt deshalb
+`CHECK (source IN ('evc', 'eunis'))` und `parent_provenance`
+`CHECK (parent_provenance IN ('official', 'derived'))`.
 
-`idx_syntaxon_parent` ist neu und nicht optional: die Navigationskette von
-Teilprojekt B fragt pro Ebene „alle Kinder von X“, ohne den Index ein
-Full-Table-Scan über 1866 Zeilen je Klick.
+Kein `CHECK` auf `rank`: die bestehende Tabelle hat keinen, und ein weiterer
+Rang soll eine Datenzeile sein, keine Schemaänderung — dieselbe Haltung wie
+bei `habitat_typology`. Das gilt für die **Speicherung**; die Leseseite in
+Teilprojekt B leitet ihr `rank`-Enum aus dem Index ab, statt eine Liste fest
+zu verdrahten, sonst wäre die Haltung eine Ebene höher wieder aufgegeben.
 
-Die Schemaprüfung beim schreibgeschützten Öffnen (`internal/app`) muss die
-vier Spalten kennen, sonst startet ein Dienst mit altem Index still und
-antwortet ohne Hierarchie — genau der Fall, den die bestehende Prüfung
-verhindern soll.
+### Die Defaults der Migration sind leer, nicht plausibel
+
+`source`, `parent_provenance` und `life_form_group` bekommen als
+Migrationsvorgabe den **leeren String**, nicht `'evc'` bzw. `'official'`. Der
+Grund ist unangenehm konkret: ein bestehender Index trägt 1049 Zeilen aus der
+EEA-Quelle und 1005 per Namensabgleich gesetzte Elternteile. Eine Vorgabe
+`'evc'`/`'official'` würde genau diese Zeilen als EVC-geführt und
+quellenbelegt ausweisen — die Zusage „abgeleitete Elternteile sind an
+`parent_provenance = derived` erkennbar" wäre für jeden migrierten, aber nicht
+neu ingestierten Index gebrochen. Ein leerer Wert ist sichtbar unbefüllt; der
+Ingest setzt ihn. Der `CHECK` lässt `''` deshalb ausdrücklich zu.
+
+Für `schema.sql` (frisch angelegter Index, der sofort ingestiert wird) bleibt
+`'evc'`/`'official'` als Vorgabe stehen: dort gibt es keine Altdaten, die
+falsch beschriftet werden könnten.
+
+### Zwei der drei Indizes gehören in schema.sql, der dritte nicht
+
+`OpenForIngest` wendet das eingebettete `schema.sql` **vor** `Migrate` an
+(`internal/adapters/sqlite/open.go`, dann `cmd/situs/ingest.go`). Ein
+`CREATE INDEX ... ON syntaxon(alt_code)` in `schema.sql` scheitert deshalb auf
+jedem Index, der vor dieser Fassung gebaut wurde, mit `no such column:
+alt_code` — und zwar beim Öffnen, also bricht der ganze Ingest ab, bevor die
+Migration die Spalte anlegen könnte.
+
+Also: `idx_syntaxon_parent` und `idx_syntaxon_rank` nach `schema.sql` (beide
+Spalten existieren seit immer), `idx_syntaxon_alt_code` in `Migrate`,
+unmittelbar nach dem `ALTER TABLE`.
+
+`idx_syntaxon_parent` ist nicht optional: die Navigationskette von Teilprojekt
+B fragt pro Ebene „alle Kinder von X", ohne den Index ein Full-Table-Scan über
+alle 1882 Syntaxa-Zeilen je Klick.
+
+### Die Schemaprüfung beim Serven
+
+`internal/adapters/sqlite/schema_check.go` führt in der Tabelle
+`migratedColumns` die Spalten, die eine Migration nachträgt; sie ist
+handgepflegt (im Unterschied zur Tabellenliste, die `verifyTables` per Regex
+aus `schema.sql` liest). Dort kommt hinzu:
+
+```go
+{"syntaxon", `PRAGMA table_info(syntaxon)`, []string{"alt_code", "source", "parent_provenance", "life_form_group"}},
+```
+
+Ohne diesen Eintrag startet ein Dienst mit altem Index still und antwortet
+ohne Hierarchie — genau der Fall, den die Prüfung verhindern soll.
 
 ## 6. Pipeline-Änderungen
 
@@ -254,14 +301,28 @@ type SyntaxaHierarchyReport struct {
 	// und keine Formation sind. Muss 0 sein — siehe Abschnitt 8.
 	Orphans []string
 
-	AltCodeCollisions []string
-	AmbiguousMatches  []string
+	// SkippedUnknownSection zaehlt Klassenzeilen, deren Anfangsbuchstabe
+	// keine bekannte Formation ist: uebersprungen, nie erfunden.
+	SkippedUnknownSection int
+	// SkippedPattern zaehlt Zeilen, deren Code in kein Rang-Muster passt
+	// (gemessen 0 von 1841 - trotzdem kein Automatismus, der das voraussetzt).
+	SkippedPattern int
+
+	AltCodeCollisions  []string
+	AmbiguousMatches   []string
+	UnknownLinkTargets []string
 }
 ```
 
 ### Geschwisterkonsens
 
-Für eine EEA-Einheit ohne FloraVeg-Gegenstück und ohne Namenstreffer wird die
+Die Regel gilt **nur für den Rang Verband**. Auf eine Ordnung angewandt
+ergäbe das Abschneiden des letzten Zeichens Unsinn (`ASP-03` → `ASP-0`); die
+einzige EEA-Ordnung wird ohnehin per Altcode auf `KC03` aufgelöst. Eine
+EEA-Ordnung ohne Gegenstück bliebe also Waise und ließe den Ingest scheitern
+— richtig so, denn geraten würde hier nichts.
+
+Für einen EEA-Verband ohne FloraVeg-Gegenstück und ohne Namenstreffer wird die
 **EEA-Ordnungsgruppe** gebildet (die ID ohne den letzten Buchstaben, etwa
 `NAR-01E` → `NAR-01`). Zeigen *alle* Geschwister dieser Gruppe mit gesetztem
 Elternteil auf dieselbe FloraVeg-Ordnung, erbt die Waise dieses Elternteil mit
@@ -323,13 +384,17 @@ type SyntaxonRef struct {
 	AltCode          string `json:"alt_code,omitempty"`
 	Source           string `json:"source,omitempty"`
 	ParentProvenance string `json:"parent_provenance,omitempty"`
+
+	// LifeFormGroup ist nur auf Formationszeilen gefuellt und deshalb in
+	// jeder heute existierenden Antwort leer: habitat_type_syntaxon verlinkt
+	// Verbaende und in einem Fall eine Ordnung, nie eine Formation. Das Feld
+	// steht hier trotzdem schon, weil Teilprojekt B die Formationen als
+	// []SyntaxonRef ausliefert und darauf filtert — eine Liste, die einen
+	// Filter anbietet, deren Eintraege den gefilterten Wert aber nicht
+	// nennen, waere nicht nachvollziehbar.
+	LifeFormGroup string `json:"life_form_group,omitempty"`
 }
 ```
-
-`life_form_group` bleibt draußen: es ist nur auf Formationszeilen gesetzt, und
-Formationen erscheinen in keiner bestehenden Antwort — `habitat_type_syntaxon`
-verlinkt Verbände und in einem Fall eine Ordnung, nie eine Formation. Das Feld
-zieht mit Teilprojekt B ein, wo die Formation selbst ausgeliefert wird.
 
 In `internal/adapters/http/openapi.yaml` (und der byte-identischen Kopie unter
 `api/openapi/`) wird das Enum von `SyntaxonRef.rank` auf
@@ -368,6 +433,14 @@ wenn unbekannt“ — nach diesem Spec fehlt er nur noch bei Formationen.
   im Report einzeln benannt — nie stillschweigend als Quellaussage ausgegeben.
 - Keine EUNIS-Habitattyp-Kante geht verloren: die Kantenzahl vor und nach der
   Umkehrung ist gleich, nur die Syntaxon-IDs sind auf Primärcodes umgestellt.
+  Das gilt, **weil** die Altcodes eineindeutig sind (gemessen: 1841 Codes,
+  1841 verschiedene Werte). Fiele diese Eigenschaft in einer künftigen
+  Fassung, kollabierten zwei EEA-Syntaxa auf einen Primärcode und der
+  Primärschlüssel von `habitat_type_syntaxon` verschluckte eine Kante
+  lautlos. Die Prämisse ist deshalb nicht nur zugesichert, sondern geprüft:
+  Kollisionen landen in `AltCodeCollisions`, werden nicht gejoint, und der
+  Ingest vergleicht die Kantenzahl vor und nach dem Umschreiben und scheitert
+  bei einer Abweichung.
 
 ## 12. Bewusst außerhalb dieses Specs
 
@@ -381,7 +454,7 @@ wenn unbekannt“ — nach diesem Spec fehlt er nur noch bei Formationen.
   bereits `"syntaxon"` neben `"habitat_type"`; belegt ist bisher nur der
   zweite Wert. Syntaxa- und Formationsnamen ziehen dort ohne jede
   Schema- oder Domänenänderung ein. Das ist eine eigene Runde: die 25 Formationsnamen wären
-  schnell übersetzt, die 1841 Syntaxa-Namen sind es nicht, und eine
+  schnell übersetzt, die 1857 Syntaxa-Namen sind es nicht, und eine
   halbübersetzte Hierarchie ist schlechter als eine konsequent englische.
 - **Nomenklatur-Drift** zwischen FloraVeg-Fassungen: ein erneuter Ingest
   überschreibt idempotent, ein Umbenennungs-Protokoll gibt es weiterhin nicht.

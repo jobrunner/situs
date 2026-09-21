@@ -49,12 +49,6 @@ für die Brotkrumenzeile drei Anfragen braucht, orientiert schlecht.
 type SyntaxonDetail struct {
 	SyntaxonRef
 
-	// LifeFormGroup ist "phanerogam" | "bryophyte_lichen" | "algae". Gesetzt
-	// ist es nur auf Formationszeilen; auf jeder anderen Ebene trägt es die
-	// Gruppe der Formation, die der Ahnenpfad erreicht — dort also ein
-	// abgeleiteter Wert, kein gespeicherter.
-	LifeFormGroup string `json:"life_form_group,omitempty"`
-
 	// Ancestors ist der Weg zur Wurzel, ÄUSSERSTE zuerst (Formation, dann
 	// Klasse, dann Ordnung). Für eine Formation leer. Die Reihenfolge ist
 	// festgelegt, damit ein Client sie unverändert als Brotkrumenzeile
@@ -65,20 +59,40 @@ type SyntaxonDetail struct {
 	// leer — das ist die untere Grenze der Daten, nicht ein Fehler.
 	Children []SyntaxonRef `json:"children"`
 
-	// HabitatTypeCount ist die Anzahl verknüpfter Habitattypen, gemessen.
-	// Die Liste selbst holt /v1/syntaxon/{id}/habitat-types; hier steht nur
-	// die Zahl, damit ein Client weiß, ob der Abruf sich lohnt.
-	HabitatTypeCount int `json:"habitat_type_count"`
+	// DirectHabitatTypeCount ist die Anzahl der Habitattypen, die GENAU
+	// dieses Syntaxon verlinken — nicht die seiner Nachkommen. Fuer eine
+	// Klasse oder Formation ist der Wert deshalb praktisch immer 0, weil
+	// habitat_type_syntaxon Verbaende verlinkt (und in einem Fall eine
+	// Ordnung). Der Name sagt das, damit ein Client die 0 nicht als
+	// "diese Klasse beruehrt keinen EUNIS-Typ" liest; die Aggregation ueber
+	// die Nachkommen ist eine eigene Frage (Abschnitt 10).
+	DirectHabitatTypeCount int `json:"direct_habitat_type_count"`
 }
 ```
 
 `SyntaxonRef` wächst gegenüber Teilprojekt A nicht weiter — `alt_code`,
-`source` und `parent_provenance` sind dort schon eingezogen.
+`source`, `parent_provenance` und `life_form_group` sind dort schon
+eingezogen. `SyntaxonDetail` bettet `SyntaxonRef` ein, dessen Felder damit in
+dasselbe JSON-Objekt einwandern (Go promoviert eingebettete Felder). Im
+OpenAPI wird das als `allOf` aus `SyntaxonRef` und den Zusatzfeldern
+beschrieben und durch einen Test festgenagelt, sonst behaupten Schema und
+Leitung Verschiedenes.
+
+`life_form_group` steht deshalb **nur** in `SyntaxonRef` und wird in
+`SyntaxonDetail` nicht wiederholt — ein gleichnamiges Feld in der äußeren
+Struktur würde das eingebettete überdecken und zwei Felder auf denselben
+JSON-Schlüssel legen. Gespeichert ist der Wert laut Teilprojekt A nur auf
+Formationszeilen; für jeden anderen Rang füllt ihn die Leseseite aus der
+Formation, die der Ahnenpfad erreicht. Er ist dort also ein abgeleiteter, kein
+gelesener Wert — und weil `ancestors` in derselben Antwort steht, ist die
+Ableitung für den Client nachvollziehbar, nicht behauptet.
 
 `GET /v1/syntaxa` liefert `[]SyntaxonRef`, kein `SyntaxonDetail`: die
 Formationen brauchen weder Ahnenpfad (leer) noch Kinderliste (die holt der
 nächste Schritt), und 25 Details mit je 150 Kindern wären eine
-Antwort, die niemand angefordert hat.
+Antwort, die niemand angefordert hat. Die Lebensform-Gruppe steht in
+`SyntaxonRef` und ist damit auch in der Liste sichtbar — nur deshalb ist der
+Filter aus Abschnitt 3 nachvollziehbar.
 
 ## 3. Filter
 
@@ -97,15 +111,55 @@ Quellfassung). Kombiniert wirken beide Filter als UND:
 `?rank=alliance&life_form_group=bryophyte_lichen` sind die 137 Moos- und
 Flechtenverbände.
 
+**Ein weggelassenes `?rank=` sind die 25 Formationen**, nicht alle 1882
+Zeilen. Der Handler setzt den Vorgabewert `formation`, bevor er den Port ruft;
+der Port kennt keinen Sonderfall für einen leeren Rang. Ein Vorgabewert, der
+die ganze Tabelle ausgibt, wäre eine Antwort, die niemand angefordert hat.
+
+Die erlaubten Rang-Werte werden **aus dem Index gelesen**
+(`SELECT DISTINCT rank`), nicht als Liste verdrahtet. Teilprojekt A verzichtet
+bewusst auf ein `CHECK` auf `rank`, damit ein weiterer Rang eine Datenzeile
+sein kann; ein festes Enum an der Leseseite hätte diese Freiheit eine Ebene
+höher wieder eingezogen und einen neuen Rang unauffindbar gemacht. Die
+Wertemenge von `life_form_group` ist dagegen fest verdrahtet — sie steht als
+`CHECK` im Schema und ist keine Erweiterungsstelle.
+
 Ein unbekannter Wert ist `INVALID_QUERY` mit der Liste der erlaubten Werte —
 niemals eine leere Liste, die wie „gibt es nicht“ aussieht, obwohl sie
 „getippt hast du dich“ heißt. Das ist dieselbe Regel, die `?area=` und
 `?vocab=` schon befolgen.
 
 Weil `life_form_group` laut Teilprojekt A nur auf Formationszeilen gespeichert
-ist, joint der Filter für `rank != formation` über `parent_id` nach oben. Bei
-höchstens drei Ebenen ist das ein fester, kurzer Join — und
-`idx_syntaxon_parent` aus Teilprojekt A ist genau dafür da.
+ist, muss der Filter für `rank != formation` über `parent_id` nach oben joinen
+— je Rang unterschiedlich tief (ein Verband drei Stufen, eine Klasse eine).
+Die Join-Tiefe darf **nicht** aus dem `rank`-Wert in die SQL-Zeichenkette
+gebaut werden: jedes Statement in diesem Projekt ist ein statisches Literal
+mit `?`-Platzhaltern, und gosec G201 bricht den Build sonst zu Recht.
+
+Gelöst wird es mit **einem** statischen Statement, das die Wurzel rekursiv
+sucht:
+
+```sql
+WITH RECURSIVE up(id, root) AS (
+  SELECT id, id FROM syntaxon
+  UNION ALL
+  SELECT u.id, s.parent_id FROM up u JOIN syntaxon s ON s.id = u.root
+  WHERE s.parent_id <> ''
+)
+SELECT s.id, s.rank, s.name, s.author, s.parent_id, s.alt_code, s.source,
+       s.parent_provenance, s.life_form_group
+FROM syntaxon s
+JOIN up ON up.id = s.id
+JOIN syntaxon f ON f.id = up.root AND f.rank = 'formation'
+WHERE s.rank = ? AND f.life_form_group = ?
+ORDER BY s.id
+```
+
+Ein rekursiver CTE ist neu für dieses Paket, aber die Alternative wäre ein
+Statement je Rang — vier fast gleiche Literale, die bei einem weiteren Rang
+unvollständig werden, also genau die Verdrahtung, die dieses Spec eine Zeile
+weiter oben ablehnt. Ohne Gruppenfilter bleibt es beim einfachen
+`WHERE rank = ?`; der CTE läuft nur, wenn wirklich gefiltert wird.
 
 ## 4. Port und Repository
 
@@ -128,17 +182,22 @@ SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string) ([]domain.Syntaxo
 HabitatTypeCountForSyntaxon(ctx context.Context, syntaxonID string) (int, error)
 ```
 
-`maxSyntaxonDepth` ist eine Konstante mit Wert 4 (Formation, Klasse, Ordnung,
-Verband). Sie ist kein Vorsichtspuffer, sondern die gemessene Tiefe der
-Hierarchie; ein fünfter Schritt bedeutet einen Zykel und wird als
-`INTERNAL_ERROR` mit der ID gemeldet, die ihn auslöste.
+`maxSyntaxonAncestors` ist eine Konstante mit Wert **3**: so viele Schritte
+braucht ein Verband bis zur Formation (Verband → Ordnung → Klasse →
+Formation), und das ist die gemessene Maximaltiefe, kein Vorsichtspuffer. Der
+Name sagt „Ahnen“, nicht „Tiefe“, weil die Verwechslung von Knotenzahl (4)
+und Schrittzahl (3) sonst vorprogrammiert ist. Ein vierter Schritt bedeutet
+einen Zykel oder einen weiteren Rang und wird als `INTERNAL_ERROR` mit der
+auslösenden ID gemeldet.
 
-Die bestehende `AllSyntaxa` verliert ihren einzigen Aufrufer, wenn Teilprojekt
-A den Namensabgleich umbaut; sie bleibt als Port-Methode, weil die neue
-`SyntaxaByRank` sie mit leerem Rang nicht ersetzt (unterschiedliche
-Sortierzusage). Wird sie nach A wirklich nirgends mehr gebraucht, fällt sie
-raus — der Debt-Ratchet würde eine ungenutzte exportierte Methode sonst
-mitschleppen.
+`AllSyntaxa` behält seinen Aufrufer: Teilprojekt A führt den Namensabgleich
+für die 16 EEA-eigenen Einheiten weiter, und der liest weiterhin alle Syntaxa.
+Die Methode bleibt unverändert bestehen, `SyntaxaByRank` tritt neben sie.
+
+Die neuen Port-Methoden brechen die Testdoubles: `fakeQueryService` in
+`internal/adapters/http/handlers_test.go` und `fakeRepo` in
+`internal/application/ingest_test.go` müssen sie mitbekommen, sonst
+kompiliert keines der beiden Pakete mehr.
 
 ## 5. Fehlerbehandlung
 
@@ -186,9 +245,18 @@ neuem Schema und den zwei Query-Parametern als benannte
 Vertragstest prüft beide Richtungen und fällt sonst über die nicht
 deklarierte Methode.
 
-`GET /v1/syntaxa` ist der erste `/v1`-Pfad ohne Pfadparameter neben den
-Info-Routen; er braucht `.Methods("GET")` wie jeder andere, sonst schlägt der
-Routen-Vertragstest an.
+`GET /v1/syntaxa` braucht `.Methods("GET")` wie jeder andere Pfad, sonst
+schlägt der Routen-Vertragstest an. Ein `/v1`-Pfad ohne Pfadparameter ist
+dabei nichts Neues — `/v1/typologies` und `/v1/areas` sind es auch —, und
+zwischen `/v1/syntaxon/{id}` und `/v1/syntaxon/{id}/habitat-types` gibt es in
+mux keine Verdeckung.
+
+Der Vertragstest ist `TestRoutesMatchOpenAPISpec` in
+`internal/adapters/http/contract_test.go`; er liest die Spec als Zeilenstrom
+und erwartet Pfadschlüssel mit zwei, Methodenschlüssel mit vier Leerzeichen
+Einrückung. `TestOpenAPICopiesAreIdentical` prüft zusätzlich die
+Byte-Gleichheit beider Kopien. Auch `docs/reference/http-api.md` beschreibt
+die Routen und wächst mit.
 
 ## 8. Tests
 
@@ -232,6 +300,7 @@ Routen-Vertragstest an.
 - **Habitattyp → Formation.** Die Aggregation „welche Formationen berührt
   dieser EUNIS-Typ“ ist über die Kanten und den Ahnenpfad berechenbar, aber
   eine eigene fachliche Frage mit eigener Antwortform.
-- **Verbreitungsfilter auf den Navigationsrouten** — Teilprojekt C. Ob
-  `/v1/syntaxa?area=` sinnvoll ist, entscheidet sich erst, wenn die
-  Verbreitungsdaten im Index liegen.
+- **Verbreitungsfilter auf den Navigationsrouten** — Teilprojekt C ergänzt
+  `/v1/syntaxa` um `?area=` und `?include=` und beschreibt beides dort. Dieses
+  Spec baut die Route so, dass ein weiterer Filter sie nicht umbaut: die
+  Parameterprüfung liegt im Handler, nicht im Port.
