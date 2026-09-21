@@ -8,6 +8,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 
 	"github.com/jobrunner/situs/internal/domain"
@@ -104,23 +105,42 @@ func IngestSyntaxa(ctx context.Context, repo output.Repository, dir string) (Syn
 
 // writeSyntaxa runs the ingest steps in order, each through its own
 // function so the file's per-function complexity ratchet stays clear of
-// its per-file sum: formations, then the FloraVeg hierarchy. Task 6 and 7
-// append the EUNIS-only, link and remaining-parent steps here.
-func writeSyntaxa(_ context.Context, tx output.IngestTx, _ string,
+// its per-file sum: formations, the FloraVeg hierarchy, the EEA-only
+// remainder, then the habitat-type edges. written collects every syntaxon
+// id this transaction wrote so writeLinks can tell an edge to a real
+// syntaxon from one to nothing at all.
+func writeSyntaxa(ctx context.Context, tx output.IngestTx, dir string,
 	formations map[string]domain.Syntaxon, rows []hierarchyRow, rep *SyntaxaReport) error {
-	if err := writeFormations(tx, formations, rep); err != nil {
+	written := map[string]bool{}
+	if err := writeFormations(tx, formations, written, rep); err != nil {
 		return err
 	}
-	if err := writeHierarchy(tx, rows, formations, rep); err != nil {
+	if err := writeHierarchy(tx, rows, formations, written, rep); err != nil {
 		return err
 	}
-	return nil
+
+	// Step 3: the EEA units that FloraVeg does not carry. Every other
+	// unit is already represented by its FloraVeg row — writing it a
+	// second time would put the same syntaxon into the index under two
+	// ids.
+	byAlt := map[string]string{}
+	for _, r := range rows {
+		if r.altCode != "" {
+			byAlt[r.altCode] = r.code
+		}
+	}
+	if err := writeEunisOnly(ctx, tx, dir, byAlt, written, rep); err != nil {
+		return err
+	}
+	// Step 4: the edges. An EEA syntaxon id with a FloraVeg counterpart
+	// gets resolved to the primary code; one without stays as it is.
+	return writeLinks(ctx, tx, dir, byAlt, written, rep)
 }
 
 // writeFormations writes the 25 EuroVegChecklist sections as the root of
 // the hierarchy: no parent, source evc, the life-form group from the file.
 // Sorted by letter so a run is reproducible.
-func writeFormations(tx output.IngestTx, formations map[string]domain.Syntaxon, rep *SyntaxaReport) error {
+func writeFormations(tx output.IngestTx, formations map[string]domain.Syntaxon, written map[string]bool, rep *SyntaxaReport) error {
 	letters := make([]string, 0, len(formations))
 	for letter := range formations {
 		letters = append(letters, letter)
@@ -130,6 +150,7 @@ func writeFormations(tx output.IngestTx, formations map[string]domain.Syntaxon, 
 		if err := tx.UpsertSyntaxon(formations[letter]); err != nil {
 			return fmt.Errorf("upserting formation %s: %w", letter, err)
 		}
+		written[letter] = true
 		rep.FormationsWritten++
 	}
 	return nil
@@ -140,7 +161,7 @@ func writeFormations(tx output.IngestTx, formations map[string]domain.Syntaxon, 
 // letter is not among the known formations is skipped and counted, never
 // assigned a made-up parent. Order and alliance rows keep the parent_code
 // the CSV already carries.
-func writeHierarchy(tx output.IngestTx, rows []hierarchyRow, formations map[string]domain.Syntaxon, rep *SyntaxaReport) error {
+func writeHierarchy(tx output.IngestTx, rows []hierarchyRow, formations map[string]domain.Syntaxon, written map[string]bool, rep *SyntaxaReport) error {
 	for _, r := range rows {
 		parentID := r.parentCode
 		if r.rank == domain.SyntaxonRankClass {
@@ -164,6 +185,7 @@ func writeHierarchy(tx output.IngestTx, rows []hierarchyRow, formations map[stri
 		if err := tx.UpsertSyntaxon(s); err != nil {
 			return fmt.Errorf("upserting %s %s: %w", r.rank, r.code, err)
 		}
+		written[r.code] = true
 		switch r.rank {
 		case domain.SyntaxonRankClass:
 			rep.ClassesWritten++
@@ -174,4 +196,70 @@ func writeHierarchy(tx output.IngestTx, rows []hierarchyRow, formations map[stri
 		}
 	}
 	return nil
+}
+
+// writeEunisOnly writes syntaxa.csv's rows whose id is not a key of byAlt —
+// an EEA unit FloraVeg already carries under its own primary code is not
+// written a second time. ParentID stays empty; Task 7 sets it by name and
+// sibling consensus. Name is kept exactly as the file has it: the historical
+// EUNIS combi-string with embedded authorship, never split heuristically.
+func writeEunisOnly(ctx context.Context, tx output.IngestTx, dir string,
+	byAlt map[string]string, written map[string]bool, rep *SyntaxaReport) error {
+	skip := newRowSkipper(&rep.SkippedRows, fileEunisSyntaxa, "eunis-only syntaxon")
+	return readAll(ctx, dir, fileEunisSyntaxa, ',', []string{"id", colRank, colName, "parent_id"}, skip,
+		func(idx map[string]int, row []string, _ int) error {
+			id := row[idx["id"]]
+			if _, ok := byAlt[id]; ok {
+				return nil
+			}
+			s := domain.Syntaxon{
+				ID:     id,
+				Rank:   row[idx[colRank]],
+				Name:   row[idx[colName]],
+				Source: domain.SyntaxonSourceEUNIS,
+			}
+			if err := tx.UpsertSyntaxon(s); err != nil {
+				return fmt.Errorf("upserting eunis-only %s: %w", id, err)
+			}
+			written[id] = true
+			rep.EunisOnly++
+			return nil
+		})
+}
+
+// writeLinks writes habitat_type_syntaxa.csv's edges. A target that is a key
+// of byAlt is resolved to its FloraVeg primary code before writing — the
+// edge is written for the first time in this same transaction, so there is
+// no separate relink step here (RelinkSyntaxon is for a repeat ingest onto
+// an already-filled index, Task 7). A target this ingest never wrote, under
+// either id, is dropped and reported instead of linking to a syntaxon that
+// does not exist.
+func writeLinks(ctx context.Context, tx output.IngestTx, dir string,
+	byAlt map[string]string, written map[string]bool, rep *SyntaxaReport) error {
+	skip := newRowSkipper(&rep.SkippedRows, fileSyntaxonLinks, "syntaxon link")
+	return readAll(ctx, dir, fileSyntaxonLinks, ',', []string{colTypologyID, colCode, "syntaxon_id"}, skip,
+		func(idx map[string]int, row []string, line int) error {
+			typologyID, perr := domain.ParseTypologyID(row[idx[colTypologyID]])
+			if perr != nil {
+				skip(line, perr)
+				return nil
+			}
+			target := row[idx["syntaxon_id"]]
+			if primary, ok := byAlt[target]; ok {
+				target = primary
+				rep.LinksRemapped++
+			}
+			if !written[target] {
+				rep.UnknownLinkTargets = append(rep.UnknownLinkTargets, target)
+				slog.Warn("skipping edge to unknown syntaxon",
+					"target", target, "file", fileSyntaxonLinks, "line", line)
+				return nil
+			}
+			key := domain.HabitatTypeKey{Typology: typologyID, Code: row[idx[colCode]]}
+			if err := tx.LinkSyntaxon(key, target); err != nil {
+				return fmt.Errorf("linking %s to %s: %w", key.Code, target, err)
+			}
+			rep.LinksWritten++
+			return nil
+		})
 }

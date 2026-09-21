@@ -28,6 +28,7 @@ const (
 	colTypologyID = "typology_id"
 	colName       = "name"
 	colNameEN     = "name_en"
+	colRank       = "rank"
 )
 
 // IngestReport summarizes one ingest run.
@@ -331,11 +332,11 @@ func ingestCrosswalks(ctx context.Context, tx output.IngestTx, dir string) (coun
 func ingestSyntaxa(ctx context.Context, tx output.IngestTx, dir string) (count, skipped int, err error) {
 	const file = "syntaxa.csv"
 	skip := newRowSkipper(&skipped, file, "syntaxon")
-	err = readAll(ctx, dir, file, ',', []string{"id", "rank", colName, "parent_id"}, skip,
+	err = readAll(ctx, dir, file, ',', []string{"id", colRank, colName, "parent_id"}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			s := domain.Syntaxon{
 				ID:       row[idx["id"]],
-				Rank:     row[idx["rank"]],
+				Rank:     row[idx[colRank]],
 				Name:     row[idx[colName]],
 				ParentID: row[idx["parent_id"]],
 			}

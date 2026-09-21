@@ -50,9 +50,9 @@ func readHierarchy(ctx context.Context, dir string, rep *SyntaxaReport) ([]hiera
 	var rows []hierarchyRow
 	skip := newRowSkipper(&rep.SkippedRows, fileHierarchy, "syntaxon hierarchy")
 	err := readAll(ctx, dir, fileHierarchy, ',',
-		[]string{colCode, "rank", colName, "author", "parent_code", "alt_code"}, skip,
+		[]string{colCode, colRank, colName, "author", "parent_code", "alt_code"}, skip,
 		func(idx map[string]int, row []string, line int) error {
-			rank := row[idx["rank"]]
+			rank := row[idx[colRank]]
 			switch rank {
 			case domain.SyntaxonRankClass, domain.SyntaxonRankOrder, domain.SyntaxonRankAlliance:
 			default:

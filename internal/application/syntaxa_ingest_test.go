@@ -301,6 +301,179 @@ func TestIngestSyntaxaMeldetFehlgeschlagenesRollback(t *testing.T) {
 	}
 }
 
+func TestIngestSyntaxaSchreibtNurEeaEinheitenOhneFloraVegGegenstueck(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations, hierarchy: minimalHierarchy,
+		// TST-01A has a FloraVeg counterpart (CA01A), EIG-01A does not.
+		eunis: "id,rank,name,parent_id\n" +
+			"TST-01A,alliance,Testverband Moor 1970,\n" +
+			"EIG-01A,alliance,Eigenverband Moor 1990,\n",
+		links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if rep.EunisOnly != 1 {
+		t.Errorf("EunisOnly = %d, erwartet 1", rep.EunisOnly)
+	}
+	if repo.has("TST-01A") {
+		t.Error("TST-01A wurde als eigene Zeile geschrieben, obwohl CA01A sie vertritt")
+	}
+	eig := repo.syntaxonByID("EIG-01A")
+	if eig.Source != domain.SyntaxonSourceEUNIS || eig.AltCode != "" {
+		t.Errorf("EIG-01A = %+v, erwartet source=eunis und leeren AltCode", eig)
+	}
+	if eig.Name != "Eigenverband Moor 1990" {
+		t.Errorf("Name = %q, erwartet den EUNIS-Kombistring unveraendert", eig.Name)
+	}
+}
+
+func TestIngestSyntaxaLoestKantenUeberDenAltcodeAuf(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations, hierarchy: minimalHierarchy,
+		eunis: "id,rank,name,parent_id\nTST-01A,alliance,Testverband Moor 1970,\n",
+		links: "typology_id,code,syntaxon_id\neunis@2021,T11,TST-01A\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if rep.LinksWritten != 1 || rep.LinksRemapped != 1 {
+		t.Errorf("LinksWritten/LinksRemapped = %d/%d, erwartet 1/1",
+			rep.LinksWritten, rep.LinksRemapped)
+	}
+	if got := repo.linkTargets("eunis@2021", "T11"); len(got) != 1 || got[0] != "CA01A" {
+		t.Errorf("Kanten = %v, erwartet [CA01A]", got)
+	}
+}
+
+func TestIngestSyntaxaBehaeltKanteAufEeaEigeneEinheit(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations, hierarchy: minimalHierarchy,
+		eunis: "id,rank,name,parent_id\nEIG-01A,alliance,Eigenverband Moor 1990,\n",
+		links: "typology_id,code,syntaxon_id\neunis@2021,T11,EIG-01A\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if rep.LinksRemapped != 0 {
+		t.Errorf("LinksRemapped = %d, erwartet 0", rep.LinksRemapped)
+	}
+	if got := repo.linkTargets("eunis@2021", "T11"); len(got) != 1 || got[0] != "EIG-01A" {
+		t.Errorf("Kanten = %v, erwartet [EIG-01A]", got)
+	}
+}
+
+func TestIngestSyntaxaMeldetKanteAufUnbekanntesSyntaxon(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations, hierarchy: minimalHierarchy,
+		eunis: "id,rank,name,parent_id\n",
+		links: "typology_id,code,syntaxon_id\neunis@2021,T11,GIBTSNICHT\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if len(rep.UnknownLinkTargets) != 1 || rep.UnknownLinkTargets[0] != "GIBTSNICHT" {
+		t.Errorf("UnknownLinkTargets = %v", rep.UnknownLinkTargets)
+	}
+	if rep.LinksWritten != 0 {
+		t.Errorf("LinksWritten = %d, erwartet 0", rep.LinksWritten)
+	}
+}
+
+func TestIngestSyntaxaFuehrtEeaOrdnungMitFloraVegGegenstueckZusammen(t *testing.T) {
+	// The ASP-03/KC03 case: an EEA order that FloraVeg carries
+	// identically. The habitat type's edge must survive, just pointing
+	// at the primary code.
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations, hierarchy: minimalHierarchy,
+		eunis: "id,rank,name,parent_id\nTST-01,order,Testordnung Moor 1960,\n",
+		links: "typology_id,code,syntaxon_id\neunis@2021,T11,TST-01\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if repo.has("TST-01") {
+		t.Error("TST-01 blieb als Dublette von CA01 im Index")
+	}
+	if got := repo.linkTargets("eunis@2021", "T11"); len(got) != 1 || got[0] != "CA01" {
+		t.Errorf("Kanten = %v, erwartet [CA01]", got)
+	}
+	if rep.LinksRemapped != 1 {
+		t.Errorf("LinksRemapped = %d, erwartet 1", rep.LinksRemapped)
+	}
+}
+
+func TestIngestSyntaxaRollbackBeiFehlerhaftemUpsertEunisOnly(t *testing.T) {
+	repo := newFakeRepo()
+	repo.failOn = "UpsertSyntaxon"
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: "letter,name_en,life_form_group\n",
+		hierarchy:  "code,rank,name,author,parent_code,alt_code\n",
+		eunis:      "id,rank,name,parent_id\nEIG-01A,alliance,Eigenverband Moor 1990,\n",
+		links:      "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz fehlschlagendem EUNIS-Only-Upsert durch")
+	}
+	if !strings.Contains(err.Error(), "upserting eunis-only EIG-01A") {
+		t.Errorf("Fehler = %v, erwartet EUNIS-Only-Kontext", err)
+	}
+	if !repo.rolledBack {
+		t.Error("rolledBack = false, erwartet true nach fehlgeschlagenem Upsert")
+	}
+}
+
+func TestIngestSyntaxaRollbackBeiFehlerhaftemLinkSyntaxon(t *testing.T) {
+	repo := newFakeRepo()
+	repo.failOn = "LinkSyntaxon"
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: "letter,name_en,life_form_group\n",
+		hierarchy:  "code,rank,name,author,parent_code,alt_code\n",
+		eunis:      "id,rank,name,parent_id\nEIG-01A,alliance,Eigenverband Moor 1990,\n",
+		links:      "typology_id,code,syntaxon_id\neunis@2021,T11,EIG-01A\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz fehlschlagendem LinkSyntaxon durch")
+	}
+	if !strings.Contains(err.Error(), "linking T11 to EIG-01A") {
+		t.Errorf("Fehler = %v, erwartet Link-Kontext", err)
+	}
+	if !repo.rolledBack {
+		t.Error("rolledBack = false, erwartet true nach fehlgeschlagenem Link")
+	}
+}
+
+func TestIngestSyntaxaUeberspringtKanteMitUngueltigerTypologyId(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations, hierarchy: minimalHierarchy,
+		eunis: "id,rank,name,parent_id\n",
+		links: "typology_id,code,syntaxon_id\n,T11,CA01A\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if rep.LinksWritten != 0 {
+		t.Errorf("LinksWritten = %d, erwartet 0", rep.LinksWritten)
+	}
+	if rep.SkippedRows != 1 {
+		t.Errorf("SkippedRows = %d, erwartet 1", rep.SkippedRows)
+	}
+}
+
 func TestIngestSyntaxaMeldetCommitFehler(t *testing.T) {
 	repo := newFakeRepo()
 	repo.commitErr = fmt.Errorf("commit boom")

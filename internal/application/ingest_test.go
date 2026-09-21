@@ -690,6 +690,18 @@ func (r *fakeRepo) syntaxonByID(id string) domain.Syntaxon {
 	return domain.Syntaxon{}
 }
 
+// linkTargets is a test helper returning the syntaxon ids linked to
+// (typology, code), in insertion order.
+func (r *fakeRepo) linkTargets(typology, code string) []string {
+	var out []string
+	for _, l := range r.syntaxaLinks {
+		if string(l.key.Typology) == typology && l.key.Code == code {
+			out = append(out, l.syntaxonID)
+		}
+	}
+	return out
+}
+
 // has reports whether id was written to the fake index.
 func (r *fakeRepo) has(id string) bool {
 	for _, s := range r.syntaxa {
