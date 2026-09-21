@@ -437,6 +437,71 @@ paths:
                 $ref: "#/components/schemas/TraitSummary"
         "400":
           $ref: "#/components/responses/InvalidQuery"
+  /v1/syntaxa:
+    get:
+      summary: Die Wurzeln der Syntaxa-Hierarchie, filterbar
+      description: >-
+        Der Einstiegspunkt der Navigation. Ohne Parameter sind es die 25
+        Formationen (die Wurzeln), **nicht** alle 1882 Zeilen — ein Vorgabewert,
+        der die ganze Tabelle ausgibt, wäre eine Antwort, die niemand
+        angefordert hat. `?rank=` liefert stattdessen alle Syntaxa eines Rangs
+        (`?rank=alliance` sind 1326 Zeilen, bewusst ohne Paginierung: die Zahl
+        ist fest und wächst nur mit einer neuen Quellfassung).
+        `?life_form_group=` filtert über die Formation, zu der ein Syntaxon
+        gehört; beide Parameter wirken kombiniert als UND. Die Antwort trägt
+        `SyntaxonRef` und nicht `SyntaxonDetail`: die Wurzeln brauchen weder
+        Ahnenpfad (leer) noch Kinderliste — die holt der nächste Schritt.
+      operationId: syntaxa
+      parameters:
+        - $ref: "#/components/parameters/Rank"
+        - $ref: "#/components/parameters/LifeFormGroup"
+      responses:
+        "200":
+          description: Die Syntaxa des angefragten Rangs, nach `id` sortiert.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SyntaxonRef"
+        "400":
+          $ref: "#/components/responses/InvalidQuery"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/syntaxon/{id}:
+    get:
+      summary: Ein Syntaxon mit Ahnenpfad und direkten Kindern
+      description: >-
+        Ein Navigationsschritt in einer Antwort: wo bin ich, und wohin kann
+        ich? `ancestors` ist der Weg zur Wurzel, **äußerste zuerst** (Formation,
+        Klasse, Ordnung) und damit unverändert als Brotkrumenzeile ausgebbar;
+        `children` sind die direkten Kinder, nach `id` sortiert. Beide Felder
+        sind **immer** vorhanden, auch leer — ein Verband ohne Kinder und eine
+        Formation ohne Ahnen sind der Normalfall an den Rändern der Daten, kein
+        Fehler. Es gibt bewusst keine eigene `/children`- oder
+        `/ancestors`-Route: sie wären ein zweiter Weg zu denselben Daten.
+        `?lang=` wird angenommen; deutsche Syntaxa-Namen sind eine eigene Runde,
+        bis dahin antworten die Namen englisch.
+      operationId: syntaxon
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            example: CA01A
+        - $ref: "#/components/parameters/Lang"
+      responses:
+        "200":
+          description: Das Syntaxon samt Umgebung.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyntaxonDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /v1/syntaxon/{id}/habitat-types:
     get:
       summary: Habitattypen einer Pflanzengesellschaft
@@ -519,6 +584,34 @@ components:
         concept_ids[i], ein Eintrag darf also nicht fehlen.
       schema:
         type: boolean
+    Rank:
+      name: rank
+      in: query
+      required: false
+      description: >-
+        Rang der gelisteten Syntaxa. Weggelassen sind es die Formationen, nicht
+        alle Zeilen. Die erlaubten Werte liest der Dienst aus dem Index
+        (`SELECT DISTINCT rank`) statt sie zu verdrahten: das Schema hat bewusst
+        kein CHECK auf `rank`, damit ein weiterer Rang eine Datenzeile sein
+        kann. Ein unbekannter Wert ist INVALID_QUERY und die Nachricht nennt
+        die Werte, die dieser Index führt — niemals eine leere Liste, die wie
+        „gibt es nicht“ aussieht.
+      schema:
+        type: string
+        example: alliance
+    LifeFormGroup:
+      name: life_form_group
+      in: query
+      required: false
+      description: >-
+        Lebensform-Gruppe der Formation, zu der ein Syntaxon gehört. Gespeichert
+        ist der Wert nur auf Formationszeilen; für jeden anderen Rang filtert
+        der Dienst über den Weg zur Formation. Die Wertemenge ist fest (sie
+        steht als CHECK im Schema) und keine Erweiterungsstelle; ein unbekannter
+        Wert ist INVALID_QUERY.
+      schema:
+        type: string
+        enum: [phanerogam, bryophyte_lichen, algae]
   responses:
     InvalidQuery:
       description: Die Anfrage ist fehlerhaft (INVALID_QUERY).
@@ -655,6 +748,48 @@ components:
             Die Lebensform-Gruppe der Formation. Nur auf Formationszeilen
             gesetzt und deshalb in Antworten, die Verbände oder Ordnungen
             tragen, nicht vorhanden.
+    SyntaxonDetail:
+      description: >-
+        Ein Syntaxon mit seiner Umgebung: der Weg nach oben und die direkten
+        Kinder. `allOf`, weil die Go-Struktur `SyntaxonRef` einbettet und dessen
+        Felder damit in dasselbe JSON-Objekt einwandern — ein verschachteltes
+        Objekt hier und ein flaches auf der Leitung wären zwei Verträge, die
+        sich als einer ausgeben. `life_form_group` steht nur in `SyntaxonRef`
+        und wird hier nicht wiederholt; für jeden Rang außer der Formation ist
+        der Wert aus der Formation des Ahnenpfads abgeleitet und deshalb
+        nachvollziehbar, nicht behauptet.
+      allOf:
+        - $ref: "#/components/schemas/SyntaxonRef"
+        - type: object
+          required: [ancestors, children, direct_habitat_type_count]
+          properties:
+            ancestors:
+              type: array
+              description: >-
+                Der Weg zur Wurzel, ÄUSSERSTE zuerst (Formation, dann Klasse,
+                dann Ordnung). Für eine Formation leer — leer und vorhanden,
+                nicht fehlend.
+              items:
+                $ref: "#/components/schemas/SyntaxonRef"
+            children:
+              type: array
+              description: >-
+                Die direkten Kinder, nach `id` sortiert. Für einen Verband leer;
+                das ist die untere Grenze der freien Daten (Assoziationen sind
+                pan-europäisch nicht verfügbar), kein Fehler. Auch hier ist die
+                leere Liste vorhanden und nicht weggelassen.
+              items:
+                $ref: "#/components/schemas/SyntaxonRef"
+            direct_habitat_type_count:
+              type: integer
+              description: >-
+                Die Zahl der Habitattypen, die GENAU dieses Syntaxon verlinken —
+                nicht die seiner Nachkommen. Für eine Klasse oder Formation
+                praktisch immer 0, weil `habitat_type_syntaxon` Verbände
+                verlinkt (und in einem Fall eine Ordnung). Der Name sagt das,
+                damit die 0 nicht als „diese Klasse berührt keinen EUNIS-Typ“
+                gelesen wird.
+              example: 3
     TraitValue:
       type: object
       required: [dim, value]

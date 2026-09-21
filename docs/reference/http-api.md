@@ -22,6 +22,8 @@ decken).
 | `GET /v1/species/search?q=&limit=` | Namenssuche über die im Index geführten `verbatim_name` |
 | `GET /v1/species/{conceptId}/habitat-types` | Habitattypen einer Art (mit Rolle) |
 | `POST /v1/species/habitat-types` | Batch über Konzept-IDs (`concept_ids`) |
+| `GET /v1/syntaxa?rank=&life_form_group=` | Wurzeln der Syntaxa-Hierarchie; ohne `?rank=` die 25 Formationen |
+| `GET /v1/syntaxon/{id}` | ein Syntaxon mit Ahnenpfad und direkten Kindern |
 | `GET /v1/syntaxon/{id}/habitat-types` | Habitattypen einer Pflanzengesellschaft |
 | `GET /v1/species/{conceptId}/traits?vocab=` | Zeigerwerte einer Art, optional nach Vokabular gefiltert |
 | `POST /v1/species/traits/summary` | Zeigerwertanalyse über eine Artenliste |
@@ -351,6 +353,29 @@ EuroVegChecklist-Sektionen A–Y) und `class` sind neu hinzugekommen, `order`
 und `alliance` gab es schon. Jede Nicht-Formations-Zeile hat einen `parent_id`,
 der in höchstens drei Schritten eine Formation erreicht — der Ingest bricht
 ab, wenn eine Zeile das nicht schafft (siehe `CLAUDE.md`, Invariants).
+
+### Die Hierarchie durchlaufen: `GET /v1/syntaxa` und `GET /v1/syntaxon/{id}`
+
+`GET /v1/syntaxa?rank=&life_form_group=` ist der Einstiegspunkt: ohne
+Parameter sind es die 25 Formationen, nicht alle 1882 Zeilen. `?rank=` fragt
+einen anderen Rang ab (`alliance`, `class`, `formation`, `order` — die
+tatsächlich erlaubten Werte liest der Dienst aus dem Index, nicht aus einer
+fest verdrahteten Liste); `?life_form_group=` filtert zusätzlich über die
+Formation, zu der ein Syntaxon gehört (feste Wertemenge, s.o.). Ein
+unbekannter Wert bei beiden Parametern ist `INVALID_QUERY`, und die Meldung
+nennt die erlaubten Werte. Die Antwort trägt `SyntaxonRef`.
+
+`GET /v1/syntaxon/{id}` liefert ein einzelnes Syntaxon als `SyntaxonDetail`
+— `SyntaxonRef` eingebettet (die Felder liegen also flach im selben
+JSON-Objekt) plus `ancestors` (Weg zur Wurzel, äußerste zuerst), `children`
+(direkte Kinder, nach `id` sortiert) und `direct_habitat_type_count` (nur die
+Habitattypen, die genau dieses Syntaxon verlinken, nicht seine Nachkommen).
+`ancestors` und `children` stehen immer im JSON, auch leer — eine Formation
+ohne Ahnen und ein Verband ohne Kinder sind der Normalfall, kein Fehler. Eine
+unbekannte oder leere `{id}` ist `NOT_FOUND`, nie `INVALID_QUERY`: ein
+Pfadsegment ist keine Query. `?lang=` wird angenommen, aber deutsche
+Syntaxa-Namen sind eine eigene Runde — bis dahin antworten die Namen
+englisch.
 
 ## Die zwei Arten-Pfade
 
