@@ -415,8 +415,13 @@ type QueryService interface {
 	// about instead of guessing eunis@2021 and never learning that
 	// eunis@2012 and annex1 exist too.
 	Typologies(ctx context.Context) ([]TypologyView, error)
-	// Areas lists the areas the ?area= filter can answer, with their names.
-	Areas(ctx context.Context) ([]AreaView, error)
+	// Areas lists the areas of one scheme the ?area= filter can answer, with
+	// their names. The scheme is a parameter and not a constant because situs
+	// stores two (domain.SchemeWGSRPDL3 for species, domain.SchemeEVCTerritory
+	// for syntaxa) and a flat list mixing both would be ambiguous: the caller
+	// could not tell which vocabulary a code belongs to without reading every
+	// entry's scheme field.
+	Areas(ctx context.Context, scheme string) ([]AreaView, error)
 	// HabitatType returns one type with its species, syntaxa and crosswalks.
 	// filter marks (and, if OnlyInArea, prunes) the species by area.
 	HabitatType(ctx context.Context, key domain.HabitatTypeKey, lang string, filter AreaFilter) (HabitatTypeDetail, error)

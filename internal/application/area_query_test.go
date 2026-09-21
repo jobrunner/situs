@@ -18,7 +18,7 @@ func TestQueryService_Areas(t *testing.T) {
 		{Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}, NameEN: "Germany"},
 	}
 
-	got, err := NewQueryService(repo).Areas(context.Background())
+	got, err := NewQueryService(repo).Areas(context.Background(), domain.SchemeWGSRPDL3)
 	if err != nil {
 		t.Fatalf("Areas: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestQueryService_Areas(t *testing.T) {
 // An index without distribution data answers an empty list, not an error:
 // nothing is wrong, there is simply nothing to filter by yet.
 func TestQueryService_Areas_EmptyIndexIsAnEmptyList(t *testing.T) {
-	got, err := NewQueryService(newFakeRepo()).Areas(context.Background())
+	got, err := NewQueryService(newFakeRepo()).Areas(context.Background(), domain.SchemeWGSRPDL3)
 	if err != nil {
 		t.Fatalf("Areas: %v", err)
 	}
@@ -52,7 +52,35 @@ func TestQueryService_Areas_RepositoryErrorIsReturned(t *testing.T) {
 	repo := newFakeRepo()
 	repo.areasErr = errors.New("index unreadable")
 
-	if _, err := NewQueryService(repo).Areas(context.Background()); err == nil {
+	if _, err := NewQueryService(repo).Areas(context.Background(), domain.SchemeWGSRPDL3); err == nil {
 		t.Fatal("Areas with the repository failing = nil error, want an error")
+	}
+}
+
+// Areas passes the scheme through unchanged: species areas (wgsrpd_l3) and
+// syntaxa territories (evc_territory) never mix into one flat list, because
+// the same code string could mean something different in each scheme.
+func TestAreasReichtDasSchemaDurch(t *testing.T) {
+	repo := newFakeRepo()
+	repo.namedAreas = []domain.NamedArea{
+		{Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}, NameEN: "Germany"},
+		{Area: domain.Area{Scheme: domain.SchemeEVCTerritory, Code: "austria-alps"}, NameEN: "Austria Alps"},
+	}
+	q := NewQueryService(repo)
+
+	terr, err := q.Areas(context.Background(), domain.SchemeEVCTerritory)
+	if err != nil {
+		t.Fatalf("Areas: %v", err)
+	}
+	if len(terr) != 1 || terr[0].Scheme != domain.SchemeEVCTerritory || terr[0].Code != "austria-alps" {
+		t.Errorf("Territorien = %+v", terr)
+	}
+
+	wg, err := q.Areas(context.Background(), domain.SchemeWGSRPDL3)
+	if err != nil {
+		t.Fatalf("Areas: %v", err)
+	}
+	if len(wg) != 1 || wg[0].Code != "GER" {
+		t.Errorf("WGSRPD = %+v", wg)
 	}
 }

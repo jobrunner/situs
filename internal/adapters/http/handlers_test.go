@@ -934,9 +934,12 @@ type fakeQueryService struct {
 	// typologies/typologiesErr control what Typologies returns.
 	typologies    []input.TypologyView
 	typologiesErr error
-	// areas/areasErr control what Areas returns.
-	areas    []input.AreaView
-	areasErr error
+	// areas/areasErr control what Areas returns; areaScheme records the last
+	// scheme it was called with, so a test can prove the parsed query string
+	// (or its default) actually reached the use case.
+	areas      []input.AreaView
+	areasErr   error
+	areaScheme string
 	// undescribed strips the description fields, standing for the 7673 types
 	// the factsheets do not cover.
 	undescribed bool
@@ -953,7 +956,8 @@ type fakeQueryService struct {
 	rankCalls        int
 }
 
-func (f *fakeQueryService) Areas(context.Context) ([]input.AreaView, error) {
+func (f *fakeQueryService) Areas(_ context.Context, scheme string) ([]input.AreaView, error) {
+	f.areaScheme = scheme
 	if f.areasErr != nil {
 		return nil, f.areasErr
 	}
@@ -1294,6 +1298,59 @@ func (f *fakeQueryService) SpeciesSetHabitatTypes(ctx context.Context, conceptID
 		out = append(out, entry)
 	}
 	return out, nil
+}
+
+// Every request made before the second scheme existed must keep its answer
+// unchanged. The default is not cosmetic: it is the compatibility promise.
+func TestAreasOhneSchemaAntwortetWieBisher(t *testing.T) {
+	q := seededQueryService()
+	srv := newTestServer(t, q)
+
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/areas", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if q.areaScheme != domain.SchemeWGSRPDL3 {
+		t.Errorf("scheme = %q, want the default %q", q.areaScheme, domain.SchemeWGSRPDL3)
+	}
+}
+
+func TestAreasMitTerritoriumsschema(t *testing.T) {
+	q := seededQueryService()
+	srv := newTestServer(t, q)
+
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/areas?scheme=evc_territory", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if q.areaScheme != domain.SchemeEVCTerritory {
+		t.Errorf("scheme = %q, want %q", q.areaScheme, domain.SchemeEVCTerritory)
+	}
+}
+
+func TestAreasMitUnbekanntemSchemaIstInvalidQuery(t *testing.T) {
+	for _, scheme := range []string{"evc-territory", "iso3166", "WGSRPD_L3"} {
+		srv := newTestServer(t, seededQueryService())
+
+		rec := httptest.NewRecorder()
+		srv.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/areas?scheme="+scheme, nil))
+
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("scheme=%q: status = %d, want 400", scheme, rec.Code)
+		}
+		body := rec.Body.String()
+		// The message lists the allowed values — never an empty list, which
+		// would look like "there are none" while meaning "you mistyped".
+		for _, want := range []string{"INVALID_QUERY", "evc_territory", "wgsrpd_l3"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("scheme=%q: response does not mention %q: %s", scheme, want, body)
+			}
+		}
+	}
 }
 
 func TestHabitatTypeSpecies_UnknownAreaIsInvalidQuery(t *testing.T) {

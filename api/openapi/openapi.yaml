@@ -151,26 +151,34 @@ paths:
           $ref: "#/components/responses/InternalError"
   /v1/areas:
     get:
-      summary: Alle Gebiete, nach denen gefiltert werden kann
+      summary: Alle Gebiete eines Schemas, nach denen gefiltert werden kann
       description: >-
-        Der Einstiegspunkt für `?area=`: die WGSRPD-Level-3-Gebiete, zu denen
+        Der Einstiegspunkt für `?area=`: die Gebiete eines Schemas, zu denen
         **dieser** Index Verbreitungsdaten hat, jedes mit seinem englischen
-        Namen. Bewusst nur Gebiete mit Daten — ein Gebiet ohne Daten wäre ein
-        Filter, der nur leer antworten kann. Sortiert nach `code`, damit
-        dieselbe Anfrage stabil dieselbe Reihenfolge liefert. `name` ist leer,
-        wenn zu einem Code kein Name eingelesen wurde: der Code ist die
+        Namen. `?scheme=` wählt das Schema (Vorgabe `wgsrpd_l3`); welche
+        Tabelle die Abdeckung liefert, hängt davon ab —
+        `species_distribution` für `wgsrpd_l3`, `syntaxon_distribution` für
+        `evc_territory`. Bewusst nur Gebiete mit Daten — ein Gebiet ohne Daten
+        wäre ein Filter, der nur leer antworten kann. Sortiert nach `code`,
+        damit dieselbe Anfrage stabil dieselbe Reihenfolge liefert. `name` ist
+        leer, wenn zu einem Code kein Name eingelesen wurde: der Code ist die
         Identität, der Name nur ein Overlay darauf. Die Antwort ist immer ein
-        Array, auch wenn der Index keine Verbreitungsdaten führt.
+        Array, auch wenn der Index keine Verbreitungsdaten führt, und trägt
+        nie die Codes zweier Schemata gemischt.
       operationId: areas
+      parameters:
+        - $ref: "#/components/parameters/AreaScheme"
       responses:
         "200":
-          description: Alle Gebiete mit Daten, nach `code` sortiert.
+          description: Alle Gebiete des Schemas mit Daten, nach `code` sortiert.
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: "#/components/schemas/AreaView"
+        "400":
+          $ref: "#/components/responses/InvalidQuery"
         "500":
           $ref: "#/components/responses/InternalError"
   /v1/habitat-type/{typology}/{code}:
@@ -572,6 +580,22 @@ components:
       schema:
         type: string
         example: GER
+    AreaScheme:
+      name: scheme
+      in: query
+      required: false
+      description: >-
+        Das Gebietsschema. `wgsrpd_l3` (Vorgabe) sind die
+        WGSRPD-Level-3-Gebiete der **Artverbreitung**; `evc_territory` sind
+        die 136 Territorien der **Syntaxa-Verbreitung** (Staaten und
+        biogeografische Teile davon, meist mit eigener Küstenspalte). Eine
+        Abbildung zwischen beiden gibt es nicht und soll es nicht geben —
+        keine Antwort rechnet ein Territorium in einen WGSRPD-Code um. Ein
+        unbekanntes Schema ist INVALID_QUERY.
+      schema:
+        type: string
+        enum: [wgsrpd_l3, evc_territory]
+        default: wgsrpd_l3
     OnlyInArea:
       name: only_in_area
       in: query
@@ -986,10 +1010,11 @@ components:
             $ref: "#/components/schemas/HabitatTypeRole"
     AreaView:
       description: >-
-        Ein Verbreitungsgebiet, nach dem gefiltert werden kann: WGSRPD-Level-3
-        ("botanische Länder"). `code` ist die Identität, `name` der englische
-        WGSRPD-Name als Overlay — leer, wenn zu dem Code kein Name eingelesen
-        wurde.
+        Ein Verbreitungsgebiet, nach dem gefiltert werden kann: `scheme` ist
+        `wgsrpd_l3` (WGSRPD-Level-3, "botanische Länder", für die
+        Artverbreitung) oder `evc_territory` (die 136 Territorien der
+        Syntaxa-Verbreitung). `code` ist die Identität, `name` der englische
+        Name als Overlay — leer, wenn zu dem Code kein Name eingelesen wurde.
       type: object
       required: [scheme, code, name]
       properties:
