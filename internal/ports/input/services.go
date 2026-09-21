@@ -124,6 +124,49 @@ type SyntaxonRef struct {
 	LifeFormGroup string `json:"life_form_group,omitempty"`
 }
 
+// SyntaxonDetail is a syntaxon with its surroundings: the way up and the direct
+// children. Both answer the same question ("where am I and where can I go?")
+// and therefore belong in the same response — a separate /children or
+// /ancestors route would be a second way to the same data and would make a
+// breadcrumb trail cost three requests.
+//
+// SyntaxonRef is EMBEDDED, so Go promotes its fields into this same JSON
+// object: id, rank, name, author, parent_id, alt_code, source,
+// parent_provenance and life_form_group are siblings of ancestors and children
+// on the wire, not a nested object. The OpenAPI schema models that as allOf and
+// a test pins it, because a nested schema and a flat wire format would be two
+// contracts claiming to be one.
+//
+// life_form_group is deliberately NOT repeated here: a field of the same name
+// in the outer struct would shadow the embedded one and put two fields on one
+// JSON key. For every rank but formation the value is derived from the
+// formation the ancestor path reaches — derived, not stored, and verifiable by
+// the client because ancestors travels in the same response.
+type SyntaxonDetail struct {
+	SyntaxonRef
+
+	// Ancestors is the way to the root, OUTERMOST first (formation, then
+	// class, then order), and empty for a formation. The order is fixed so a
+	// client can print it unchanged as a breadcrumb trail.
+	//
+	// No omitempty, and never nil: an empty list and a missing field are
+	// different statements for a client.
+	Ancestors []SyntaxonRef `json:"ancestors"`
+
+	// Children are the direct children, ordered by id. Empty for an alliance —
+	// the lower bound of the data, not an error. No omitempty, same reason as
+	// Ancestors.
+	Children []SyntaxonRef `json:"children"`
+
+	// DirectHabitatTypeCount is the number of habitat types linking EXACTLY
+	// this syntaxon, not its descendants'. For a class or formation it is
+	// therefore almost always 0, because habitat_type_syntaxon links alliances
+	// (and in one case an order). The name says so, so a client does not read
+	// the 0 as "this class touches no EUNIS type"; aggregating over the
+	// descendants is a question of its own.
+	DirectHabitatTypeCount int `json:"direct_habitat_type_count"`
+}
+
 // CrosswalkRef is the far side of a correspondence, seen from the queried type.
 // Qualifier always reads "queried type <qualifier> this type".
 type CrosswalkRef struct {
@@ -384,6 +427,27 @@ type QueryService interface {
 	HabitatTypeSpecies(ctx context.Context, key domain.HabitatTypeKey, role string, filter AreaFilter) ([]SpeciesEntry, error)
 	// SyntaxonHabitatTypes returns the habitat types a syntaxon is linked to.
 	SyntaxonHabitatTypes(ctx context.Context, syntaxonID, lang string) ([]HabitatTypeSummary, error)
+	// Syntaxon returns one vegetation unit with its ancestor path and its
+	// direct children — the whole navigation step in one answer. An unknown id
+	// is ErrNotFound; a parent_id pointing at a missing row is an inconsistent
+	// index and is reported as such, never bridged.
+	//
+	// lang is accepted and, for now, not consulted: syntaxa carry no German
+	// labels yet (design, section 10). It is in the signature so adding them
+	// later is not a contract change, and so the adapter's language(r) logic
+	// stays uniform across routes.
+	Syntaxon(ctx context.Context, id, lang string) (SyntaxonDetail, error)
+	// SyntaxaByRank lists every syntaxon of rank, ordered by id, narrowed to
+	// one life-form group when lifeFormGroup is non-empty (the two filters act
+	// as AND). rank is validated against what the index carries: an unknown
+	// value is ErrInvalidQuery naming the ranks that would have worked, never
+	// an empty list that reads as "there are none".
+	//
+	// It returns SyntaxonRef and not SyntaxonDetail on purpose: the roots need
+	// neither an ancestor path (empty) nor a child list (that is the next
+	// step), and 25 details with 150 children each would be an answer nobody
+	// asked for.
+	SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string) ([]SyntaxonRef, error)
 	// SpeciesSetHabitatTypes answers a whole field record at once: one entry per
 	// input concept id, in input order, duplicates included.
 	SpeciesSetHabitatTypes(ctx context.Context, conceptIDs []string, lang string, filter AreaFilter) ([]ConceptResolution, error)

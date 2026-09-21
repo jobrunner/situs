@@ -940,6 +940,17 @@ type fakeQueryService struct {
 	// undescribed strips the description fields, standing for the 7673 types
 	// the factsheets do not cover.
 	undescribed bool
+	// syntaxonDetails backs GET /v1/syntaxon/{id}; syntaxaByRank backs
+	// GET /v1/syntaxa, keyed by "rank|life_form_group" so a test can pin the
+	// handler's default and its group pass-through separately.
+	syntaxonDetails map[string]input.SyntaxonDetail
+	syntaxaByRank   map[string][]input.SyntaxonRef
+	syntaxaErr      error
+	// gotRank/gotLifeFormGroup record the last SyntaxaByRank call; rankCalls
+	// counts it, so a test can prove a rejected filter never reached the port.
+	gotRank          string
+	gotLifeFormGroup string
+	rankCalls        int
 }
 
 func (f *fakeQueryService) Areas(context.Context) ([]input.AreaView, error) {
@@ -1027,6 +1038,35 @@ func (f *fakeQueryService) IndexInfo(context.Context) (input.IndexInfo, error) {
 	return f.indexInfo, nil
 }
 
+func (f *fakeQueryService) Syntaxon(_ context.Context, id, lang string) (input.SyntaxonDetail, error) {
+	f.lang = lang
+	if f.err != nil {
+		return input.SyntaxonDetail{}, f.err
+	}
+	detail, ok := f.syntaxonDetails[id]
+	if !ok {
+		return input.SyntaxonDetail{}, fmt.Errorf("syntaxon %q: %w", id, input.ErrNotFound)
+	}
+	return detail, nil
+}
+
+// SyntaxaByRank restates the use case's contract closely enough for the adapter
+// to be tested against it: an unknown rank is INVALID_QUERY with the allowed
+// values in the message, never an empty list.
+func (f *fakeQueryService) SyntaxaByRank(_ context.Context, rank, lifeFormGroup string) ([]input.SyntaxonRef, error) {
+	f.rankCalls++
+	f.gotRank, f.gotLifeFormGroup = rank, lifeFormGroup
+	if f.syntaxaErr != nil {
+		return nil, f.syntaxaErr
+	}
+	refs, ok := f.syntaxaByRank[rank+"|"+lifeFormGroup]
+	if !ok {
+		return nil, fmt.Errorf("rank %q: the index carries alliance, class, formation, order: %w",
+			rank, input.ErrInvalidQuery)
+	}
+	return refs, nil
+}
+
 func seededQueryService() *fakeQueryService {
 	level := 3
 	priority := false
@@ -1103,6 +1143,36 @@ func seededQueryService() *fakeQueryService {
 					"M": {Mean: 6, Min: 4, Max: 8, N: 2},
 				}},
 			},
+		},
+		syntaxonDetails: map[string]input.SyntaxonDetail{
+			"C": {
+				SyntaxonRef: input.SyntaxonRef{ID: "C", Rank: "formation",
+					Name: "Vegetation of the nemoral forest zone", LifeFormGroup: "phanerogam"},
+				Ancestors: []input.SyntaxonRef{},
+				Children: []input.SyntaxonRef{
+					{ID: "CA", Rank: "class", Name: "Testklasse", ParentID: "C"},
+				},
+			},
+			"BRO-01A": {
+				SyntaxonRef: input.SyntaxonRef{ID: "BRO-01A", Rank: "alliance",
+					Name: "Bromion erecti", Author: "Koch 1926", ParentID: "CA01",
+					AltCode: "BRO-01A", Source: "evc", ParentProvenance: "official",
+					LifeFormGroup: "phanerogam"},
+				Ancestors: []input.SyntaxonRef{
+					{ID: "C", Rank: "formation", Name: "Vegetation of the nemoral forest zone"},
+					{ID: "CA", Rank: "class", Name: "Testklasse", ParentID: "C"},
+					{ID: "CA01", Rank: "order", Name: "Testordnung", ParentID: "CA"},
+				},
+				Children:               []input.SyntaxonRef{},
+				DirectHabitatTypeCount: 1,
+			},
+		},
+		syntaxaByRank: map[string][]input.SyntaxonRef{
+			"formation|": {{ID: "C", Rank: "formation",
+				Name: "Vegetation of the nemoral forest zone", LifeFormGroup: "phanerogam"}},
+			"formation|bryophyte_lichen": {{ID: "R", Rank: "formation",
+				Name: "Epigaeic bryophyte and lichen vegetation", LifeFormGroup: "bryophyte_lichen"}},
+			"class|": {{ID: "CA", Rank: "class", Name: "Testklasse", ParentID: "C"}},
 		},
 	}
 }

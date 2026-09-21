@@ -223,14 +223,7 @@ func (q *QueryService) syntaxaOf(ctx context.Context, key domain.HabitatTypeKey)
 	if err != nil {
 		return nil, fmt.Errorf("fetching syntaxa of %s: %w", key, err)
 	}
-	out := make([]input.SyntaxonRef, 0, len(syntaxa))
-	for _, s := range syntaxa {
-		out = append(out, input.SyntaxonRef{
-			ID: s.ID, Rank: s.Rank, Name: s.Name, Author: s.Author, ParentID: s.ParentID,
-			AltCode: s.AltCode, Source: s.Source, ParentProvenance: s.ParentProvenance, LifeFormGroup: s.LifeFormGroup,
-		})
-	}
-	return out, nil
+	return syntaxonRefs(syntaxa), nil
 }
 
 // crosswalksOf turns the stored rows into the far side seen from key: a row
