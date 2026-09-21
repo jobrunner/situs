@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -212,6 +213,12 @@ func TestOpenReadOnlyExplainsAWALIndexOnAReadOnlyMount(t *testing.T) {
 // escape, and both have to end up at the file the caller named.
 func TestBothOpenersSurviveURICharactersInThePath(t *testing.T) {
 	for _, name := range []string{"with?chars", "with#chars", "feature%2Fx", "plain"} {
+		// Windows has no '?' in filenames; the release does ship Windows
+		// binaries, so the case is skipped there rather than failing at
+		// os.Mkdir before it ever reaches an opener.
+		if runtime.GOOS == "windows" && strings.ContainsAny(name, `?#`) {
+			continue
+		}
 		base := t.TempDir()
 		dir := filepath.Join(base, name)
 		if err := os.Mkdir(dir, 0o750); err != nil {

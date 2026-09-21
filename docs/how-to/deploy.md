@@ -21,9 +21,13 @@ scp situs-neu.sqlite dockerhost:/srv/situs/data/situs.sqlite.neu
 # 2. In einem Schritt an seinen Platz ziehen
 ssh dockerhost 'mv /srv/situs/data/situs.sqlite.neu /srv/situs/data/situs.sqlite'
 
-# 3. Image ziehen und Container ersetzen, wie bei jedem anderen Deploy
-ssh dockerhost 'docker compose pull situs && docker compose up -d situs'
+# 3. Image ziehen und Container ERSETZEN, wie bei jedem anderen Deploy
+ssh dockerhost 'docker compose pull situs && docker compose up -d --force-recreate situs'
 ```
+
+`--force-recreate` ist nicht optional: hat sich nur der Index geändert und nicht
+das Image, lässt `docker compose up -d` den laufenden Container stehen — und der
+bedient, wie unten beschrieben, weiter seine alte Inode. Der Tausch käme nie an.
 
 Schritt 1 und 2 sind **zwei** Schritte, und das ist der Punkt: `mv` innerhalb
 desselben Verzeichnisses ist ein atomarer Rename. Der laufende Container behält

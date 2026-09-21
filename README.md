@@ -134,8 +134,11 @@ Beides gemessen und nicht vermutet:
   hinterlässt den Index ohne WAL. Ein fehlender Index bricht den Start ab,
   statt einen leeren anzulegen.
 - Das Image läuft als `nonroot` (uid 65532). Für einen `:ro`-Mount genügt, dass
-  die Host-Datei **lesbar** ist; `--user "$(id -u):$(id -g)"` braucht es nur
-  noch, wenn im Container geschrieben werden soll (etwa ein `situs ingest`).
+  die Host-Datei für diese uid **lesbar** ist — und jedes Verzeichnis auf dem
+  Weg dorthin sein `x`-Bit für sie trägt, sonst scheitert schon das Traversieren
+  (ein Index unter einem `0700`-Home reicht nicht). `--user "$(id -u):$(id -g)"`
+  braucht es nur noch, wenn im Container geschrieben werden soll (etwa ein
+  `situs ingest`).
 
 Das Verzeichnis einhängen, nicht die Datei: ein Bind-Mount auf eine Datei bindet
 deren Inode, und ein Index-Tausch auf dem Host käme im Container nie an. Das
