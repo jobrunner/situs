@@ -33,6 +33,14 @@ const (
 	// stubModeQueryErr fails every query outright, which is how a statement
 	// that cannot even be prepared reaches its caller.
 	stubModeQueryErr
+	// stubModeFirstSyntaxonLookupThenFails answers the first direct-id
+	// syntaxon lookup (SyntaxonAncestors' own starting point) with one row
+	// carrying a non-empty parent_id, then fails every further one with a
+	// plain query error. It is the deterministic way to reach
+	// SyntaxonAncestors' inner-walk failure branch — the outer lookup must
+	// succeed and a later one must fail, without racing a context
+	// cancellation against real row timing (see the file comment above).
+	stubModeFirstSyntaxonLookupThenFails
 )
 
 // newStubDB builds a *sql.DB backed by the stub driver — no schema, no file,
@@ -60,7 +68,13 @@ func (stubDriver) Open(string) (driver.Conn, error) {
 	return nil, errors.New("stub: Open is not implemented, use the Connector")
 }
 
-type stubConn struct{ mode stubMode }
+type stubConn struct {
+	mode stubMode
+	// syntaxonLookups counts direct-id syntaxon lookups, used only by
+	// stubModeFirstSyntaxonLookupThenFails to tell the outer call from the
+	// ones the ancestor walk makes afterward.
+	syntaxonLookups int
+}
 
 func (c *stubConn) Prepare(string) (driver.Stmt, error) {
 	return nil, errors.New("stub: Prepare is not implemented, QueryContext is used directly")
@@ -87,6 +101,9 @@ var stubColumnRules = []stubQueryRule{
 	}},
 	{"FROM species_role", []string{"concept_id", "verbatim_name", "role", "fidelity", "constancy"}},
 	{"JOIN syntaxon", []string{"id", "rank", "name", "author", "parent_id"}},
+	{"WHERE parent_id = ?", []string{
+		"id", "rank", "name", "author", "parent_id", "alt_code", "source", "parent_provenance", "life_form_group",
+	}},
 	{"FROM syntaxon ORDER BY id", []string{"id", "rank", "name", "author", "parent_id"}},
 	{"alt_code, id FROM syntaxon", []string{"alt_code", "id"}},
 	{"FROM habitat_type_syntaxon", []string{"typology_id", "code"}},
@@ -102,6 +119,13 @@ var stubColumnRules = []stubQueryRule{
 func (c *stubConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
 	if rows, err := c.openTimeRows(query); rows != nil || err != nil {
 		return rows, err
+	}
+	if c.mode == stubModeFirstSyntaxonLookupThenFails && strings.Contains(query, "FROM syntaxon WHERE id = ?") {
+		c.syntaxonLookups++
+		if c.syntaxonLookups == 1 {
+			return &stubSyntaxonRow{}, nil
+		}
+		return nil, errStubSyntaxonWalk
 	}
 	for _, rule := range stubColumnRules {
 		if strings.Contains(query, rule.contains) {
@@ -174,6 +198,32 @@ func (c *stubConn) finalizeRows(query string) (driver.Rows, error) {
 
 // errStubQuery is what a database that cannot run the statement at all answers.
 var errStubQuery = errors.New("stub: query failed")
+
+// errStubSyntaxonWalk is what a syntaxon lookup answers once
+// stubModeFirstSyntaxonLookupThenFails has already served its one good row.
+var errStubSyntaxonWalk = errors.New("stub: syntaxon lookup failed")
+
+// stubSyntaxonRow is the one successful row
+// stubModeFirstSyntaxonLookupThenFails serves: a syntaxon whose parent_id is
+// non-empty, so SyntaxonAncestors' loop makes a second lookup — the one this
+// mode then fails.
+type stubSyntaxonRow struct{ done bool }
+
+func (r *stubSyntaxonRow) Columns() []string {
+	return []string{"rank", "name", "author", "parent_id", "alt_code", "source", "parent_provenance", "life_form_group"}
+}
+func (r *stubSyntaxonRow) Close() error { return nil }
+func (r *stubSyntaxonRow) Next(dest []driver.Value) error {
+	if r.done {
+		return io.EOF
+	}
+	r.done = true
+	vals := []string{"alliance", "Stub", "", "STUB-PARENT", "", "", "", ""}
+	for i := range dest {
+		dest[i] = vals[i]
+	}
+	return nil
+}
 
 // errStubJournalMode is what a database that cannot leave WAL answers.
 var errStubJournalMode = errors.New("stub: journal_mode switch failed")

@@ -411,13 +411,15 @@ func TestReads_QueryErrorsAreReturned(t *testing.T) {
 	ctx := context.Background()
 
 	cases := map[string]func() error{
-		"Typology":                   func() error { _, err := db.Typology(ctx, "eunis@2021"); return err },
-		"Crosswalks":                 func() error { _, err := db.Crosswalks(ctx, r22); return err },
-		"SpeciesRoles":               func() error { _, err := db.SpeciesRoles(ctx, r22, ""); return err },
-		"SpeciesRolesByConcept":      func() error { _, err := db.SpeciesRolesByConcept(ctx, "wcvp-1"); return err },
-		"Syntaxon":                   func() error { _, err := db.Syntaxon(ctx, "BRO-01A"); return err },
-		"Syntaxa":                    func() error { _, err := db.Syntaxa(ctx, r22); return err },
-		"HabitatTypeKeysForSyntaxon": func() error { _, err := db.HabitatTypeKeysForSyntaxon(ctx, "BRO-01A"); return err },
+		"Typology":                    func() error { _, err := db.Typology(ctx, "eunis@2021"); return err },
+		"Crosswalks":                  func() error { _, err := db.Crosswalks(ctx, r22); return err },
+		"SpeciesRoles":                func() error { _, err := db.SpeciesRoles(ctx, r22, ""); return err },
+		"SpeciesRolesByConcept":       func() error { _, err := db.SpeciesRolesByConcept(ctx, "wcvp-1"); return err },
+		"Syntaxon":                    func() error { _, err := db.Syntaxon(ctx, "BRO-01A"); return err },
+		"Syntaxa":                     func() error { _, err := db.Syntaxa(ctx, r22); return err },
+		"HabitatTypeKeysForSyntaxon":  func() error { _, err := db.HabitatTypeKeysForSyntaxon(ctx, "BRO-01A"); return err },
+		"SyntaxonChildren":            func() error { _, err := db.SyntaxonChildren(ctx, "CA01"); return err },
+		"HabitatTypeCountForSyntaxon": func() error { _, err := db.HabitatTypeCountForSyntaxon(ctx, "CA01A"); return err },
 		"AreasForConcepts": func() error {
 			_, err := db.AreasForConcepts(ctx, []string{"wcvp:concept:1"}, domain.SchemeWGSRPDL3)
 			return err
@@ -474,6 +476,14 @@ func TestReads_RowsIterationAndScanErrorsAreReturned(t *testing.T) {
 		"HabitatTypeKeysForSyntaxon": {
 			call: func(db *DB) error { _, err := db.HabitatTypeKeysForSyntaxon(ctx, "BRO-01A"); return err },
 			rows: "reading habitat types of syntaxon", scan: "scanning habitat types of syntaxon",
+		},
+		// SyntaxonChildren wraps both scanSyntaxa failure shapes (the Scan
+		// error inside the loop and the rows.Err() after it) into the same
+		// message, unlike the other reads here that word them differently —
+		// scanSyntaxa has exactly one error return, on purpose.
+		"SyntaxonChildren": {
+			call: func(db *DB) error { _, err := db.SyntaxonChildren(ctx, "CA01"); return err },
+			rows: "reading children of syntaxon", scan: "reading children of syntaxon",
 		},
 		"AllSyntaxa": {
 			call: func(db *DB) error { _, err := db.AllSyntaxa(ctx); return err },

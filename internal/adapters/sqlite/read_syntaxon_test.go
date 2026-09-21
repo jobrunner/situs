@@ -274,3 +274,24 @@ func TestSyntaxonAncestorsLaeuftBeiEinemZykelInDenTiefenfehler(t *testing.T) {
 		t.Errorf("Fehler benennt die ausloesende ID nicht: %v", err)
 	}
 }
+
+// A query failure partway up the walk (the outer lookup succeeds, a later one
+// does not) is a third failure mode distinct from a dangling parent_id: it is
+// wrapped as a plain error too, but with the underlying error message instead
+// of a "no row carries it" claim the index cannot back up. The stub driver
+// makes this deterministic — a real database has no reliable way to make the
+// second of two lookups fail while the first succeeds.
+func TestSyntaxonAncestorsMeldetFehlerBeimWeiterenAufstieg(t *testing.T) {
+	db := &DB{DB: newStubDB(t, stubModeFirstSyntaxonLookupThenFails)}
+
+	_, err := db.SyntaxonAncestors(t.Context(), "START")
+	if err == nil {
+		t.Fatal("SyntaxonAncestors bei einem Fehler weiter oben im Aufstieg = nil error")
+	}
+	if !strings.Contains(err.Error(), "walking the ancestors") {
+		t.Errorf("Fehler = %q, erwartet 'walking the ancestors'", err)
+	}
+	if errors.Is(err, output.ErrNotFound) {
+		t.Error("der Fehler umwickelt output.ErrNotFound; ein Abfragefehler beim Aufstieg ist kein 404")
+	}
+}
