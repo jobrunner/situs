@@ -506,12 +506,24 @@ type fakeRepo struct {
 	// syntaxonDistributionErr fails the read-side SyntaxonDistribution call
 	// (subproject C, Task 8), exercising Syntaxon's distribution error path.
 	syntaxonDistributionErr error
+	// syntaxonOccurrencesInAreaErr and syntaxaWithCoverageErr fail the two
+	// reads SyntaxaByRank's ?area= filter needs (subproject C, Task 9),
+	// exercising syntaxonAreaLookup's two remaining error paths (KnownAreaCodes'
+	// is exercised through areasErr already).
+	syntaxonOccurrencesInAreaErr error
+	syntaxaWithCoverageErr       error
 
 	// syntaxonDistribution and syntaxonCoverage back the syntaxa-distribution
 	// read/write pair (subproject C): recorded separately from distribution
 	// (species) since the two never share a row.
 	syntaxonDistribution []fakeSyntaxonOccurrence
 	syntaxonCoverage     []fakeSyntaxonCoverage
+
+	// knownAreaCodes overrides KnownAreaCodes for one scheme, so a test can
+	// seed the evc_territory vocabulary without also faking a full
+	// species-distribution fixture (which is what the fallback below derives
+	// wgsrpd_l3 codes from).
+	knownAreaCodes map[string][]string
 }
 
 // fakeSyntaxonOccurrence is one recorded UpsertSyntaxonDistribution call.
@@ -999,6 +1011,9 @@ func (r *fakeRepo) KnownAreaCodes(_ context.Context, scheme string) ([]string, e
 	if r.areasErr != nil {
 		return nil, r.areasErr
 	}
+	if codes, ok := r.knownAreaCodes[scheme]; ok {
+		return codes, nil
+	}
 	seen := map[string]bool{}
 	out := []string{}
 	for _, d := range r.distribution {
@@ -1077,6 +1092,9 @@ func (r *fakeRepo) SyntaxonDistribution(_ context.Context, syntaxonID, scheme st
 // SyntaxonOccurrencesInArea maps syntaxon id -> occurrence for one area,
 // mirroring the sqlite adapter.
 func (r *fakeRepo) SyntaxonOccurrencesInArea(_ context.Context, scheme, code string) (map[string]string, error) {
+	if r.syntaxonOccurrencesInAreaErr != nil {
+		return nil, r.syntaxonOccurrencesInAreaErr
+	}
 	out := map[string]string{}
 	for _, o := range r.syntaxonDistribution {
 		if o.Scheme == scheme && o.Code == code {
@@ -1089,6 +1107,9 @@ func (r *fakeRepo) SyntaxonOccurrencesInArea(_ context.Context, scheme, code str
 // SyntaxaWithCoverage returns the set of syntaxa the source makes a statement
 // about, for one scheme.
 func (r *fakeRepo) SyntaxaWithCoverage(_ context.Context, scheme string) (map[string]bool, error) {
+	if r.syntaxaWithCoverageErr != nil {
+		return nil, r.syntaxaWithCoverageErr
+	}
 	out := map[string]bool{}
 	for _, c := range r.syntaxonCoverage {
 		if c.Scheme == scheme {

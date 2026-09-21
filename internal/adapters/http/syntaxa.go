@@ -1,12 +1,15 @@
 package httpapi
 
 import (
+	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/gorilla/mux"
 
 	"github.com/jobrunner/situs/internal/domain"
+	"github.com/jobrunner/situs/internal/ports/input"
 )
 
 // defaultSyntaxonRank is what GET /v1/syntaxa answers without ?rank=: the
@@ -33,16 +36,86 @@ func (s *Server) handleSyntaxa(w http.ResponseWriter, r *http.Request) {
 			"life_form_group must be one of phanerogam, bryophyte_lichen, algae")
 		return
 	}
+	filter, ferr := syntaxonAreaFilter(r, rank)
+	if ferr != nil {
+		s.writeError(w, http.StatusBadRequest, CodeInvalidQuery, ferr.Error())
+		return
+	}
 	// rank is NOT checked here: its allowed values are what the index carries
 	// (SELECT DISTINCT rank), which only the use case can ask. It answers
 	// ErrInvalidQuery naming them, and writeQueryError turns that into the same
 	// 400 as the check above.
-	refs, err := s.deps.Query.SyntaxaByRank(r.Context(), rank, group)
+	refs, err := s.deps.Query.SyntaxaByRank(r.Context(), rank, group, filter)
 	if err != nil {
 		s.writeQueryError(w, r, err)
 		return
 	}
 	s.writeJSON(w, http.StatusOK, refs)
+}
+
+// includeValues are the occurrence values ?include= accepts. Fixed on
+// purpose, unlike ?rank=: this set is a schema CHECK, not an extension point.
+var includeValues = []string{domain.OccurrenceUncertain, domain.OccurrenceVerified}
+
+// syntaxonAreaFilter parses ?area= and ?include= for GET /v1/syntaxa.
+//
+// Nothing here is silently tolerated. An ignored filter parameter is worse
+// than a rejected one: the client gets an answer that looks filtered and is
+// not, and nothing in the response says so.
+func syntaxonAreaFilter(r *http.Request, rank string) (input.SyntaxonAreaFilter, error) {
+	q := r.URL.Query()
+	code := strings.TrimSpace(q.Get("area"))
+	raw, given := q["include"]
+
+	if code == "" {
+		if given {
+			return input.SyntaxonAreaFilter{}, fmt.Errorf(
+				"include needs an area; without one it would have no effect")
+		}
+		return input.SyntaxonAreaFilter{}, nil
+	}
+	// Formations carry no distribution, and rank defaults to formation — so a
+	// bare ?area= would filter nothing at all. Naming the rank that does carry
+	// data is the difference between a rejection and a riddle.
+	if rank == domain.SyntaxonRankFormation {
+		return input.SyntaxonAreaFilter{}, fmt.Errorf(
+			"area needs a rank that carries distribution data (today: %s); rank=%s carries none",
+			domain.SyntaxonRankAlliance, rank)
+	}
+
+	include, err := parseInclude(raw, given)
+	if err != nil {
+		return input.SyntaxonAreaFilter{}, err
+	}
+	return input.SyntaxonAreaFilter{Code: code, Include: include}, nil
+}
+
+// parseInclude turns the comma-separated set into a sorted slice. Sorted so
+// two requests that differ only in order are the same request.
+func parseInclude(raw []string, given bool) ([]string, error) {
+	if !given {
+		return []string{domain.OccurrenceVerified}, nil
+	}
+	if len(raw) > 1 {
+		return nil, fmt.Errorf("include was given %d times; which one applies would be a guess", len(raw))
+	}
+	out := []string{}
+	for _, part := range strings.Split(raw[0], ",") {
+		value := strings.TrimSpace(part)
+		if value == "" {
+			return nil, fmt.Errorf("include has an empty element; allowed: %s",
+				strings.Join(includeValues, ", "))
+		}
+		if !slices.Contains(includeValues, value) {
+			return nil, fmt.Errorf("include value %q is unknown; allowed: %s",
+				value, strings.Join(includeValues, ", "))
+		}
+		if !slices.Contains(out, value) {
+			out = append(out, value)
+		}
+	}
+	slices.Sort(out)
+	return out, nil
 }
 
 // validLifeFormGroup checks the one filter whose value set is fixed: it stands

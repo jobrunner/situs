@@ -3,8 +3,10 @@ package httpapi_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -290,5 +292,100 @@ func TestSyntaxa_FehlerDesIndexIst500(t *testing.T) {
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", rec.Code)
+	}
+}
+
+// get issues a GET against the server's router and returns the recorder — the
+// same pattern getSyntaxonJSON above already uses, just without decoding.
+func get(t *testing.T, srv *httpapi.Server, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	return rec
+}
+
+func getJSONArray(t *testing.T, srv *httpapi.Server, path string) []any {
+	t.Helper()
+	rec := get(t, srv, path)
+	var body []any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decoding %s: %v (body %q)", path, err, rec.Body.String())
+	}
+	return body
+}
+
+func TestSyntaxaAreaFilterErreichtDenPort(t *testing.T) {
+	q := seededQueryService()
+	srv := newTestServer(t, q)
+	get(t, srv, "/v1/syntaxa?rank=alliance&area=austria-alps&include=uncertain,verified")
+	want := input.SyntaxonAreaFilter{Code: "austria-alps",
+		Include: []string{"uncertain", "verified"}}
+	if !reflect.DeepEqual(q.syntaxonAreaFilter, want) {
+		t.Errorf("Filter = %+v, erwartet %+v", q.syntaxonAreaFilter, want)
+	}
+}
+
+func TestSyntaxaAreaOhneIncludeIstVerified(t *testing.T) {
+	q := seededQueryService()
+	srv := newTestServer(t, q)
+	get(t, srv, "/v1/syntaxa?rank=alliance&area=austria-alps")
+	if !reflect.DeepEqual(q.syntaxonAreaFilter.Include, []string{"verified"}) {
+		t.Errorf("Include = %v, erwartet [verified]", q.syntaxonAreaFilter.Include)
+	}
+}
+
+func TestSyntaxaAbgelehnteFilterkombinationen(t *testing.T) {
+	srv := newTestServer(t, seededQueryService())
+	for name, tc := range map[string]struct{ path, mentions string }{
+		"include ohne area":       {"/v1/syntaxa?rank=alliance&include=verified", "area"},
+		"unbekanntes include":     {"/v1/syntaxa?rank=alliance&area=austria-alps&include=probable", "probable"},
+		"leeres include":          {"/v1/syntaxa?rank=alliance&area=austria-alps&include=", "include"},
+		"leeres Element":          {"/v1/syntaxa?rank=alliance&area=austria-alps&include=verified,,uncertain", "include"},
+		"include zweimal":         {"/v1/syntaxa?rank=alliance&area=austria-alps&include=verified&include=uncertain", "include"},
+		"area mit rank=formation": {"/v1/syntaxa?rank=formation&area=austria-alps", "rank"},
+		"area ohne rank":          {"/v1/syntaxa?area=austria-alps", "rank"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			res := get(t, srv, tc.path)
+			if res.Code != http.StatusBadRequest {
+				t.Fatalf("Status %d, erwartet 400", res.Code)
+			}
+			body := res.Body.String()
+			if !strings.Contains(body, httpapi.CodeInvalidQuery) {
+				t.Errorf("Antwort ohne INVALID_QUERY: %s", body)
+			}
+			if !strings.Contains(body, tc.mentions) {
+				t.Errorf("Antwort nennt %q nicht: %s", tc.mentions, body)
+			}
+		})
+	}
+}
+
+func TestSyntaxaUnbekanntesGebietIstInvalidQuery(t *testing.T) {
+	q := seededQueryService()
+	q.syntaxaErr = fmt.Errorf("area %q: %w", "gibtsnicht", input.ErrUnknownArea)
+	srv := newTestServer(t, q)
+	res := get(t, srv, "/v1/syntaxa?rank=alliance&area=gibtsnicht")
+	if res.Code != http.StatusBadRequest {
+		t.Errorf("Status %d, erwartet 400", res.Code)
+	}
+}
+
+func TestSyntaxaJSONZeigtOccurrenceUndLaesstEsWeg(t *testing.T) {
+	// The three-valuedness on the wire: a marked hit and a carried
+	// unjudgeable row in the SAME list, distinguishable only by the field's
+	// presence.
+	srv := newTestServer(t, seededQueryService())
+	body := getJSONArray(t, srv, "/v1/syntaxa?rank=alliance&area=austria-alps")
+	byID := map[string]map[string]any{}
+	for _, entry := range body {
+		e := entry.(map[string]any)
+		byID[e["id"].(string)] = e
+	}
+	if got := byID["CA01A"]["occurrence"]; got != "verified" {
+		t.Errorf("CA01A.occurrence = %v, erwartet verified", got)
+	}
+	if _, ok := byID["RA01A"]["occurrence"]; ok {
+		t.Error("RA01A traegt occurrence, obwohl keine Aussage vorliegt")
 	}
 }

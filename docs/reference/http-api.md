@@ -22,7 +22,7 @@ decken).
 | `GET /v1/species/search?q=&limit=` | Namenssuche über die im Index geführten `verbatim_name` |
 | `GET /v1/species/{conceptId}/habitat-types` | Habitattypen einer Art (mit Rolle) |
 | `POST /v1/species/habitat-types` | Batch über Konzept-IDs (`concept_ids`) |
-| `GET /v1/syntaxa?rank=&life_form_group=` | Wurzeln der Syntaxa-Hierarchie; ohne `?rank=` die 25 Formationen |
+| `GET /v1/syntaxa?rank=&life_form_group=&area=&include=` | Wurzeln der Syntaxa-Hierarchie; ohne `?rank=` die 25 Formationen; `?area=` filtert auf Vorkommen |
 | `GET /v1/syntaxon/{id}` | ein Syntaxon mit Ahnenpfad und direkten Kindern |
 | `GET /v1/syntaxon/{id}/habitat-types` | Habitattypen einer Pflanzengesellschaft |
 | `GET /v1/species/{conceptId}/traits?vocab=` | Zeigerwerte einer Art, optional nach Vokabular gefiltert |
@@ -364,6 +364,24 @@ fest verdrahteten Liste); `?life_form_group=` filtert zusätzlich über die
 Formation, zu der ein Syntaxon gehört (feste Wertemenge, s.o.). Ein
 unbekannter Wert bei beiden Parametern ist `INVALID_QUERY`, und die Meldung
 nennt die erlaubten Werte. Die Antwort trägt `SyntaxonRef`.
+
+`?area=` filtert zusätzlich auf Vorkommen in einem Territorium des Schemas
+`evc_territory` (Liste: `GET /v1/areas?scheme=evc_territory`). `?include=`
+steuert dabei, welche Vorkommens-Werte als Treffer zählen — eine kommagetrennte
+Menge aus `verified` und `uncertain`, Vorgabe `verified`. Syntaxa, über die die
+Quelle **nichts** sagt (kein Coverage-Eintrag), bleiben in der Liste — dieselbe
+Regel wie bei `only_in_area` auf der Arten-Seite: eine Liste, die wegwirft, was
+sie nicht beurteilen kann, ist unehrlich sauber. Ein solcher Treffer trägt
+kein `occurrence`-Feld; ein Treffer, der auf `?include=` passt, trägt
+`occurrence: verified` oder `occurrence: uncertain`. Ein Syntaxon, das die
+Quelle geprüft hat, aber ohne die gefragte Ausprägung, fällt aus der Liste —
+das ist eine definitive Aussage, keine Unwissenheit.
+
+Fünf Kombinationen sind `INVALID_QUERY`: `?include=` ohne `?area=` (wäre
+wirkungslos), ein unbekannter oder leerer Wert in `?include=`, ein doppelt
+angegebener `?include=`-Parameter, `?area=` mit dem Vorgabe-Rang `formation`
+(Formationen tragen keine Verbreitung) und ein `?area=`-Code, den das Schema
+nicht kennt (nie eine leere Liste von „kommt nicht vor").
 
 `GET /v1/syntaxon/{id}` liefert ein einzelnes Syntaxon als `SyntaxonDetail`
 — `SyntaxonRef` eingebettet (die Felder liegen also flach im selben

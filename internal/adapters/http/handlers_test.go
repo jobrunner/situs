@@ -954,6 +954,9 @@ type fakeQueryService struct {
 	gotRank          string
 	gotLifeFormGroup string
 	rankCalls        int
+	// syntaxonAreaFilter records the last filter SyntaxaByRank received, so a
+	// test can prove the parsed ?area=/?include= actually reached the port.
+	syntaxonAreaFilter input.SyntaxonAreaFilter
 }
 
 func (f *fakeQueryService) Areas(_ context.Context, scheme string) ([]input.AreaView, error) {
@@ -1057,9 +1060,11 @@ func (f *fakeQueryService) Syntaxon(_ context.Context, id, lang string) (input.S
 // SyntaxaByRank restates the use case's contract closely enough for the adapter
 // to be tested against it: an unknown rank is INVALID_QUERY with the allowed
 // values in the message, never an empty list.
-func (f *fakeQueryService) SyntaxaByRank(_ context.Context, rank, lifeFormGroup string) ([]input.SyntaxonRef, error) {
+func (f *fakeQueryService) SyntaxaByRank(_ context.Context, rank, lifeFormGroup string,
+	filter input.SyntaxonAreaFilter) ([]input.SyntaxonRef, error) {
 	f.rankCalls++
 	f.gotRank, f.gotLifeFormGroup = rank, lifeFormGroup
+	f.syntaxonAreaFilter = filter
 	if f.syntaxaErr != nil {
 		return nil, f.syntaxaErr
 	}
@@ -1196,6 +1201,17 @@ func seededQueryService() *fakeQueryService {
 			"formation|bryophyte_lichen": {{ID: "R", Rank: "formation",
 				Name: "Epigaeic bryophyte and lichen vegetation", LifeFormGroup: "bryophyte_lichen"}},
 			"class|": {{ID: "CA", Rank: "class", Name: "Testklasse", ParentID: "C"}},
+			// alliance| carries the ?area= JSON-shape fixture: CA01A a
+			// verified hit, RA01A a carried-but-unjudged row. The fake
+			// returns this canned answer regardless of the actual filter
+			// value — it exists to pin the wire shape, not the filter logic
+			// (which internal/application/syntaxon_distribution_test.go
+			// already covers).
+			"alliance|": {
+				{ID: "CA01A", Rank: "alliance", Name: "Verband mit Verbreitung",
+					Occurrence: domain.OccurrenceVerified},
+				{ID: "RA01A", Rank: "alliance", Name: "Verband ohne Aussage"},
+			},
 		},
 	}
 }

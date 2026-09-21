@@ -122,6 +122,14 @@ type SyntaxonRef struct {
 	// sub-project B delivers the formations as []SyntaxonRef and filters
 	// on it.
 	LifeFormGroup string `json:"life_form_group,omitempty"`
+
+	// Occurrence is "verified" or "uncertain" and is set only in an
+	// ?area=-filtered list. MISSING means no statement exists — the same
+	// three-valuedness as in_area on the species side. Without it the carried
+	// row would be indistinguishable from a confirmed one, and a list that
+	// keeps everything but marks nothing is just as dishonest as one that
+	// throws away.
+	Occurrence string `json:"occurrence,omitempty"`
 }
 
 // SyntaxonDetail is a syntaxon with its surroundings: the way up and the direct
@@ -233,6 +241,20 @@ type AreaFilter struct {
 
 // Active reports whether a filter was asked for at all.
 func (f AreaFilter) Active() bool { return f.Code != "" }
+
+// SyntaxonAreaFilter is the ?area=/?include= pair on the syntaxa list.
+//
+// Include is the set of occurrence values that count as a hit, default
+// {verified}. It is a SET rather than a single value because "verified or
+// uncertain" is a real question and two requests plus a client-side merge
+// would be a worse answer.
+type SyntaxonAreaFilter struct {
+	Code    string
+	Include []string
+}
+
+// Active reports whether a filter was asked for at all.
+func (f SyntaxonAreaFilter) Active() bool { return f.Code != "" }
 
 // HabitatTypeDetail answers GET /v1/habitat-type/{typology}/{code}. Species is
 // keyed by role and always carries the three known roles, empty where there is
@@ -472,7 +494,10 @@ type QueryService interface {
 	// neither an ancestor path (empty) nor a child list (that is the next
 	// step), and 25 details with 150 children each would be an answer nobody
 	// asked for.
-	SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string) ([]SyntaxonRef, error)
+	//
+	// filter, when active, keeps only syntaxa with a matching occurrence PLUS
+	// those the source says nothing about.
+	SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string, filter SyntaxonAreaFilter) ([]SyntaxonRef, error)
 	// SpeciesSetHabitatTypes answers a whole field record at once: one entry per
 	// input concept id, in input order, duplicates included.
 	SpeciesSetHabitatTypes(ctx context.Context, conceptIDs []string, lang string, filter AreaFilter) ([]ConceptResolution, error)

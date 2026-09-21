@@ -459,10 +459,15 @@ paths:
         gehört; beide Parameter wirken kombiniert als UND. Die Antwort trägt
         `SyntaxonRef` und nicht `SyntaxonDetail`: die Wurzeln brauchen weder
         Ahnenpfad (leer) noch Kinderliste — die holt der nächste Schritt.
+        `?area=` (mit `?include=`) filtert zusätzlich auf Vorkommen in einem
+        Gebiet; Syntaxa ohne Aussage bleiben mitgeführt, siehe die
+        Parameterbeschreibung.
       operationId: syntaxa
       parameters:
         - $ref: "#/components/parameters/Rank"
         - $ref: "#/components/parameters/LifeFormGroup"
+        - $ref: "#/components/parameters/SyntaxonArea"
+        - $ref: "#/components/parameters/SyntaxonInclude"
       responses:
         "200":
           description: Die Syntaxa des angefragten Rangs, nach `id` sortiert.
@@ -636,6 +641,39 @@ components:
       schema:
         type: string
         enum: [phanerogam, bryophyte_lichen, algae]
+    SyntaxonArea:
+      name: area
+      in: query
+      required: false
+      description: >-
+        Territoriumscode des Schemas `evc_territory` (Liste:
+        `GET /v1/areas?scheme=evc_territory`). Gefiltert wird auf Syntaxa mit
+        einer passenden Verbreitungszeile; Syntaxa **ohne** Aussage bleiben in
+        der Liste und sind daran erkennbar, dass ihnen `occurrence` fehlt —
+        dieselbe Dreiwertigkeit wie `in_area` bei den Arten.
+
+        Braucht einen `rank`, der Verbreitungsdaten trägt (heute `alliance`);
+        mit dem Vorgabewert `rank=formation` ist die Kombination
+        INVALID_QUERY. Ein Code, den das Schema nicht kennt, ebenso — nie
+        eine Liste von „kommt nicht vor".
+      schema:
+        type: string
+        example: austria-alps
+    SyntaxonInclude:
+      name: include
+      in: query
+      required: false
+      description: >-
+        Kommagetrennte Menge aus `verified` und `uncertain`, in beliebiger
+        Reihenfolge; Vorgabe ist `verified`. `include=uncertain` allein ist
+        gültig. Ein unbekanntes Element, ein leerer Eintrag und ein doppelt
+        angegebener Parameter sind INVALID_QUERY — eine stillschweigend
+        ignorierte Filterangabe wäre schlimmer als eine abgelehnte. Ohne
+        `area` ist der Parameter wirkungslos und deshalb ebenfalls
+        INVALID_QUERY, statt vorzugeben, er hätte gewirkt.
+      schema:
+        type: string
+        example: verified,uncertain
   responses:
     InvalidQuery:
       description: Die Anfrage ist fehlerhaft (INVALID_QUERY).
@@ -772,6 +810,13 @@ components:
             Die Lebensform-Gruppe der Formation. Nur auf Formationszeilen
             gesetzt und deshalb in Antworten, die Verbände oder Ordnungen
             tragen, nicht vorhanden.
+        occurrence:
+          type: string
+          enum: [verified, uncertain]
+          description: >-
+            Nur in einer mit `?area=` gefilterten Liste gesetzt. **Fehlt**,
+            wenn die Quelle über dieses Syntaxon keine Aussage macht — die
+            Zeile wird dann mitgeführt, aber nicht als Vorkommen behauptet.
     SyntaxonDetail:
       description: >-
         Ein Syntaxon mit seiner Umgebung: der Weg nach oben und die direkten

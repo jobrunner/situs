@@ -65,8 +65,9 @@ func (q *QueryService) Syntaxon(ctx context.Context, id string, _ string) (input
 }
 
 // SyntaxaByRank lists one rank's syntaxa, optionally narrowed to a life-form
-// group.
-func (q *QueryService) SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string) ([]input.SyntaxonRef, error) {
+// group, and optionally filtered to one distribution area.
+func (q *QueryService) SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string,
+	filter input.SyntaxonAreaFilter) ([]input.SyntaxonRef, error) {
 	if err := q.requireRank(ctx, rank); err != nil {
 		return nil, err
 	}
@@ -74,7 +75,15 @@ func (q *QueryService) SyntaxaByRank(ctx context.Context, rank, lifeFormGroup st
 	if err != nil {
 		return nil, fmt.Errorf("fetching syntaxa of rank %q: %w", rank, err)
 	}
-	return syntaxonRefs(rows), nil
+	refs := syntaxonRefs(rows)
+	if !filter.Active() {
+		return refs, nil
+	}
+	occurrences, covered, err := q.syntaxonAreaLookup(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	return filterSyntaxaByArea(refs, occurrences, covered, filter.Include), nil
 }
 
 // requireRank rejects a rank the index does not carry. The allowed values come
