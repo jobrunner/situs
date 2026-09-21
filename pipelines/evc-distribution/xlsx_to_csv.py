@@ -1,0 +1,299 @@
+#!/usr/bin/env python3
+"""Convert the pinned EVC alliance distribution XLSX into three CSVs.
+
+Source: Zenodo record 11580949, version 2.0 (2024-06-12), CC-BY 4.0 —
+"Distribution maps of vegetation alliances in Europe". Cite BOTH
+Preislerová et al. (2022) Appl Veg Sci 25: e12642 and Preislerová et al.
+(2024) Appl Veg Sci 27: e12766; see manifest.yaml.
+
+Same rationale as pipelines/eunis/xlsx_to_csv.py: an .xlsx is a zip of XML the
+stdlib reads, so no spreadsheet library joins situs' dependency list.
+
+TWO things this parser must get right, both measured rather than assumed:
+
+1. Cells are read by their OWN r-attribute, never by position. Excel omits
+   empty cells, and with 136 mostly-empty territory columns per row a
+   positional read is not merely imprecise: measured against the pinned file
+   it yields the value set {"", "1", "U", "0", "2", ..., "86.111"} instead of
+   the actual three values, because summary cells slide into territory
+   columns.
+2. The sheet is picked BY NAME. "Borja tabulka" is the workbook's FIRST sheet
+   and is a working draft (country codes instead of territories, plus a Czech
+   note about alliances still missing); taking the first non-legend sheet
+   would parse it.
+
+The 1 -> verified and U -> uncertain translation happens HERE, not in the Go
+ingest: only the side that sees the raw cell can recognize an unknown value
+and abort on it, and doing it twice would be two chances to disagree.
+"""
+import argparse
+import csv
+import json
+import os
+import re
+import sys
+import zipfile
+import xml.etree.ElementTree as ET
+
+NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+_R_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
+
+SCHEME = "evc_territory"
+DATA_SHEET = "European alliances"
+
+CSV_HEADERS = {
+    "syntaxon_distribution.csv": ["syntaxon_id", "area_scheme", "area_code", "occurrence"],
+    "syntaxon_distribution_coverage.csv": ["syntaxon_id", "area_scheme"],
+    "evc_territories.csv": ["area_scheme", "area_code", "name_en"],
+}
+
+# The four meta columns, spelled as the pinned file spells them. Code 2 is the
+# EEA legacy code — kept in the required set so a format change that drops it
+# fails loudly, even though the join runs on Code 1.
+_META_HEADERS = ["Code 1", "Code 2", "Name", "Name with author citation"]
+
+# The four summary labels. ONE constant, because the file uses the same four
+# strings twice: as the last four column headers and as the first cell of the
+# last four rows. Recognizing them in both places from one list is what keeps
+# a renamed summary from being read as a territory in one place and a row in
+# the other.
+_SUMMARY_LABELS = [
+    "Verified occurrences",
+    "Uncertain occurrences",
+    "All occurrences",
+    "% of uncertain occurrences",
+]
+
+# The cell legend from the "Read me" sheet, verbatim: 1 = verified occurrence,
+# U = uncertain occurrence, empty cell = absence. Absence is the ABSENCE of a
+# row, never a row with an "absent" value.
+_OCCURRENCE = {"1": "verified", "U": "uncertain"}
+
+_ALLIANCE_RE = re.compile(r"^[A-Z]{2}[0-9]{2}[A-Z]$")
+
+
+class SheetError(RuntimeError):
+    """The named data sheet is not in the workbook. Never fall back to
+    another one — the workbook's first sheet is a draft."""
+
+
+class HeaderError(RuntimeError):
+    """A meta column a parser needs is missing — fail loudly instead of
+    silently defaulting every cell to empty."""
+
+
+class CellValueError(RuntimeError):
+    """A territory cell holds something other than "1", "U" or empty. Either
+    the format changed or the cell reference is being read wrong, and both
+    must stop the run rather than pass through as a silent mismapping."""
+
+
+class SlugCollisionError(RuntimeError):
+    """Two column names derive the same area_code. Picking a winner would
+    silently merge two territories."""
+
+
+def col_index(ref):
+    """Turn the column part of a cell reference ("AB7") into a 0-based column
+    index. Excel omits empty cells; without this a gap shifts every following
+    column."""
+    n = 0
+    for ch in ref:
+        if not ch.isalpha():
+            break
+        n = n * 26 + (ord(ch.upper()) - 64)
+    return n - 1
+
+
+def slugify(column_name):
+    """Column name -> area_code: lowercase, spaces and underscores to
+    hyphens, everything else unchanged. "Austria Alps" -> "austria-alps",
+    "Albania_coast" -> "albania-coast". An existing hyphen
+    ("France Extra-Mediterranean") stays put."""
+    return column_name.strip().lower().replace(" ", "-").replace("_", "-")
+
+
+def _shared_strings(zf):
+    try:
+        root = ET.fromstring(zf.read("xl/sharedStrings.xml"))
+    except KeyError:
+        return []
+    return ["".join(t.text or "" for t in si.iter(f"{{{NS['m']}}}t"))
+            for si in root.findall("m:si", NS)]
+
+
+def _cell_text(c, shared):
+    if c.get("t") == "inlineStr":
+        return "".join(t.text or "" for t in c.iter(f"{{{NS['m']}}}t"))
+    v = c.find("m:v", NS)
+    if v is None or v.text is None:
+        return ""
+    if c.get("t") == "s":
+        return shared[int(v.text)]
+    return v.text
+
+
+def sheet_path(xlsx_path, sheet_name):
+    """Internal zip path of the sheet with exactly this name."""
+    with zipfile.ZipFile(xlsx_path) as zf:
+        wb = ET.fromstring(zf.read("xl/workbook.xml"))
+        rels = ET.fromstring(zf.read("xl/_rels/workbook.xml.rels"))
+    relmap = {r.get("Id"): r.get("Target") for r in rels}
+    names = []
+    for sheet in wb.iter(f"{{{NS['m']}}}sheet"):
+        name = (sheet.get("name") or "").strip()
+        names.append(name)
+        if name == sheet_name:
+            target = relmap.get(sheet.get(_R_ID))
+            if target:
+                return "xl/" + target
+    raise SheetError(
+        f"{xlsx_path}: no sheet named {sheet_name!r}; the workbook has {names!r}")
+
+
+def read_sheet(src, path):
+    """Return the sheet as a list of {column index: cell text} per row. NOT a
+    list of positional lists: see the module docstring."""
+    with zipfile.ZipFile(src) as zf:
+        shared = _shared_strings(zf)
+        root = ET.fromstring(zf.read(path))
+    rows = []
+    for row in root.iter(f"{{{NS['m']}}}row"):
+        cells = {}
+        for c in row.findall("m:c", NS):
+            text = _cell_text(c, shared)
+            if text != "":
+                cells[col_index(c.get("r") or "A")] = text
+        rows.append(cells)
+    return rows
+
+
+def _meta_index(head, xlsx_path):
+    """Column index of each meta header, or HeaderError."""
+    by_name = {name.strip(): ci for ci, name in head.items()}
+    missing = [h for h in _META_HEADERS if h not in by_name]
+    if missing:
+        raise HeaderError(
+            f"{xlsx_path} [{DATA_SHEET}]: missing required column(s) {missing}")
+    return {h: by_name[h] for h in _META_HEADERS}
+
+
+def _territories(head, meta, xlsx_path):
+    """The territory columns: every header column that is neither a meta
+    column nor a summary column, in column order. Derived rather than counted
+    off a fixed offset, so a further territory needs no code change and a
+    renamed summary column fails the slug check instead of being read as a
+    territory."""
+    meta_cols = set(meta.values())
+    out = []
+    seen = {}
+    for ci in sorted(head):
+        name = head[ci].strip()
+        if ci in meta_cols or name in _SUMMARY_LABELS or name == "":
+            continue
+        code = slugify(name)
+        if code in seen and seen[code] != name:
+            raise SlugCollisionError(
+                f"{xlsx_path} [{DATA_SHEET}]: columns {seen[code]!r} and "
+                f"{name!r} both derive area_code {code!r}")
+        seen[code] = name
+        out.append((ci, code, name))
+    return out
+
+
+def _occurrence(raw, code, name, xlsx_path):
+    try:
+        return _OCCURRENCE[raw]
+    except KeyError:
+        raise CellValueError(
+            f"{xlsx_path} [{DATA_SHEET}]: alliance {code!r}, territory "
+            f"{name!r}: cell value {raw!r} is neither '1', 'U' nor empty"
+        ) from None
+
+
+def convert(xlsx_path, out_dir):
+    rows = read_sheet(xlsx_path, sheet_path(xlsx_path, DATA_SHEET))
+    if not rows:
+        raise SheetError(f"{xlsx_path} [{DATA_SHEET}]: the sheet is empty")
+
+    meta = _meta_index(rows[0], xlsx_path)
+    territories = _territories(rows[0], meta, xlsx_path)
+    code_col = meta["Code 1"]
+
+    dist, coverage = [], []
+    histogram = {}
+    counts = {"verified": 0, "uncertain": 0}
+    summary_rows, skipped = 0, []
+
+    for row in rows[1:]:
+        code = row.get(code_col, "").strip()
+        if code == "":
+            continue
+        if code in _SUMMARY_LABELS:
+            summary_rows += 1
+            continue
+        if not _ALLIANCE_RE.fullmatch(code):
+            skipped.append(code)
+            continue
+        coverage.append({"syntaxon_id": code, "area_scheme": SCHEME})
+        for ci, area_code, name in territories:
+            raw = row.get(ci, "")
+            histogram[raw] = histogram.get(raw, 0) + 1
+            if raw == "":
+                continue
+            occurrence = _occurrence(raw, code, name, xlsx_path)
+            counts[occurrence] += 1
+            dist.append({"syntaxon_id": code, "area_scheme": SCHEME,
+                         "area_code": area_code, "occurrence": occurrence})
+
+    for code in skipped:
+        print(f"skipped: {xlsx_path} [{DATA_SHEET}]: code {code!r} matches no "
+              "alliance pattern", file=sys.stderr)
+
+    _write(out_dir, "syntaxon_distribution.csv", dist)
+    _write(out_dir, "syntaxon_distribution_coverage.csv", coverage)
+    _write(out_dir, "evc_territories.csv",
+           [{"area_scheme": SCHEME, "area_code": c, "name_en": n}
+            for _, c, n in territories])
+
+    report = {
+        "alliances": len(coverage),
+        "covered": len(coverage),
+        "territories": len(territories),
+        "verified": counts["verified"],
+        "uncertain": counts["uncertain"],
+        "written": len(dist),
+        "slug_collisions": [],
+        "summary_rows": summary_rows,
+        "skipped_rows": len(skipped),
+        "value_histogram": histogram,
+    }
+    with open(os.path.join(out_dir, "report.json"), "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2, ensure_ascii=False, sort_keys=True)
+        f.write("\n")
+    return report
+
+
+def _write(out_dir, name, rows):
+    with open(os.path.join(out_dir, name), "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=CSV_HEADERS[name], lineterminator="\n")
+        w.writeheader()
+        for r in rows:
+            w.writerow(r)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--xlsx", required=True)
+    parser.add_argument("--out-dir", required=True)
+    args = parser.parse_args(argv)
+    try:
+        report = convert(args.xlsx, args.out_dir)
+    except (SheetError, HeaderError, CellValueError, SlugCollisionError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    print(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()
