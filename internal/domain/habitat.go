@@ -28,6 +28,33 @@ type Crosswalk struct {
 	Qualifier Qualifier
 }
 
+// The ranks of the syntaxa hierarchy. "formation" is the root (the
+// sections A-Y of the EuroVegChecklist) and the only rank with an empty
+// ParentID.
+const (
+	SyntaxonRankFormation = "formation"
+	SyntaxonRankClass     = "class"
+	SyntaxonRankOrder     = "order"
+	SyntaxonRankAlliance  = "alliance"
+)
+
+// The source of a syntaxon ROW, not of its factual data.
+const (
+	SyntaxonSourceEVC   = "evc"
+	SyntaxonSourceEUNIS = "eunis"
+)
+
+const (
+	ParentProvenanceOfficial = "official"
+	ParentProvenanceDerived  = "derived"
+)
+
+const (
+	LifeFormPhanerogam      = "phanerogam"
+	LifeFormBryophyteLichen = "bryophyte_lichen"
+	LifeFormAlgae           = "algae"
+)
+
 type Syntaxon struct {
 	ID   string
 	Rank string // "class" | "order" | "alliance"
@@ -36,6 +63,22 @@ type Syntaxon struct {
 	// combi-string (author embedded) for an unmatched EUNIS alliance
 	Author   string // author citation; "" if no clean split is known
 	ParentID string
+
+	// AltCode is the EEA-EUNIS code of the same syntaxon. Empty for
+	// formations and for units known to only one of the two sources.
+	AltCode string
+
+	// Source names the source of the row: SyntaxonSourceEVC or
+	// SyntaxonSourceEUNIS.
+	Source string
+
+	// ParentProvenance distinguishes a parent taken from the source
+	// (ParentProvenanceOfficial) from a derived one
+	// (ParentProvenanceDerived). Always official when ParentID is empty.
+	ParentProvenance string
+
+	// LifeFormGroup is only set on formation rows.
+	LifeFormGroup string
 }
 
 // SpeciesRole is a species' role in a habitat type. VerbatimName is always

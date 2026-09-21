@@ -79,6 +79,50 @@ func addMissingColumns(ctx context.Context, db *sql.DB) error {
 			return fmt.Errorf("adding habitat_description.provenance: %w", err)
 		}
 	}
+
+	return addMissingSyntaxonColumns(ctx, db)
+}
+
+// addMissingSyntaxonColumns is addMissingColumns' syntaxon part, split out
+// to keep addMissingColumns' own complexity down.
+func addMissingSyntaxonColumns(ctx context.Context, db *sql.DB) error {
+	syntaxa, err := tableColumns(ctx, db, `PRAGMA table_info(syntaxon)`)
+	if err != nil {
+		return fmt.Errorf("checking syntaxon columns: %w", err)
+	}
+	// Each ALTER statement carries its CHECK along: a migrated index must
+	// not accept values that schema.sql forbids a new one — the mismatch
+	// would only surface in production.
+	// The migration defaults are EMPTY, not 'evc'/'official'. An existing
+	// index carries 1049 rows from the EEA source and 1005 parents set by
+	// name matching; defaulting to 'evc'/'official' would label exactly
+	// those as EVC-sourced and source-backed, and the promise "a derived
+	// parent is recognizable by derived" would be broken for every
+	// migrated-but-not-freshly-ingested index. The CHECK therefore
+	// explicitly allows ''; the ingest sets the real values.
+	for _, c := range []struct{ name, ddl string }{
+		{"alt_code", `ALTER TABLE syntaxon ADD COLUMN alt_code TEXT NOT NULL DEFAULT ''`},
+		{"source", `ALTER TABLE syntaxon ADD COLUMN source TEXT NOT NULL DEFAULT ''
+		            CHECK (source IN ('', 'evc', 'eunis'))`},
+		{"parent_provenance", `ALTER TABLE syntaxon ADD COLUMN parent_provenance TEXT NOT NULL DEFAULT ''
+		                       CHECK (parent_provenance IN ('', 'official', 'derived'))`},
+		{"life_form_group", `ALTER TABLE syntaxon ADD COLUMN life_form_group TEXT NOT NULL DEFAULT ''
+		                     CHECK (life_form_group IN ('', 'phanerogam', 'bryophyte_lichen', 'algae'))`},
+	} {
+		if syntaxa[c.name] {
+			continue
+		}
+		if _, err := db.ExecContext(ctx, c.ddl); err != nil {
+			return fmt.Errorf("adding syntaxon.%s: %w", c.name, err)
+		}
+	}
+	// Only here, not in schema.sql: the schema is applied BEFORE this
+	// migration, and alt_code does not exist yet on an old index at that
+	// point.
+	if _, err := db.ExecContext(ctx,
+		`CREATE INDEX IF NOT EXISTS idx_syntaxon_alt_code ON syntaxon(alt_code)`); err != nil {
+		return fmt.Errorf("creating idx_syntaxon_alt_code: %w", err)
+	}
 	return nil
 }
 

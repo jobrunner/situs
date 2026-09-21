@@ -43,12 +43,27 @@ CREATE INDEX IF NOT EXISTS idx_crosswalk_to
   ON habitat_type_crosswalk(to_typology, to_code);
 
 CREATE TABLE IF NOT EXISTS syntaxon (
-  id        TEXT PRIMARY KEY,
-  rank      TEXT NOT NULL,
-  name      TEXT NOT NULL,
-  author    TEXT NOT NULL DEFAULT '',
-  parent_id TEXT NOT NULL DEFAULT ''
+  id                TEXT PRIMARY KEY,
+  rank              TEXT NOT NULL,
+  name              TEXT NOT NULL,
+  author            TEXT NOT NULL DEFAULT '',
+  parent_id         TEXT NOT NULL DEFAULT '',
+  -- The EEA-EUNIS code of the same syntaxon, from the parenthesized part
+  -- of the FloraVeg code cell. It is the join key between the two sources
+  -- and stays in the index so a client can resolve an old code.
+  alt_code          TEXT NOT NULL DEFAULT '',
+  source            TEXT NOT NULL DEFAULT 'evc'
+                    CHECK (source IN ('', 'evc', 'eunis')),
+  parent_provenance TEXT NOT NULL DEFAULT 'official'
+                    CHECK (parent_provenance IN ('', 'official', 'derived')),
+  -- Only set on formation rows: the group is a property of the formation,
+  -- and a correction would otherwise have to be propagated across 1882
+  -- rows. A filter joins at most three levels upward.
+  life_form_group   TEXT NOT NULL DEFAULT ''
+                    CHECK (life_form_group IN ('', 'phanerogam', 'bryophyte_lichen', 'algae'))
 );
+CREATE INDEX IF NOT EXISTS idx_syntaxon_parent ON syntaxon(parent_id);
+CREATE INDEX IF NOT EXISTS idx_syntaxon_rank   ON syntaxon(rank);
 
 CREATE TABLE IF NOT EXISTS habitat_type_syntaxon (
   typology_id TEXT NOT NULL,

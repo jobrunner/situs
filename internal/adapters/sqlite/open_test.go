@@ -237,6 +237,17 @@ func TestOpenReadOnlyRefusesAnIndexFromAnOlderRelease(t *testing.T) {
 	}
 }
 
+func TestOpenReadOnlyRefusesIndexOhneSyntaxonSpalten(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "alt.sqlite")
+	seedIndex(t, path)
+	execOn(t, path, `ALTER TABLE syntaxon DROP COLUMN parent_provenance`)
+
+	err := openReadOnlyExpectingRefusal(t, path)
+	if !strings.Contains(err.Error(), "parent_provenance") {
+		t.Errorf("error = %v, want it to name the missing column", err)
+	}
+}
+
 // execOn runs statements against path through a plain read-write handle, to
 // build the damaged indexes the two tests above need.
 func execOn(t *testing.T, path string, statements ...string) {
