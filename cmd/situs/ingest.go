@@ -241,6 +241,32 @@ func ingestLocalizationFiles(ctx context.Context, db *sqlite.DB, csvDir string) 
 	return total, nil
 }
 
+// sealIndex runs the two steps that belong after the last write.
+//
+// The first is a measurement: hostus.entry_backbone is configurable, the prefix
+// the batch route accepts is compiled in. Point the first at another backbone
+// and the batch route stops answering anything — worth a warning at the one
+// moment the mismatch is created.
+//
+// The second leaves the index as a single file. Serving opens it read-only
+// (sqlite.OpenReadOnly), and a read-only handle on an index still in WAL mode
+// would need the -shm sidecar — which takes a writable directory and turns
+// replacing the index underneath a running container into a multi-file
+// operation. The ingest is the only place that can do it: leaving WAL requires
+// being the sole connection to the database.
+func sealIndex(ctx context.Context, db *sqlite.DB, dbPath string) error {
+	info, err := application.NewQueryService(db).IndexInfo(ctx)
+	if err != nil {
+		return fmt.Errorf("measuring the finished index: %w", err)
+	}
+	application.WarnOnForeignBackbones(ctx, info.ConceptBackbones)
+
+	if err := db.FinalizeForServing(ctx); err != nil {
+		return fmt.Errorf("finalizing sqlite index %q for serving: %w", dbPath, err)
+	}
+	return nil
+}
+
 func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath, crosswalkPath, aggregateMembersPath string) error {
 	ctx := cmd.Context()
 
@@ -248,7 +274,7 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath, crosswalk
 	// configured logger (SITUS_LOG_*), not slog's unconfigured default.
 	installLogger(cfg.Logging, os.Stdout)
 
-	db, err := sqlite.Open(ctx, dbPath)
+	db, err := sqlite.OpenForIngest(ctx, dbPath)
 	if err != nil {
 		return fmt.Errorf("opening sqlite index %q: %w", dbPath, err)
 	}
@@ -319,15 +345,9 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath, crosswalk
 		return fmt.Errorf("deriving German labels: %w", err)
 	}
 
-	// Last, against the finished index: hostus.entry_backbone is configurable,
-	// the prefix the batch route accepts is compiled in. Point the first at
-	// another backbone and the batch route stops answering anything — worth a
-	// warning at the one moment the mismatch is created.
-	info, err := application.NewQueryService(db).IndexInfo(ctx)
-	if err != nil {
-		return fmt.Errorf("measuring the finished index: %w", err)
+	if err := sealIndex(ctx, db, dbPath); err != nil {
+		return err
 	}
-	application.WarnOnForeignBackbones(ctx, info.ConceptBackbones)
 
 	out := ingestOutput{
 		IngestReport:       report,

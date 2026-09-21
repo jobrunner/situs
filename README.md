@@ -123,19 +123,26 @@ eingehängt, damit dasselbe Image jeden Datenstand bedienen kann:
 
 ```bash
 docker run --rm -p 8070:8070 \
-  --user "$(id -u):$(id -g)" \
-  -v "$PWD:/data" -e SITUS_INDEX_PATH=/data/situs.sqlite \
+  -v "$PWD:/data:ro" -e SITUS_INDEX_PATH=/data/situs.sqlite \
   ghcr.io/jobrunner/situs:latest
 ```
 
-Zwei Eigenheiten, die beide gemessen und nicht vermutet sind:
+Beides gemessen und nicht vermutet:
 
-- **Der Index muss schreibbar eingehängt werden**, obwohl der Dienst read-only
-  ist: `Open` setzt `journal_mode=WAL`, und WAL verlangt Schreibrechte auf Datei
-  und Verzeichnis. Ein `:ro`-Mount scheitert mit
-  `attempt to write a readonly database (1544)`.
-- Das Image läuft als `nonroot` (uid 65532), die Host-Datei gehört Dir — daher
-  `--user`, alternativ `chown 65532` auf dem Index.
+- **Der Mount darf `:ro` sein.** `serve` öffnet den Index read-only
+  (`file:<pfad>?mode=ro`) und legt keine `-wal`/`-shm`-Beiwagen an — der Ingest
+  hinterlässt den Index ohne WAL. Ein fehlender Index bricht den Start ab,
+  statt einen leeren anzulegen.
+- Das Image läuft als `nonroot` (uid 65532). Für einen `:ro`-Mount genügt, dass
+  die Host-Datei für diese uid **lesbar** ist — und jedes Verzeichnis auf dem
+  Weg dorthin sein `x`-Bit für sie trägt, sonst scheitert schon das Traversieren
+  (ein Index unter einem `0700`-Home reicht nicht). `--user "$(id -u):$(id -g)"`
+  braucht es nur noch, wenn im Container geschrieben werden soll (etwa ein
+  `situs ingest`).
+
+Das Verzeichnis einhängen, nicht die Datei: ein Bind-Mount auf eine Datei bindet
+deren Inode, und ein Index-Tausch auf dem Host käme im Container nie an. Das
+Verfahren dafür steht in [`docs/how-to/deploy.md`](docs/how-to/deploy.md).
 
 ### CORS für einen Browser-Client
 

@@ -24,7 +24,7 @@ func (d *DB) countHabitatTypes(ctx context.Context) (int, error) {
 
 func openTestDB(t *testing.T) *DB {
 	t.Helper()
-	db, err := Open(t.Context(), filepath.Join(t.TempDir(), "test.sqlite"))
+	db, err := OpenForIngest(t.Context(), filepath.Join(t.TempDir(), "test.sqlite"))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

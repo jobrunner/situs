@@ -380,6 +380,49 @@ func TestIngestCommandLoadsCSVsAndPrintsTheReport(t *testing.T) {
 	}
 }
 
+// The ingest owns the shape the index ships in: one file, no WAL. Serving
+// opens it read-only, and a read-only handle on a WAL index still needs the
+// -shm sidecar — which takes a writable directory and makes replacing the
+// index underneath a running container a multi-file operation.
+func TestIngestLeavesTheIndexAsASingleFileOutOfWAL(t *testing.T) {
+	stubHostus(t)
+	csvDir := seedIngestDir(t)
+	dbDir := t.TempDir()
+	dbPath := filepath.Join(dbDir, "situs.sqlite")
+
+	root := newRootCmd()
+	root.SetOut(&bytes.Buffer{})
+	root.SetArgs([]string{"ingest", "--csv-dir", csvDir, "--db", dbPath})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("executing ingest: %v", err)
+	}
+
+	entries, err := os.ReadDir(dbDir)
+	if err != nil {
+		t.Fatalf("reading %q: %v", dbDir, err)
+	}
+	for _, e := range entries {
+		if e.Name() != "situs.sqlite" {
+			t.Errorf("ingest left %q next to the index — it must ship as a single file", e.Name())
+		}
+	}
+
+	// And the index really is servable read-only afterwards, sidecars or not.
+	db, err := sqlite.OpenReadOnly(t.Context(), dbPath)
+	if err != nil {
+		t.Fatalf("OpenReadOnly on the finished index = %v, want no error", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	var mode string
+	if err := db.QueryRowContext(t.Context(), `PRAGMA journal_mode`).Scan(&mode); err != nil {
+		t.Fatalf("reading journal_mode: %v", err)
+	}
+	if !strings.EqualFold(mode, "delete") {
+		t.Errorf("journal_mode of the finished index = %q, want delete", mode)
+	}
+}
+
 func TestIngestCommandRunsSyntaxaHierarchyIngestAfterEUNISSyntaxa(t *testing.T) {
 	stubHostus(t)
 	dir := seedIngestDir(t)
@@ -883,7 +926,7 @@ func TestIngestCommandStampsDescriptionProvenancePerFile(t *testing.T) {
 		t.Errorf("output = %q, want both description files counted", out.String())
 	}
 
-	db, err := sqlite.Open(context.Background(), dbPath)
+	db, err := sqlite.OpenForIngest(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("opening the index: %v", err)
 	}

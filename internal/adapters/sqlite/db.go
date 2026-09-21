@@ -27,32 +27,6 @@ type DB struct {
 	*sql.DB
 }
 
-// Open opens the index at dsn, verifies it is reachable and applies the
-// embedded schema.sql — CREATE TABLE/INDEX IF NOT EXISTS statements, so on
-// an already-current schema they are a no-op. What Open never does is an
-// ALTER TABLE migration: it is used by serve too, and serve is read-only;
-// opening an index whose species_role predates provenance/derived_from does
-// not fail here, but a query touching those columns will. Call Migrate
-// right after Open at ingest time to add them.
-func Open(ctx context.Context, dsn string) (*DB, error) {
-	sqlDB, err := sql.Open(DriverName, dsn)
-	if err != nil {
-		return nil, fmt.Errorf("opening sqlite index %q: %w", dsn, err)
-	}
-	if err := sqlDB.PingContext(ctx); err != nil {
-		return nil, errors.Join(fmt.Errorf("pinging sqlite index %q: %w", dsn, err), sqlDB.Close())
-	}
-	for _, pragma := range []string{"PRAGMA journal_mode=WAL", "PRAGMA foreign_keys=ON"} {
-		if _, err := sqlDB.ExecContext(ctx, pragma); err != nil {
-			return nil, errors.Join(fmt.Errorf("applying %q to %q: %w", pragma, dsn, err), sqlDB.Close())
-		}
-	}
-	if _, err := sqlDB.ExecContext(ctx, schema); err != nil {
-		return nil, errors.Join(fmt.Errorf("applying schema to %q: %w", dsn, err), sqlDB.Close())
-	}
-	return &DB{DB: sqlDB}, nil
-}
-
 // Migrate adds the columns CREATE TABLE IF NOT EXISTS cannot add to an
 // already-existing table — sqlite has no "ADD COLUMN IF NOT EXISTS" in the
 // version this driver embeds, so a repinned index (created before these

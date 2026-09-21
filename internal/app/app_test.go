@@ -7,17 +7,39 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/jobrunner/situs/internal/adapters/sqlite"
 	"github.com/jobrunner/situs/internal/app"
 	"github.com/jobrunner/situs/internal/config"
 )
 
+// seededIndexPath returns the path of an index built the way an ingest leaves
+// one behind. Serving opens the index read-only and therefore refuses to
+// create it — a test that just names a path in a fresh TempDir would be
+// testing the refusal, not the wiring.
+func seededIndexPath(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "index.sqlite")
+	db, err := sqlite.OpenForIngest(t.Context(), path)
+	if err != nil {
+		t.Fatalf("seeding the index: %v", err)
+	}
+	if err := db.FinalizeForServing(t.Context()); err != nil {
+		t.Fatalf("finalizing the seeded index: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing the seeded index: %v", err)
+	}
+	return path
+}
+
 func TestNewWiresAServerThatServesTheOperationsSurface(t *testing.T) {
 	cfg := &config.Config{
 		Server: config.ServerConfig{Host: "127.0.0.1", Port: 0},
-		Index:  config.IndexConfig{Path: filepath.Join(t.TempDir(), "index.sqlite")},
+		Index:  config.IndexConfig{Path: seededIndexPath(t)},
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 
@@ -57,7 +79,7 @@ func TestNewWiresTheConfiguredCORSOriginsIntoTheServer(t *testing.T) {
 			Host: "127.0.0.1", Port: 0,
 			CORS: config.CORSConfig{AllowedOrigins: []string{allowedOrigin}},
 		},
-		Index: config.IndexConfig{Path: filepath.Join(t.TempDir(), "index.sqlite")},
+		Index: config.IndexConfig{Path: seededIndexPath(t)},
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 
@@ -84,7 +106,7 @@ func TestNewWiresTheConfiguredCORSOriginsIntoTheServer(t *testing.T) {
 func TestStartAfterShutdownDoesNotServeAgain(t *testing.T) {
 	cfg := &config.Config{
 		Server: config.ServerConfig{Host: "127.0.0.1", Port: 0},
-		Index:  config.IndexConfig{Path: filepath.Join(t.TempDir(), "index.sqlite")},
+		Index:  config.IndexConfig{Path: seededIndexPath(t)},
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 
@@ -97,6 +119,26 @@ func TestStartAfterShutdownDoesNotServeAgain(t *testing.T) {
 	}
 	if err := situs.Start(context.Background()); !errors.Is(err, http.ErrServerClosed) {
 		t.Errorf("Start() after Shutdown = %v, want http.ErrServerClosed", err)
+	}
+}
+
+// Serving must never conjure an index. Before the read-only switch the
+// composition root opened read-write, so a typo in SITUS_INDEX_PATH produced an
+// empty index, a green /health/ready and a NOT_FOUND for every query — an
+// outage that looks like a data problem.
+func TestNewRefusesToCreateAMissingIndex(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "absent.sqlite")
+	cfg := &config.Config{
+		Server: config.ServerConfig{Host: "127.0.0.1", Port: 0},
+		Index:  config.IndexConfig{Path: path},
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	if _, err := app.New(context.Background(), cfg, logger, "1.2.3"); err == nil {
+		t.Error("New() = nil error, want the missing index reported")
+	}
+	if _, err := os.Stat(path); err == nil {
+		t.Error("New() created the missing index — serving must never write to the index path")
 	}
 }
 

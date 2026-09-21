@@ -58,10 +58,14 @@ zurück — nur bei abweichender Ablage nötig.
 
 `--db` ist **optional** und fällt auf `index.path` (`SITUS_INDEX_PATH`,
 Default `situs.sqlite`) zurück — dieselbe Datei, aus der `serve` liest. Das
-ist Absicht: `serve` kennt kein `--db`, und ein Index, in den ingestiert
-wurde, während ein anderer serviert wird, ergibt einen leeren, aber
-`/health/ready`-grünen Dienst. Wird `--db` gesetzt, gewinnt das Flag über die
-Konfiguration, wie überall in diesem Dienst.
+ist Absicht: `serve` kennt kein `--db`. Wird `--db` gesetzt, gewinnt das Flag
+über die Konfiguration, wie überall in diesem Dienst.
+
+**In einen Index ingestieren, der gerade serviert wird, ist trotzdem falsch.**
+`serve` liest read-only, kann also nichts kaputtschreiben — aber es liest dann
+aus einer Datei, die sich unter ihm ändert, und sieht dabei einen halben Stand.
+Der Weg für einen neuen Index steht in `deploy.md`: neu bauen, fertig an seinen
+Platz ziehen, Container ersetzen.
 
 Ein Index, der vor der Syntaxa-Hierarchie-Erweiterung gebaut wurde (ohne die
 Spalte `syntaxon.author`), muss gelöscht und per frischem `situs ingest` neu
@@ -105,6 +109,15 @@ EUNIS-Level 1 und 2 dazugekommen (49 Typen, die nie einen `=`-Crosswalk
 tragen): `merge.py` erzeugt am 2026-09-21 **394** verfasste Zeilen, der nächste
 volle Lauf misst also `Localizations: 627`. Siehe
 `../reference/measured-index.md`.
+
+## Der fertige Index ist eine Datei
+
+Ganz am Ende, nach allen Schreibschritten, checkpointet der Ingest die WAL in
+die Datenbank und schaltet den Journal-Modus zurück auf `DELETE`. Das ist die
+einzige Stelle, die das kann — der Wechsel aus WAL heraus verlangt, die einzige
+Verbindung zu sein — und es ist die Voraussetzung dafür, dass `serve` den Index
+read-only öffnen kann, ohne eine `-shm`-Beiwagendatei anzulegen. Ohne diesen
+Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
 
 ## Getrennte Transaktionen, nicht eine
 
