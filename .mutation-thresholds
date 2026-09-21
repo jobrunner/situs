@@ -22,15 +22,15 @@
 # the script fails on a package that produces no mutants unless it says NONE.
 #
 # package                                efficacy(%)  mcover(%)
-cmd/situs                                  100          82
+cmd/situs                                  100          87
 internal/adapters/hostus                   100         100
 internal/adapters/http                     100         100
-# sqlite sits at 98, not 100, for one documented equivalent mutant:
+# sqlite sits at 99, not 100, for one documented equivalent mutant:
 # read.go's `make([]any, 0, len(conceptIDs)+1)` capacity hint. Mutating +1 to -1
 # changes no behaviour (append grows the slice regardless), and the only input
 # that would expose it — an empty chunk — slices.Chunk never produces. Raise this
 # to 100 only if that allocation gains real semantics.
-internal/adapters/sqlite                    98         100
+internal/adapters/sqlite                    99         100
 internal/adapters/telemetry                NONE
 internal/app                               100         100
 internal/application                       100         100

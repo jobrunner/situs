@@ -26,6 +26,10 @@ const (
 	// stubModeScanErr succeeds one Next call with a column value no string
 	// destination can hold, which surfaces through rows.Scan.
 	stubModeScanErr
+	// stubModeCheckpointedThenFails answers PRAGMA wal_checkpoint like a
+	// quiet database and then fails the journal_mode switch — the one
+	// FinalizeForServing branch that needs the first statement to succeed.
+	stubModeCheckpointedThenFails
 )
 
 // newStubDB builds a *sql.DB backed by the stub driver — no schema, no file,
@@ -67,6 +71,9 @@ func (c *stubConn) Begin() (driver.Tx, error) {
 // text — every list read queries one table (or one join), so this is enough to
 // serve them all without needing a real SQL engine.
 func (c *stubConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
+	if rows, err := c.finalizeRows(query); rows != nil || err != nil {
+		return rows, err
+	}
 	switch {
 	case strings.Contains(query, "LEFT JOIN area"):
 		return &stubRows{cols: []string{"area_code", "name_en"}, mode: c.mode}, nil
@@ -129,5 +136,41 @@ func (r *stubRows) Next(dest []driver.Value) error {
 		dest[i] = int64(0)
 	}
 	dest[0] = struct{}{} // unconvertible to string
+	return nil
+}
+
+// finalizeRows answers the two statements FinalizeForServing runs, but only in
+// the mode built for it. (nil, nil) means "not mine" — every other query falls
+// through to the read-side switch above.
+func (c *stubConn) finalizeRows(query string) (driver.Rows, error) {
+	if c.mode != stubModeCheckpointedThenFails {
+		return nil, nil
+	}
+	if strings.Contains(query, "wal_checkpoint") {
+		return &stubCheckpointRows{}, nil
+	}
+	if strings.Contains(query, "journal_mode") {
+		return nil, errStubJournalMode
+	}
+	return nil, nil
+}
+
+// errStubJournalMode is what a database that cannot leave WAL answers.
+var errStubJournalMode = errors.New("stub: journal_mode switch failed")
+
+// stubCheckpointRows is one quiet PRAGMA wal_checkpoint answer: nothing busy,
+// nothing left in the log.
+type stubCheckpointRows struct{ done bool }
+
+func (r *stubCheckpointRows) Columns() []string { return []string{"busy", "log", "checkpointed"} }
+func (r *stubCheckpointRows) Close() error      { return nil }
+func (r *stubCheckpointRows) Next(dest []driver.Value) error {
+	if r.done {
+		return io.EOF
+	}
+	r.done = true
+	for i := range dest {
+		dest[i] = int64(0)
+	}
 	return nil
 }

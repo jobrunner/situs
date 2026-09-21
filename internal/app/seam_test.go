@@ -42,7 +42,7 @@ func seamServer(t *testing.T) *httpapi.Server {
 	t.Helper()
 	ctx := t.Context()
 
-	db, err := sqlite.Open(ctx, ":memory:")
+	db, err := sqlite.OpenForIngest(ctx, ":memory:")
 	if err != nil {
 		t.Fatalf("Open(:memory:) = %v, want no error", err)
 	}

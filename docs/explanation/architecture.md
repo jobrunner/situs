@@ -28,6 +28,34 @@ Die Grenzen sind kein Übereinkommen, sondern ein Lint-Gate: `depguard` in
 | `internal/app` | Composition Root |
 | `internal/config` | `SITUS_`-Konfiguration |
 
+## Zwei Wege in denselben Index
+
+Der SQLite-Adapter hat **zwei** Einstiege, und welcher benutzt wird, ist keine
+Stilfrage:
+
+| Einstieg | Wer | Was er tut |
+|---|---|---|
+| `OpenForIngest` | `cmd/situs ingest` | read-write, legt den Index bei Bedarf an, spielt `schema.sql` ein, schaltet WAL ein; dazu `Migrate` für Spalten, die ein älterer Index nicht hat |
+| `OpenReadOnly` | `internal/app` (`serve`) | `file:<pfad>?mode=ro`, sonst nichts |
+
+`serve` darf nur den zweiten benutzen. Ein schreibfähiges Handle würde einen
+fehlenden Index **anlegen** (grüner Health-Check, `NOT_FOUND` auf alles), die
+Datei in den WAL-Modus versetzen und damit selbst einem reinen Leser die
+`-wal`/`-shm`-Beiwagen aufzwingen — und ein beschreibbares Verzeichnis
+verlangen. Alle drei brechen das Verfahren aus `../how-to/deploy.md`, den Index
+unter einem laufenden Container auszutauschen.
+
+Als Importverbot ist diese Regel nicht formulierbar: `internal/app` **muss** den
+SQLite-Adapter importieren. Sie wird deshalb an der Verwendung geprüft —
+`internal/app/arch_test.go` parst die Kompositionswurzel und lässt nur eine
+Allowlist von `sqlite.*`-Bezeichnern zu. Ein neuer schreibfähiger Einstieg muss
+dort bewusst eingetragen werden, und genau in diesem Moment muss jemand
+begründen, warum das Servieren schreiben können soll.
+
+`FinalizeForServing` schließt den Ingest ab: WAL checkpointen, zurück auf
+`journal_mode=DELETE`. Nur der Ingest kann das, weil der Wechsel aus WAL heraus
+die einzige Verbindung zur Datenbank verlangt.
+
 **Warum XLSX nicht in der Binary steckt:** eine `.xlsx` ist ein ZIP aus XML, das
 die Python-Standardbibliothek liest. Die Konvertierung bleibt deshalb in
 `pipelines/eunis/` (bash + `python3`, nur stdlib); der Go-Ingest liest

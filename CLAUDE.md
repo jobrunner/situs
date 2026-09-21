@@ -189,6 +189,24 @@ remain stdlib-only.
   set, `concept_id` NULL, and the resolution rate is measured and reported.
 - **Serving stays autark.** No read path may reach for hostus or any other
   upstream, and `internal/app` may not import the hostus adapter.
+- **Serving opens the index read-only.** `internal/app` uses
+  `sqlite.OpenReadOnly` (`file:<path>?mode=ro`) and nothing else; the allowlist
+  in `internal/app/arch_test.go` enforces it. A read-write handle would create a
+  missing index (green health, empty answers), force the file into WAL and so
+  make even a pure reader need the `-wal`/`-shm` sidecars, and require a
+  writable directory — all three break replacing the index underneath a running
+  container. `situs ingest` ends with `FinalizeForServing` (checkpoint +
+  `journal_mode=DELETE`) so the shipped index is a single file.
+  `immutable=1` is deliberately NOT set: it would switch off SQLite's own change
+  detection. Opening also probes `habitat_type`, so an empty file, an
+  interrupted copy or a foreign database fails at startup instead of serving
+  `INTERNAL_ERROR` behind a green health check.
+- **Index paths are escaped into the SQLite URI**, `%` first, then `?` and `#`
+  (`fileURI`), on BOTH openers. Measured against modernc.org/sqlite v1.56.0:
+  unescaped, the driver truncates the DSN at the first `?` — an ingest to
+  `/srv/with?chars/index.sqlite` silently built `/srv/with` and reported success
+  — and SQLite percent-decodes the filename, so a CI-style `feature%2Fbranch`
+  directory resolved to a path that does not exist.
 - **`in_area` is three-valued.** `true`, `false`, or the field absent when it is
   unknowable (no concept id, or a concept with no distribution rows). Never
   collapse the third state into `false`, and `only_in_area` must keep the

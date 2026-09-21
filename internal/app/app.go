@@ -34,7 +34,11 @@ type App struct {
 // New builds the application bottom-up: driven adapters first, then the use
 // cases, then the driving HTTP adapter.
 func New(ctx context.Context, cfg *config.Config, logger *slog.Logger, version string) (*App, error) {
-	db, err := sqlite.Open(ctx, cfg.Index.Path)
+	// Read-only, and that is a load-bearing choice: the serve path must not be
+	// able to write to the index, must not create one that is not there, and
+	// must not need the WAL sidecars — that is what lets an operator replace
+	// the file underneath a running container. See sqlite.OpenReadOnly.
+	db, err := sqlite.OpenReadOnly(ctx, cfg.Index.Path)
 	if err != nil {
 		return nil, fmt.Errorf("opening the index %q: %w", cfg.Index.Path, err)
 	}
@@ -47,7 +51,7 @@ func New(ctx context.Context, cfg *config.Config, logger *slog.Logger, version s
 		closeIndex: db.Close,
 	}
 
-	// The index was opened and its schema applied, so the read paths are usable.
+	// The index was opened and answered a ping, so the read paths are usable.
 	a.Health = application.NewHealthService(true)
 
 	// No name resolver is wired here on purpose: serving is autark. hostus is an

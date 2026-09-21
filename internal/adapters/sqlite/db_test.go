@@ -10,9 +10,9 @@ import (
 )
 
 func TestOpenInMemoryIndexIsUsable(t *testing.T) {
-	db, err := sqlite.Open(t.Context(), ":memory:")
+	db, err := sqlite.OpenForIngest(t.Context(), ":memory:")
 	if err != nil {
-		t.Fatalf("Open(:memory:) = %v, want no error", err)
+		t.Fatalf("OpenForIngest(:memory:) = %v, want no error", err)
 	}
 	t.Cleanup(func() {
 		if err := db.Close(); err != nil {
@@ -31,8 +31,8 @@ func TestOpenInMemoryIndexIsUsable(t *testing.T) {
 
 func TestOpenUnreachablePathFails(t *testing.T) {
 	// A directory can never be opened as a database file.
-	if _, err := sqlite.Open(t.Context(), t.TempDir()); err == nil {
-		t.Error("Open(<directory>) = nil error, want a failure")
+	if _, err := sqlite.OpenForIngest(t.Context(), t.TempDir()); err == nil {
+		t.Error("OpenForIngest(<directory>) = nil error, want a failure")
 	}
 }
 
@@ -70,7 +70,7 @@ func TestOpenAloneDoesNotMigrateAnOlderSchema(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "pre-provenance.sqlite")
 	createPreMigrationSpeciesRoleTable(t, path)
 
-	db, err := sqlite.Open(ctx, path)
+	db, err := sqlite.OpenForIngest(ctx, path)
 	if err != nil {
 		t.Fatalf("Open on a pre-migration index = %v, want no error", err)
 	}
@@ -95,7 +95,7 @@ func TestMigrateAddsSpeciesRoleProvenanceColumnsToAnOlderSchema(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "pre-provenance.sqlite")
 	createPreMigrationSpeciesRoleTable(t, path)
 
-	db, err := sqlite.Open(ctx, path)
+	db, err := sqlite.OpenForIngest(ctx, path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestMigrateTwiceOnTheSameFileDoesNotFail(t *testing.T) {
 	ctx := t.Context()
 	path := filepath.Join(t.TempDir(), "reopened.sqlite")
 
-	db, err := sqlite.Open(ctx, path)
+	db, err := sqlite.OpenForIngest(ctx, path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
