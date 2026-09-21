@@ -814,6 +814,45 @@ components:
                 damit die 0 nicht als „diese Klasse berührt keinen EUNIS-Typ“
                 gelesen wird.
               example: 3
+            distribution:
+              allOf:
+                - $ref: "#/components/schemas/SyntaxonDistribution"
+              description: >-
+                Fehlt, wenn die Quelle über dieses Syntaxon keine Aussage macht —
+                dann ist NICHTS über sein Vorkommen bekannt, was von „kommt
+                nirgends vor" streng zu trennen ist.
+    SyntaxonDistribution:
+      description: >-
+        Die Verbreitungsaussage der Quelle (Preislerová et al. 2022/2024,
+        CC-BY 4.0) über ein Syntaxon. `verified` und `uncertain` sind
+        sortierte Codelisten des Schemas `evc_territory` — die Codes selbst
+        listet `GET /v1/areas?scheme=evc_territory`.
+
+        **Abwesenheit wird nicht aufgezählt.** 136 minus die belegten Codes
+        wäre eine erfundene Liste. Zwei leere Listen bedeuten „geprüft, kommt
+        in keinem Territorium vor"; **fehlt das ganze Objekt**, liegt
+        überhaupt keine Aussage vor. Das sind zwei verschiedene Dinge: die
+        Quelle deckt nur *vascular-plant dominated vegetation* ab, weshalb
+        gemessen 212 der 1326 Verbände — darunter alle 190 Moos-, Flechten-
+        und Algenverbände — kein `distribution` tragen.
+      type: object
+      required: [area_scheme, verified, uncertain]
+      properties:
+        area_scheme:
+          type: string
+          enum: [evc_territory]
+        verified:
+          type: array
+          description: Codes mit belegtem Vorkommen (Quellwert `1`).
+          items:
+            type: string
+          example: [austria-alps, czech-republic]
+        uncertain:
+          type: array
+          description: Codes mit unsicherem Vorkommen (Quellwert `U`).
+          items:
+            type: string
+          example: [poland-sudetes]
     TraitValue:
       type: object
       required: [dim, value]

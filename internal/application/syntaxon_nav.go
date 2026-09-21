@@ -48,6 +48,11 @@ func (q *QueryService) Syntaxon(ctx context.Context, id string, _ string) (input
 		return input.SyntaxonDetail{}, fmt.Errorf("counting the habitat types of syntaxon %q: %w", id, err)
 	}
 
+	dist, err := syntaxonDistributionOf(ctx, q.repo, id)
+	if err != nil {
+		return input.SyntaxonDetail{}, err
+	}
+
 	ref := syntaxonRef(self)
 	ref.LifeFormGroup = lifeFormGroupOf(self, ancestors)
 	return input.SyntaxonDetail{
@@ -55,6 +60,7 @@ func (q *QueryService) Syntaxon(ctx context.Context, id string, _ string) (input
 		Ancestors:              syntaxonRefs(ancestors),
 		Children:               syntaxonRefs(children),
 		DirectHabitatTypeCount: count,
+		Distribution:           dist,
 	}, nil
 }
 

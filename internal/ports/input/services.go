@@ -165,6 +165,26 @@ type SyntaxonDetail struct {
 	// the 0 as "this class touches no EUNIS type"; aggregating over the
 	// descendants is a question of its own.
 	DirectHabitatTypeCount int `json:"direct_habitat_type_count"`
+
+	// Distribution is the source's statement about this syntaxon. Nil when
+	// there is none (no coverage row) — then NOTHING is known about its
+	// occurrence, which is strictly different from "occurs nowhere". Measured:
+	// 212 of 1326 alliances are nil, including every bryophyte, lichen and
+	// algal one, because the source covers vascular-plant dominated vegetation
+	// only.
+	Distribution *SyntaxonDistribution `json:"distribution,omitempty"`
+}
+
+// SyntaxonDistribution is the source's statement about where a syntaxon
+// occurs. Verified and Uncertain are sorted code lists.
+//
+// Absence is deliberately NOT enumerated: 136 minus the occupied codes would
+// be an invented list, and the client knows the scheme from GET /v1/areas
+// ?scheme=evc_territory.
+type SyntaxonDistribution struct {
+	AreaScheme string   `json:"area_scheme"`
+	Verified   []string `json:"verified"`
+	Uncertain  []string `json:"uncertain"`
 }
 
 // CrosswalkRef is the far side of a correspondence, seen from the queried type.

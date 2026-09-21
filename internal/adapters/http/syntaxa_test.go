@@ -251,6 +251,36 @@ func TestSyntaxon_UnerwarteterFehlerIst500MitInternalError(t *testing.T) {
 	}
 }
 
+// The JSON shape is the contract: "distribution" present with two empty
+// arrays means "checked, occurs nowhere"; absent means "nobody looked".
+func TestSyntaxonJSONTraegtVerbreitungMitLeerenListen(t *testing.T) {
+	_, body := getSyntaxonJSON(t, "/v1/syntaxon/CA01B")
+	dist, ok := body["distribution"].(map[string]any)
+	if !ok {
+		t.Fatalf("distribution fehlt oder ist kein Objekt: %v", body["distribution"])
+	}
+	if dist["area_scheme"] != "evc_territory" {
+		t.Errorf("area_scheme = %v", dist["area_scheme"])
+	}
+	for _, field := range []string{"verified", "uncertain"} {
+		list, ok := dist[field].([]any)
+		if !ok {
+			t.Errorf("%s ist kein Array: %v", field, dist[field])
+			continue
+		}
+		if len(list) != 0 {
+			t.Errorf("%s = %v, erwartet leer", field, list)
+		}
+	}
+}
+
+func TestSyntaxonJSONLaesstDistributionOhneAbdeckungWeg(t *testing.T) {
+	_, body := getSyntaxonJSON(t, "/v1/syntaxon/RA01A")
+	if _, ok := body["distribution"]; ok {
+		t.Errorf("distribution erscheint, obwohl keine Aussage vorliegt: %v", body["distribution"])
+	}
+}
+
 func TestSyntaxa_FehlerDesIndexIst500(t *testing.T) {
 	q := seededQueryService()
 	q.syntaxaErr = errFakeIndex

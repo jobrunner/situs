@@ -1170,6 +1170,25 @@ func seededQueryService() *fakeQueryService {
 				Children:               []input.SyntaxonRef{},
 				DirectHabitatTypeCount: 1,
 			},
+			// CA01B: the source checked and found no occurrence at all — the
+			// present-object-with-two-empty-lists case.
+			"CA01B": {
+				SyntaxonRef: input.SyntaxonRef{ID: "CA01B", Rank: "alliance", Name: "Testverband ohne Vorkommen"},
+				Ancestors:   []input.SyntaxonRef{},
+				Children:    []input.SyntaxonRef{},
+				Distribution: &input.SyntaxonDistribution{
+					AreaScheme: domain.SchemeEVCTerritory,
+					Verified:   []string{},
+					Uncertain:  []string{},
+				},
+			},
+			// RA01A: a bryophyte alliance the source makes no statement about
+			// at all — Distribution stays nil, and the JSON field is absent.
+			"RA01A": {
+				SyntaxonRef: input.SyntaxonRef{ID: "RA01A", Rank: "alliance", Name: "Testverband ohne Abdeckung"},
+				Ancestors:   []input.SyntaxonRef{},
+				Children:    []input.SyntaxonRef{},
+			},
 		},
 		syntaxaByRank: map[string][]input.SyntaxonRef{
 			"formation|": {{ID: "C", Rank: "formation",

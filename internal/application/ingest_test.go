@@ -503,6 +503,9 @@ type fakeRepo struct {
 	habitatTypeCountErr  error
 	syntaxaByRankErr     error
 	syntaxonRanksErr     error
+	// syntaxonDistributionErr fails the read-side SyntaxonDistribution call
+	// (subproject C, Task 8), exercising Syntaxon's distribution error path.
+	syntaxonDistributionErr error
 
 	// syntaxonDistribution and syntaxonCoverage back the syntaxa-distribution
 	// read/write pair (subproject C): recorded separately from distribution
@@ -1045,6 +1048,9 @@ func (r *fakeRepo) UpsertSyntaxonDistributionCoverage(syntaxonID, scheme string)
 // with both lists empty when no coverage row was ever written, distinct from
 // Covered true with empty lists (the source stated coverage but no occurrence).
 func (r *fakeRepo) SyntaxonDistribution(_ context.Context, syntaxonID, scheme string) (domain.SyntaxonDistribution, error) {
+	if r.syntaxonDistributionErr != nil {
+		return domain.SyntaxonDistribution{}, r.syntaxonDistributionErr
+	}
 	out := domain.SyntaxonDistribution{Scheme: scheme}
 	for _, c := range r.syntaxonCoverage {
 		if c.SyntaxonID == syntaxonID && c.Scheme == scheme {

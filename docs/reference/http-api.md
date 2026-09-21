@@ -379,6 +379,17 @@ ein Indexdefekt, nicht eine unbekannte Anfrage. `?lang=` wird angenommen, aber
 deutsche Syntaxa-Namen sind eine eigene Runde — bis dahin antworten die Namen
 englisch.
 
+`SyntaxonDetail` trägt außerdem `distribution` — die Verbreitungsaussage der
+Quelle (Preislerová et al., Schema `evc_territory`) mit sortierten
+`verified`- und `uncertain`-Codelisten. Das Feld hat `omitempty` und **fehlt
+ganz**, wenn für dieses Syntaxon keine Coverage-Zeile vorliegt: dann ist
+nichts über sein Vorkommen bekannt. Zwei leere Listen dagegen bedeuten
+„geprüft, kommt in keinem Territorium vor" — eine andere Aussage als das
+fehlende Feld. Gemessen fehlt `distribution` bei 212 von 1326 Verbänden,
+darunter jedem Moos-, Flechten- und Algenverband, weil die Quelle nur
+Gefäßpflanzen-Vegetation abdeckt. Abwesenheit wird nie aufgezählt: der Client
+kennt die 136 Codes des Schemas aus `GET /v1/areas?scheme=evc_territory`.
+
 ## Die zwei Arten-Pfade
 
 `GET /v1/species/{conceptId}/habitat-types` antwortet **404**, wenn der Index zu
