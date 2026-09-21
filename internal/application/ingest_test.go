@@ -503,6 +503,22 @@ type fakeRepo struct {
 	habitatTypeCountErr  error
 	syntaxaByRankErr     error
 	syntaxonRanksErr     error
+
+	// syntaxonDistribution and syntaxonCoverage back the syntaxa-distribution
+	// read/write pair (subproject C): recorded separately from distribution
+	// (species) since the two never share a row.
+	syntaxonDistribution []fakeSyntaxonOccurrence
+	syntaxonCoverage     []fakeSyntaxonCoverage
+}
+
+// fakeSyntaxonOccurrence is one recorded UpsertSyntaxonDistribution call.
+type fakeSyntaxonOccurrence struct {
+	SyntaxonID, Scheme, Code, Occurrence string
+}
+
+// fakeSyntaxonCoverage is one recorded UpsertSyntaxonDistributionCoverage call.
+type fakeSyntaxonCoverage struct {
+	SyntaxonID, Scheme string
 }
 
 // fakeDistribution is one recorded UpsertDistribution call.
@@ -714,6 +730,27 @@ func (r *fakeRepo) linkTargets(typology, code string) []string {
 		}
 	}
 	return out
+}
+
+// area returns the named area matching scheme and code, or the zero value if
+// none was written — callers assert on the fields they care about.
+func (r *fakeRepo) area(scheme, code string) domain.NamedArea {
+	for _, a := range r.areas {
+		if a.Scheme == scheme && a.Code == code {
+			return a
+		}
+	}
+	return domain.NamedArea{}
+}
+
+// hasArea reports whether (scheme, code) was written to the fake index.
+func (r *fakeRepo) hasArea(scheme, code string) bool {
+	for _, a := range r.areas {
+		if a.Scheme == scheme && a.Code == code {
+			return true
+		}
+	}
+	return false
 }
 
 // has reports whether id was written to the fake index.
@@ -965,6 +1002,91 @@ func (r *fakeRepo) KnownAreaCodes(_ context.Context, scheme string) ([]string, e
 		if d.Area.Scheme == scheme && !seen[d.Area.Code] {
 			seen[d.Area.Code] = true
 			out = append(out, d.Area.Code)
+		}
+	}
+	return out, nil
+}
+
+// UpsertSyntaxonDistribution mirrors the sqlite adapter's idempotency: a
+// repeated call for the same (syntaxonID, scheme, code) overwrites the
+// occurrence rather than appending a second row.
+func (r *fakeRepo) UpsertSyntaxonDistribution(syntaxonID, scheme, code, occurrence string) error {
+	if err := r.failIfNamed("UpsertSyntaxonDistribution"); err != nil {
+		return err
+	}
+	for i, o := range r.syntaxonDistribution {
+		if o.SyntaxonID == syntaxonID && o.Scheme == scheme && o.Code == code {
+			r.syntaxonDistribution[i].Occurrence = occurrence
+			return nil
+		}
+	}
+	r.syntaxonDistribution = append(r.syntaxonDistribution, fakeSyntaxonOccurrence{
+		SyntaxonID: syntaxonID, Scheme: scheme, Code: code, Occurrence: occurrence,
+	})
+	return nil
+}
+
+// UpsertSyntaxonDistributionCoverage is idempotent: a second call for the same
+// (syntaxonID, scheme) must not duplicate the coverage row.
+func (r *fakeRepo) UpsertSyntaxonDistributionCoverage(syntaxonID, scheme string) error {
+	if err := r.failIfNamed("UpsertSyntaxonDistributionCoverage"); err != nil {
+		return err
+	}
+	for _, c := range r.syntaxonCoverage {
+		if c.SyntaxonID == syntaxonID && c.Scheme == scheme {
+			return nil
+		}
+	}
+	r.syntaxonCoverage = append(r.syntaxonCoverage, fakeSyntaxonCoverage{SyntaxonID: syntaxonID, Scheme: scheme})
+	return nil
+}
+
+// SyntaxonDistribution mirrors the sqlite adapter's contract: Covered false
+// with both lists empty when no coverage row was ever written, distinct from
+// Covered true with empty lists (the source stated coverage but no occurrence).
+func (r *fakeRepo) SyntaxonDistribution(_ context.Context, syntaxonID, scheme string) (domain.SyntaxonDistribution, error) {
+	out := domain.SyntaxonDistribution{Scheme: scheme}
+	for _, c := range r.syntaxonCoverage {
+		if c.SyntaxonID == syntaxonID && c.Scheme == scheme {
+			out.Covered = true
+			break
+		}
+	}
+	for _, o := range r.syntaxonDistribution {
+		if o.SyntaxonID != syntaxonID || o.Scheme != scheme {
+			continue
+		}
+		switch o.Occurrence {
+		case domain.OccurrenceVerified:
+			out.Verified = append(out.Verified, o.Code)
+		case domain.OccurrenceUncertain:
+			out.Uncertain = append(out.Uncertain, o.Code)
+		}
+	}
+	sort.Strings(out.Verified)
+	sort.Strings(out.Uncertain)
+	return out, nil
+}
+
+// SyntaxonOccurrencesInArea maps syntaxon id -> occurrence for one area,
+// mirroring the sqlite adapter.
+func (r *fakeRepo) SyntaxonOccurrencesInArea(_ context.Context, scheme, code string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, o := range r.syntaxonDistribution {
+		if o.Scheme == scheme && o.Code == code {
+			out[o.SyntaxonID] = o.Occurrence
+		}
+	}
+	return out, nil
+}
+
+// SyntaxaWithCoverage returns the set of syntaxa the source makes a statement
+// about, for one scheme.
+func (r *fakeRepo) SyntaxaWithCoverage(_ context.Context, scheme string) (map[string]bool, error) {
+	out := map[string]bool{}
+	for _, c := range r.syntaxonCoverage {
+		if c.Scheme == scheme {
+			out[c.SyntaxonID] = true
 		}
 	}
 	return out, nil
