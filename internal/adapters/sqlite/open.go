@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -101,6 +102,13 @@ func readOnlyHint(path string, err error) string {
 	switch sqliteErr.Code() {
 	case sqlite3.SQLITE_CANTOPEN, sqlite3.SQLITE_READONLY_DIRECTORY:
 		return indexFileHint(path)
+	case sqlite3.SQLITE_READONLY_ROLLBACK, sqlite3.SQLITE_READONLY_RECOVERY:
+		// A -journal (ROLLBACK) or -wal (RECOVERY) left behind by a crashed
+		// writer has to be replayed before anything may be read, and a
+		// read-only handle cannot do it. Deleting the sidecar is NOT the way
+		// out — it is the record of what still has to be undone.
+		return " (a leftover -journal/-wal sidecar still has to be rolled back, which a read-only handle cannot do" +
+			" — start once with the directory writable so SQLite can recover it, or rebuild the index with `situs ingest`)"
 	default:
 		return ""
 	}
@@ -122,9 +130,19 @@ const (
 // the outside, and guessing "no such file" sends an operator to check
 // permissions that are perfectly fine.
 func indexFileHint(path string) string {
-	header, err := peekHeader(path)
+	// Symlinks are the shape the atomic-swap pattern produces, and SQLite
+	// follows them without a word. Resolving first also separates "not there"
+	// from "there but unreadable" — different problems, different next steps.
+	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		return " (no such file, or not readable by this process)"
+		if errors.Is(err, fs.ErrNotExist) {
+			return " (no such file)"
+		}
+		return " (the path cannot be resolved — not readable by this process, or a broken symlink)"
+	}
+	header, err := peekHeader(resolved)
+	if err != nil {
+		return " (not readable by this process)"
 	}
 	if len(header) < sqliteHeaderPeek || string(header[:len(sqliteMagic)]) != sqliteMagic {
 		return " (not a SQLite database)"
@@ -134,7 +152,9 @@ func indexFileHint(path string) string {
 			" — rebuild it with `situs ingest` of this release, or finalize the file in place where it is writable:" +
 			" sqlite3 <index> 'PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;')"
 	}
-	return " (the file is readable and finalized, so the directory itself must be unreadable or not traversable for this process)"
+	// Everything about the file itself checks out — and the directory is fine
+	// too, the header was just read out of it. What is left is beside the file.
+	return " (the index file itself looks fine — check for leftover -journal/-wal sidecars next to it, and at the SQLite code below)"
 }
 
 // peekHeader reads the first bytes of path through an os.Root confined to its

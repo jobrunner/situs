@@ -570,7 +570,7 @@ func TestIndexFileHintReadsTheFile(t *testing.T) {
 		want string
 	}{
 		{"WAL-Index", walIndex, "WAL"},
-		{"finalisierter Index", finalized, "directory"},
+		{"finalisierter Index", finalized, "looks fine"},
 		{"keine Datenbank", garbage, "not a SQLite database"},
 		{"fehlende Datei", filepath.Join(dir, "absent.sqlite"), "no such file"},
 	} {
@@ -599,5 +599,118 @@ func TestIndexFileHintNamesTheWayOutOfWAL(t *testing.T) {
 		if !strings.Contains(hint, want) {
 			t.Errorf("hint = %q, want it to name %q", hint, want)
 		}
+	}
+}
+
+// An index reached through a symlink is the shape the atomic-swap pattern
+// produces. The diagnosis has to follow it — SQLite does.
+func TestIndexFileHintFollowsASymlink(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "index-2026-09-21.sqlite")
+	db, err := OpenForIngest(t.Context(), real) // left in WAL on purpose
+	if err != nil {
+		t.Fatalf("OpenForIngest = %v, want no error", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	link := filepath.Join(dir, "current.sqlite")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	if hint := indexFileHint(link); !strings.Contains(hint, "WAL") {
+		t.Errorf("hint for a symlinked WAL index = %q, want the WAL diagnosis", hint)
+	}
+}
+
+// "Not there" and "there but unreadable" are different problems with different
+// next steps, and collapsing them costs an operator the afternoon.
+func TestIndexFileHintSeparatesAbsentFromUnreadable(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "index.sqlite")
+	seedIndex(t, path)
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+
+	if hint := indexFileHint(path); !strings.Contains(hint, "not readable") || strings.Contains(hint, "no such file") {
+		t.Errorf("hint for an unreadable file = %q, want it to say unreadable and not 'no such file'", hint)
+	}
+	if hint := indexFileHint(filepath.Join(dir, "absent.sqlite")); !strings.Contains(hint, "no such file") {
+		t.Errorf("hint for a missing file = %q, want 'no such file'", hint)
+	}
+}
+
+// A header that checks out but an open that still fails means the trouble is
+// beside the file, not in it. Saying "the directory must be unreadable" would
+// be provably wrong — the header was just read out of that very directory.
+func TestIndexFileHintDoesNotBlameTheDirectoryItJustRead(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "index.sqlite")
+	seedIndex(t, path)
+
+	hint := indexFileHint(path)
+	if strings.Contains(hint, "directory") {
+		t.Errorf("hint = %q, must not blame the directory it just read the header from", hint)
+	}
+	if !strings.Contains(hint, "-journal") {
+		t.Errorf("hint = %q, want it to point at the sidecar files", hint)
+	}
+}
+
+// A crashed writer leaves a -journal behind, and rolling it back is a write.
+// On a read-only mount that is SQLITE_READONLY_RECOVERY, and the way out is
+// NOT to delete the sidecar — it is the record of what still has to be undone.
+func TestOpenReadOnlyExplainsALeftoverJournal(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "index.sqlite")
+	seedIndex(t, path)
+	if err := os.WriteFile(path+"-journal", []byte("leftover"), 0o600); err != nil {
+		t.Fatalf("writing the leftover journal: %v", err)
+	}
+	chmodDir(t, dir, 0o500)
+	t.Cleanup(func() { chmodDir(t, dir, 0o700) })
+
+	db, err := OpenReadOnly(t.Context(), path)
+	if err == nil {
+		_ = db.Close()
+		t.Fatal("OpenReadOnly with a leftover journal succeeded, want it refused")
+	}
+	if !strings.Contains(err.Error(), "rolled back") {
+		t.Errorf("error = %v, want it to explain the rollback that cannot happen", err)
+	}
+}
+
+// peekHeader's own failure modes, reached directly: neither may be mistaken for
+// "this file is not an index".
+func TestPeekHeaderReportsWhatItCannotRead(t *testing.T) {
+	dir := t.TempDir()
+
+	if _, err := peekHeader(filepath.Join(dir, "no-such-dir", "index.sqlite")); err == nil {
+		t.Error("peekHeader in a missing directory = nil error, want one")
+	}
+	if _, err := peekHeader(dir); err == nil {
+		t.Error("peekHeader on a directory = nil error, want one")
+	}
+}
+
+// A path whose parent cannot be traversed is neither "absent" nor a readable
+// file: EvalSymlinks fails with something other than ErrNotExist.
+func TestIndexFileHintOnAnUnreachablePath(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "locked")
+	if err := os.Mkdir(sub, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(sub, "index.sqlite")
+	seedIndex(t, path)
+	chmodDir(t, sub, 0o000)
+	t.Cleanup(func() { chmodDir(t, sub, 0o700) })
+
+	hint := indexFileHint(path)
+	if !strings.Contains(hint, "cannot be resolved") {
+		t.Errorf("hint = %q, want it to say the path cannot be resolved", hint)
 	}
 }

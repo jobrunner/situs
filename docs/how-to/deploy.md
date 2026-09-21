@@ -111,7 +111,14 @@ wie es CI-Checkouts anlegen, zeigte damit auf einen Pfad, den es nicht gibt.
   trifft **jeden Index, der vor 0.11.0 gebaut wurde**; siehe den Abschnitt
   gleich darunter.
 
-Welchen SQLite-Code der letzte Fall auslöst, hängt an der Umgebung und nicht an
+- **Ein Index mit einer liegengebliebenen `-journal`/`-wal`-Datei** eines
+  abgestürzten Schreibers. Die muss zurückgerollt werden, bevor irgendetwas
+  gelesen werden darf, und das ist ein Schreibvorgang. Die Beiwagendatei zu
+  löschen ist **nicht** der Ausweg — sie ist die Aufzeichnung dessen, was noch
+  rückgängig zu machen ist. Einmal mit beschreibbarem Verzeichnis starten, dann
+  erledigt SQLite es selbst.
+
+Welchen SQLite-Code der WAL-Fall auslöst, hängt an der Umgebung und nicht an
 der Ursache: ein `chmod`-geschütztes Verzeichnis meldet
 `SQLITE_READONLY_DIRECTORY (1544)`, ein `:ro`-Bind-Mount meldet
 `SQLITE_CANTOPEN (14)` — derselbe Fehler, den auch eine fehlende Datei
@@ -137,11 +144,19 @@ Datei beschreibbar ist, bei gestopptem Container:
 
 ```bash
 sqlite3 /pfad/situs.sqlite 'PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;'
-rm -f /pfad/situs.sqlite-wal /pfad/situs.sqlite-shm
+# Ausgabe muss auf "delete" enden. Steht dort "wal", war die Datenbank belegt.
+rm -f /pfad/situs.sqlite-shm
 ```
 
-Das `rm` **erst nach** dem Checkpoint: der faltet eine noch gefüllte WAL in die
-Datenbank zurück. Vorher gelöscht wären die darin stehenden Daten verloren.
+**Die Ausgabe ist die Prüfung, nicht der Exit-Code.** `journal_mode=DELETE`
+antwortet mit dem Modus, der danach gilt — steht dort weiter `wal`, hielt noch
+jemand die Datenbank offen, und dann darf **nichts** gelöscht werden: die
+`-wal` trägt in dem Fall Daten, die noch nicht in der Datenbank stehen.
+
+Nach einem erfolgreichen Wechsel ist die `-wal` schon weg (gemessen), die
+`-shm` bleibt liegen und ist bedeutungslos — sie trägt nur den WAL-Index im
+Shared Memory, keine Daten. Ein `serve` stört sie nicht; das `rm` ist
+Kosmetik.
 
 Ob ein Index betroffen ist, sagt Byte 18 seines Headers — `2` heißt WAL, `1`
 heißt finalisiert:
