@@ -58,57 +58,50 @@ func (t *ingestTx) UpsertCrosswalk(c domain.Crosswalk) error {
 
 func (t *ingestTx) UpsertSyntaxon(s domain.Syntaxon) error {
 	_, err := t.tx.ExecContext(t.ctx,
-		`INSERT INTO syntaxon (id, rank, name, author, parent_id)
-		 VALUES (?, ?, ?, ?, ?)
+		`INSERT INTO syntaxon (id, rank, name, author, parent_id, alt_code, source,
+		                       parent_provenance, life_form_group)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
-		   rank=excluded.rank, name=excluded.name, author=excluded.author, parent_id=excluded.parent_id`,
-		s.ID, s.Rank, s.Name, s.Author, s.ParentID)
+		   rank = excluded.rank, name = excluded.name, author = excluded.author,
+		   parent_id = excluded.parent_id, alt_code = excluded.alt_code,
+		   source = excluded.source, parent_provenance = excluded.parent_provenance,
+		   life_form_group = excluded.life_form_group`,
+		s.ID, s.Rank, s.Name, s.Author, s.ParentID, s.AltCode, s.Source,
+		s.ParentProvenance, s.LifeFormGroup)
 	if err != nil {
 		return fmt.Errorf("sqlite: upserting syntaxon %s: %w", s.ID, err)
 	}
 	return nil
 }
 
-// UpsertSyntaxonAuthor sets name and author on an already-upserted syntaxon.
-// name always updates — a match always has a real FloraVeg name to give. An
-// empty parentID leaves the stored parent_id untouched — a repeated
-// hierarchy-ingest pass without a fresh match must not erase a previous one.
-//
-// This method enriches a row that must already exist (its caller only ever
-// passes an id read back from the index moments earlier); an id the index
-// does not carry means the index changed under the ingest or the caller
-// drifted out of sync with its own read, and is reported as an error rather
-// than silently doing nothing.
-//
-// Existence is checked with a dedicated SELECT rather than the UPDATE's own
-// RowsAffected(): SQLite counts a row as "changed" once it matches the WHERE
-// clause, even when every assigned value equals what was already stored —
-// which a repeated hierarchy-ingest pass (the very idempotency this method's
-// callers rely on) hits routinely. Trusting RowsAffected()==0 as "not found"
-// would misreport that ordinary no-op re-run as a missing row.
-func (t *ingestTx) UpsertSyntaxonAuthor(id, name, author, parentID string) error {
-	var exists bool
-	if err := t.tx.QueryRowContext(t.ctx,
-		`SELECT EXISTS(SELECT 1 FROM syntaxon WHERE id = ?)`, id).Scan(&exists); err != nil {
-		return fmt.Errorf("sqlite: checking syntaxon %s exists: %w", id, err)
+// SetSyntaxonParent sets the parent and its provenance on an already-written
+// row. Separate from UpsertSyntaxon: the parent of the 16 EEA-only units is
+// only known once the FloraVeg rows and their siblings are in the index.
+func (t *ingestTx) SetSyntaxonParent(id, parentID, provenance string) error {
+	_, err := t.tx.ExecContext(t.ctx,
+		`UPDATE syntaxon SET parent_id = ?, parent_provenance = ? WHERE id = ?`,
+		parentID, provenance, id)
+	if err != nil {
+		return fmt.Errorf("sqlite: setting parent of syntaxon %s: %w", id, err)
 	}
-	if !exists {
-		return fmt.Errorf("sqlite: syntaxon %s not found for author update", id)
-	}
+	return nil
+}
 
-	var err error
-	if parentID == "" {
-		_, err = t.tx.ExecContext(t.ctx,
-			`UPDATE syntaxon SET name = ?, author = ? WHERE id = ?`, name, author, id)
-		if err != nil {
-			return fmt.Errorf("sqlite: setting name/author of syntaxon %s: %w", id, err)
-		}
-	} else {
-		_, err = t.tx.ExecContext(t.ctx,
-			`UPDATE syntaxon SET name = ?, author = ?, parent_id = ? WHERE id = ?`, name, author, parentID, id)
-		if err != nil {
-			return fmt.Errorf("sqlite: setting name/author/parent of syntaxon %s: %w", id, err)
-		}
+// RelinkSyntaxon rewrites every habitat_type_syntaxon edge from syntaxon id
+// from to to. Two statements, not one: an UPDATE would fail on the primary
+// key if the habitat type already carries both edges (exactly the case for
+// ASP-03/KC03). First add the target edges where they are missing, then
+// remove the source edges.
+func (t *ingestTx) RelinkSyntaxon(from, to string) error {
+	if _, err := t.tx.ExecContext(t.ctx,
+		`INSERT OR IGNORE INTO habitat_type_syntaxon (typology_id, code, syntaxon_id)
+		 SELECT typology_id, code, ? FROM habitat_type_syntaxon WHERE syntaxon_id = ?`,
+		to, from); err != nil {
+		return fmt.Errorf("sqlite: relinking syntaxon %s to %s: %w", from, to, err)
+	}
+	if _, err := t.tx.ExecContext(t.ctx,
+		`DELETE FROM habitat_type_syntaxon WHERE syntaxon_id = ?`, from); err != nil {
+		return fmt.Errorf("sqlite: removing relinked syntaxon %s edges: %w", from, err)
 	}
 	return nil
 }

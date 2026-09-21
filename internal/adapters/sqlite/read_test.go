@@ -422,8 +422,9 @@ func TestReads_QueryErrorsAreReturned(t *testing.T) {
 			_, err := db.AreasForConcepts(ctx, []string{"wcvp:concept:1"}, domain.SchemeWGSRPDL3)
 			return err
 		},
-		"KnownAreaCodes": func() error { _, err := db.KnownAreaCodes(ctx, domain.SchemeWGSRPDL3); return err },
-		"AllSyntaxa":     func() error { _, err := db.AllSyntaxa(ctx); return err },
+		"KnownAreaCodes":       func() error { _, err := db.KnownAreaCodes(ctx, domain.SchemeWGSRPDL3); return err },
+		"AllSyntaxa":           func() error { _, err := db.AllSyntaxa(ctx); return err },
+		"SyntaxonIDsByAltCode": func() error { _, err := db.SyntaxonIDsByAltCode(ctx); return err },
 	}
 	for name, call := range cases {
 		if err := call(); err == nil {
@@ -477,6 +478,10 @@ func TestReads_RowsIterationAndScanErrorsAreReturned(t *testing.T) {
 		"AllSyntaxa": {
 			call: func(db *DB) error { _, err := db.AllSyntaxa(ctx); return err },
 			rows: "reading all syntaxa", scan: "scanning syntaxon",
+		},
+		"SyntaxonIDsByAltCode": {
+			call: func(db *DB) error { _, err := db.SyntaxonIDsByAltCode(ctx); return err },
+			rows: "reading syntaxon alt codes", scan: "scanning syntaxon alt code",
 		},
 	}
 	for name, tc := range cases {

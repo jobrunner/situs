@@ -18,13 +18,16 @@ type IngestTx interface {
 	UpsertHabitatType(h domain.HabitatType) error
 	UpsertCrosswalk(c domain.Crosswalk) error
 	UpsertSyntaxon(s domain.Syntaxon) error
-	// UpsertSyntaxonAuthor sets Name and Author on an already-upserted syntaxon
-	// and, if parentID is non-empty, its ParentID — used ONLY by the
-	// hierarchy-matching pass to enrich an existing EUNIS alliance row on a
-	// FloraVeg match. name is FloraVeg's own clean name, replacing the
-	// historical EUNIS combi-string; it is always set (a match always has a
-	// real FloraVeg name), unlike parentID, which can legitimately be empty.
-	UpsertSyntaxonAuthor(id, name, author, parentID string) error
+	// SetSyntaxonParent sets the parent and its provenance on an already
+	// written row. Separate from UpsertSyntaxon because the parent of the
+	// 16 EEA-only units is only known once the FloraVeg rows and their
+	// siblings are in the index.
+	SetSyntaxonParent(id, parentID, provenance string) error
+	// RelinkSyntaxon rewrites every habitat_type_syntaxon edge from
+	// syntaxon id from to to. If a habitat type already carries both
+	// edges, the from edge is removed instead of duplicating the target
+	// edge.
+	RelinkSyntaxon(from, to string) error
 	LinkSyntaxon(key domain.HabitatTypeKey, syntaxonID string) error
 	UpsertSpeciesRole(r domain.SpeciesRole) error
 	// UpsertDerivedSpeciesRole writes a species role derived from an aggregate's
@@ -107,6 +110,11 @@ type Repository interface {
 	// HabitatTypeKeysForSyntaxon returns the habitat types a syntaxon is linked
 	// to — the m:n direction.
 	HabitatTypeKeysForSyntaxon(ctx context.Context, syntaxonID string) ([]domain.HabitatTypeKey, error)
+	// SyntaxonIDsByAltCode maps the EEA alt code to the syntaxon id. The
+	// syntaxa ingest uses it to resolve the habitat-type edges of the EEA
+	// source onto the FloraVeg primary codes. Rows without an alt code are
+	// absent from the map.
+	SyntaxonIDsByAltCode(ctx context.Context) (map[string]string, error)
 	// Localization returns every localization matching entityType, entityKey,
 	// lang and field — there can be more than one, one per source.
 	// Localization returns every localized field of one entity in one language.

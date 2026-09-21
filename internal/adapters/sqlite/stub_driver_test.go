@@ -70,6 +70,32 @@ func (c *stubConn) Begin() (driver.Tx, error) {
 	return nil, errors.New("stub: Begin is not implemented")
 }
 
+// stubQueryRule maps a substring found in a query's text to the column set a
+// stubRows answering it must carry — the table stubColumnRules below is
+// checked in order, first match wins.
+type stubQueryRule struct {
+	contains string
+	cols     []string
+}
+
+var stubColumnRules = []stubQueryRule{
+	{"LEFT JOIN area", []string{"area_code", "name_en"}},
+	{"habitat_type_crosswalk", []string{"from_typology", "from_code", "to_typology", "to_code", "qualifier"}},
+	{"FROM localization", []string{"value", "source", "provenance", "derived_from"}},
+	{"FROM species_role WHERE concept_id", []string{
+		"typology_id", "code", "concept_id", "verbatim_name", "role", "fidelity", "constancy",
+	}},
+	{"FROM species_role", []string{"concept_id", "verbatim_name", "role", "fidelity", "constancy"}},
+	{"JOIN syntaxon", []string{"id", "rank", "name", "author", "parent_id"}},
+	{"FROM syntaxon ORDER BY id", []string{"id", "rank", "name", "author", "parent_id"}},
+	{"alt_code, id FROM syntaxon", []string{"alt_code", "id"}},
+	{"FROM habitat_type_syntaxon", []string{"typology_id", "code"}},
+	{"concept_id, area_code FROM species_distribution", []string{"concept_id", "area_code"}},
+	{"DISTINCT area_code FROM species_distribution", []string{"area_code"}},
+	{"FROM trait_value", []string{"vocab", "vocab_version", "dim", "value", "niche_width", "n_systems"}},
+	{"DISTINCT vocab FROM trait_vocabulary", []string{"vocab"}},
+}
+
 // QueryContext picks the column set by matching the table name in the query
 // text — every list read queries one table (or one join), so this is enough to
 // serve them all without needing a real SQL engine.
@@ -77,36 +103,12 @@ func (c *stubConn) QueryContext(_ context.Context, query string, _ []driver.Name
 	if rows, err := c.openTimeRows(query); rows != nil || err != nil {
 		return rows, err
 	}
-	switch {
-	case strings.Contains(query, "LEFT JOIN area"):
-		return &stubRows{cols: []string{"area_code", "name_en"}, mode: c.mode}, nil
-	case strings.Contains(query, "habitat_type_crosswalk"):
-		return &stubRows{cols: []string{"from_typology", "from_code", "to_typology", "to_code", "qualifier"}, mode: c.mode}, nil
-	case strings.Contains(query, "FROM localization"):
-		return &stubRows{cols: []string{"value", "source", "provenance", "derived_from"}, mode: c.mode}, nil
-	case strings.Contains(query, "FROM species_role WHERE concept_id"):
-		return &stubRows{cols: []string{
-			"typology_id", "code", "concept_id", "verbatim_name", "role", "fidelity", "constancy",
-		}, mode: c.mode}, nil
-	case strings.Contains(query, "FROM species_role"):
-		return &stubRows{cols: []string{"concept_id", "verbatim_name", "role", "fidelity", "constancy"}, mode: c.mode}, nil
-	case strings.Contains(query, "JOIN syntaxon"):
-		return &stubRows{cols: []string{"id", "rank", "name", "author", "parent_id"}, mode: c.mode}, nil
-	case strings.Contains(query, "FROM syntaxon ORDER BY id"):
-		return &stubRows{cols: []string{"id", "rank", "name", "author", "parent_id"}, mode: c.mode}, nil
-	case strings.Contains(query, "FROM habitat_type_syntaxon"):
-		return &stubRows{cols: []string{"typology_id", "code"}, mode: c.mode}, nil
-	case strings.Contains(query, "concept_id, area_code FROM species_distribution"):
-		return &stubRows{cols: []string{"concept_id", "area_code"}, mode: c.mode}, nil
-	case strings.Contains(query, "DISTINCT area_code FROM species_distribution"):
-		return &stubRows{cols: []string{"area_code"}, mode: c.mode}, nil
-	case strings.Contains(query, "FROM trait_value"):
-		return &stubRows{cols: []string{"vocab", "vocab_version", "dim", "value", "niche_width", "n_systems"}, mode: c.mode}, nil
-	case strings.Contains(query, "DISTINCT vocab FROM trait_vocabulary"):
-		return &stubRows{cols: []string{"vocab"}, mode: c.mode}, nil
-	default:
-		return nil, fmt.Errorf("stub: unexpected query %q", query)
+	for _, rule := range stubColumnRules {
+		if strings.Contains(query, rule.contains) {
+			return &stubRows{cols: rule.cols, mode: c.mode}, nil
+		}
 	}
+	return nil, fmt.Errorf("stub: unexpected query %q", query)
 }
 
 type stubRows struct {

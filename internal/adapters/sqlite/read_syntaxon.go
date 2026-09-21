@@ -20,8 +20,11 @@ import (
 // Syntaxon returns one vegetation unit, or output.ErrNotFound.
 func (d *DB) Syntaxon(ctx context.Context, id string) (domain.Syntaxon, error) {
 	s := domain.Syntaxon{ID: id}
-	row := d.QueryRowContext(ctx, `SELECT rank, name, author, parent_id FROM syntaxon WHERE id = ?`, id)
-	if err := row.Scan(&s.Rank, &s.Name, &s.Author, &s.ParentID); err != nil {
+	row := d.QueryRowContext(ctx,
+		`SELECT rank, name, author, parent_id, alt_code, source, parent_provenance, life_form_group
+		 FROM syntaxon WHERE id = ?`, id)
+	if err := row.Scan(&s.Rank, &s.Name, &s.Author, &s.ParentID, &s.AltCode, &s.Source,
+		&s.ParentProvenance, &s.LifeFormGroup); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Syntaxon{}, fmt.Errorf("sqlite: syntaxon %q: %w", id, output.ErrNotFound)
 		}
@@ -33,7 +36,8 @@ func (d *DB) Syntaxon(ctx context.Context, id string) (domain.Syntaxon, error) {
 // Syntaxa returns the vegetation units linked to a habitat type.
 func (d *DB) Syntaxa(ctx context.Context, key domain.HabitatTypeKey) ([]domain.Syntaxon, error) {
 	rows, err := d.QueryContext(ctx,
-		`SELECT s.id, s.rank, s.name, s.author, s.parent_id
+		`SELECT s.id, s.rank, s.name, s.author, s.parent_id, s.alt_code, s.source,
+		        s.parent_provenance, s.life_form_group
 		 FROM habitat_type_syntaxon l JOIN syntaxon s ON s.id = l.syntaxon_id
 		 WHERE l.typology_id = ? AND l.code = ?
 		 ORDER BY s.id`,
@@ -46,7 +50,8 @@ func (d *DB) Syntaxa(ctx context.Context, key domain.HabitatTypeKey) ([]domain.S
 	out := []domain.Syntaxon{}
 	for rows.Next() {
 		var s domain.Syntaxon
-		if err := rows.Scan(&s.ID, &s.Rank, &s.Name, &s.Author, &s.ParentID); err != nil {
+		if err := rows.Scan(&s.ID, &s.Rank, &s.Name, &s.Author, &s.ParentID, &s.AltCode, &s.Source,
+			&s.ParentProvenance, &s.LifeFormGroup); err != nil {
 			return nil, fmt.Errorf("sqlite: scanning syntaxa of %s: %w", key, err)
 		}
 		out = append(out, s)
@@ -61,7 +66,9 @@ func (d *DB) Syntaxa(ctx context.Context, key domain.HabitatTypeKey) ([]domain.S
 // by the FloraVeg hierarchy-matching pass to find every already-ingested
 // EUNIS alliance to match its own names against.
 func (d *DB) AllSyntaxa(ctx context.Context) ([]domain.Syntaxon, error) {
-	rows, err := d.QueryContext(ctx, `SELECT id, rank, name, author, parent_id FROM syntaxon ORDER BY id`)
+	rows, err := d.QueryContext(ctx,
+		`SELECT id, rank, name, author, parent_id, alt_code, source, parent_provenance, life_form_group
+		 FROM syntaxon ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: reading all syntaxa: %w", err)
 	}
@@ -70,13 +77,38 @@ func (d *DB) AllSyntaxa(ctx context.Context) ([]domain.Syntaxon, error) {
 	out := []domain.Syntaxon{}
 	for rows.Next() {
 		var s domain.Syntaxon
-		if err := rows.Scan(&s.ID, &s.Rank, &s.Name, &s.Author, &s.ParentID); err != nil {
+		if err := rows.Scan(&s.ID, &s.Rank, &s.Name, &s.Author, &s.ParentID, &s.AltCode, &s.Source,
+			&s.ParentProvenance, &s.LifeFormGroup); err != nil {
 			return nil, fmt.Errorf("sqlite: scanning syntaxon: %w", err)
 		}
 		out = append(out, s)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("sqlite: reading all syntaxa: %w", err)
+	}
+	return out, nil
+}
+
+// SyntaxonIDsByAltCode maps the EEA alt code to the syntaxon id. The syntaxa
+// ingest uses it to resolve the habitat-type edges of the EEA source onto
+// the FloraVeg primary codes. Rows without an alt code are absent from the
+// map.
+func (d *DB) SyntaxonIDsByAltCode(ctx context.Context) (map[string]string, error) {
+	rows, err := d.QueryContext(ctx, `SELECT alt_code, id FROM syntaxon WHERE alt_code <> ''`)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: reading syntaxon alt codes: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]string{}
+	for rows.Next() {
+		var alt, id string
+		if err := rows.Scan(&alt, &id); err != nil {
+			return nil, fmt.Errorf("sqlite: scanning syntaxon alt code: %w", err)
+		}
+		out[alt] = id
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite: reading syntaxon alt codes: %w", err)
 	}
 	return out, nil
 }

@@ -264,87 +264,164 @@ func TestIngestTx_UpsertSyntaxonRoundTripsAuthor(t *testing.T) {
 	}
 }
 
-// withTx begins a transaction on db, runs fn, and commits — the shared shape
-// of every ingest step in this test, so a caller states only what changes.
-func withTx(ctx context.Context, t *testing.T, db *DB, fn func(tx output.IngestTx) error) {
-	t.Helper()
+func TestUpsertSyntaxonSchreibtAlleFelder(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
 	tx, err := db.Begin(ctx)
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	if err := fn(tx); err != nil {
-		t.Fatalf("ingest step: %v", err)
+	want := domain.Syntaxon{
+		ID: "CA01A", Rank: domain.SyntaxonRankAlliance, Name: "Test-Verband",
+		Author: "Koch 1970", ParentID: "CA01", AltCode: "TST-01A",
+		Source: domain.SyntaxonSourceEVC, ParentProvenance: domain.ParentProvenanceOfficial,
+	}
+	if err := tx.UpsertSyntaxon(want); err != nil {
+		t.Fatalf("UpsertSyntaxon: %v", err)
 	}
 	if err := tx.Commit(); err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
-}
-
-// assertSyntaxonAuthorAndRank fetches id and checks that UpsertSyntaxonAuthor
-// set Name/Author/ParentID as wanted without touching Rank.
-func assertSyntaxonAuthorAndRank(ctx context.Context, t *testing.T, db *DB, id, wantAuthor, wantParentID, wantRank, wantName string) {
-	t.Helper()
-	got, err := db.Syntaxon(ctx, id)
+	got, err := db.Syntaxon(ctx, "CA01A")
 	if err != nil {
 		t.Fatalf("Syntaxon: %v", err)
 	}
-	if got.Author != wantAuthor || got.ParentID != wantParentID || got.Name != wantName {
-		t.Errorf("got = %+v, want Author=%q ParentID=%q Name=%q", got, wantAuthor, wantParentID, wantName)
-	}
-	if got.Rank != wantRank {
-		t.Errorf("got = %+v, want Rank untouched (%q)", got, wantRank)
+	if got != want {
+		t.Errorf("Syntaxon = %+v, erwartet %+v", got, want)
 	}
 }
 
-// assertSyntaxonParentID fetches id and checks only ParentID — used for the
-// empty-parentID call, which must leave a previously set ParentID untouched.
-func assertSyntaxonParentID(ctx context.Context, t *testing.T, db *DB, id, wantParentID string) {
-	t.Helper()
-	got, err := db.Syntaxon(ctx, id)
+func TestSetSyntaxonParentSetztNurElternteilUndProvenienz(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertSyntaxon(domain.Syntaxon{
+		ID: "NAR-01E", Rank: domain.SyntaxonRankAlliance, Name: "Campanulo-Nardion",
+		Source: domain.SyntaxonSourceEUNIS, ParentProvenance: domain.ParentProvenanceOfficial,
+	}); err != nil {
+		t.Fatalf("UpsertSyntaxon: %v", err)
+	}
+	if err := tx.SetSyntaxonParent("NAR-01E", "CI01", domain.ParentProvenanceDerived); err != nil {
+		t.Fatalf("SetSyntaxonParent: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.Syntaxon(ctx, "NAR-01E")
 	if err != nil {
 		t.Fatalf("Syntaxon: %v", err)
 	}
-	if got.ParentID != wantParentID {
-		t.Errorf("ParentID = %q after empty-parentID call, want it untouched (%q)", got.ParentID, wantParentID)
+	if got.ParentID != "CI01" || got.ParentProvenance != domain.ParentProvenanceDerived {
+		t.Errorf("ParentID/Provenienz = %q/%q, erwartet CI01/derived", got.ParentID, got.ParentProvenance)
+	}
+	if got.Name != "Campanulo-Nardion" {
+		t.Errorf("Name wurde angefasst: %q", got.Name)
 	}
 }
 
-func TestIngestTx_UpsertSyntaxonAuthor(t *testing.T) {
+func TestRelinkSyntaxonSchreibtKanteUm(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	key := domain.HabitatTypeKey{Typology: domain.DefaultTypologyID, Code: "U36"}
+	if err := tx.LinkSyntaxon(key, "ASP-03"); err != nil {
+		t.Fatalf("LinkSyntaxon: %v", err)
+	}
+	if err := tx.RelinkSyntaxon("ASP-03", "KC03"); err != nil {
+		t.Fatalf("RelinkSyntaxon: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
 
-	withTx(ctx, t, db, func(tx output.IngestTx) error {
-		return tx.UpsertSyntaxon(domain.Syntaxon{ID: "arrhenatherion", Rank: "alliance", Name: "Arrhenatherion"})
-	})
-
-	withTx(ctx, t, db, func(tx output.IngestTx) error {
-		return tx.UpsertSyntaxonAuthor("arrhenatherion", "Arrhenatherion elatioris", "Koch 1926", "AA01")
-	})
-	assertSyntaxonAuthorAndRank(ctx, t, db, "arrhenatherion", "Koch 1926", "AA01", "alliance", "Arrhenatherion elatioris")
-
-	// A second call with an empty parentID must not clear the one just set,
-	// but name/author DO update on every call.
-	withTx(ctx, t, db, func(tx output.IngestTx) error {
-		return tx.UpsertSyntaxonAuthor("arrhenatherion", "Arrhenatherion elatioris", "Koch 1926 emend.", "")
-	})
-	assertSyntaxonParentID(ctx, t, db, "arrhenatherion", "AA01")
-	assertSyntaxonAuthorAndRank(ctx, t, db, "arrhenatherion", "Koch 1926 emend.", "AA01", "alliance", "Arrhenatherion elatioris")
+	keys, err := db.HabitatTypeKeysForSyntaxon(ctx, "KC03")
+	if err != nil {
+		t.Fatalf("HabitatTypeKeysForSyntaxon: %v", err)
+	}
+	if len(keys) != 1 || keys[0] != key {
+		t.Errorf("KC03 traegt %v, erwartet genau %v", keys, key)
+	}
+	alt, err := db.HabitatTypeKeysForSyntaxon(ctx, "ASP-03")
+	if err != nil {
+		t.Fatalf("HabitatTypeKeysForSyntaxon(ASP-03): %v", err)
+	}
+	if len(alt) != 0 {
+		t.Errorf("ASP-03 traegt noch Kanten: %v", alt)
+	}
 }
 
-// UpsertSyntaxonAuthor only ever enriches a row its caller just read back
-// from the index — an id matching zero rows means the index changed under
-// the ingest or the caller drifted out of sync, and must surface as an
-// error rather than a silent no-op.
-func TestIngestTx_UpsertSyntaxonAuthor_UnknownIDIsAnError(t *testing.T) {
+// Both edges already exist: U36 -> ASP-03 AND U36 -> KC03. The rewrite must
+// not fail on the primary key — it must simply remove the source edge.
+func TestRelinkSyntaxonIstIdempotentBeiBestehenderZielkante(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	key := domain.HabitatTypeKey{Typology: domain.DefaultTypologyID, Code: "U36"}
+	if err := tx.LinkSyntaxon(key, "ASP-03"); err != nil {
+		t.Fatalf("LinkSyntaxon(ASP-03): %v", err)
+	}
+	if err := tx.LinkSyntaxon(key, "KC03"); err != nil {
+		t.Fatalf("LinkSyntaxon(KC03): %v", err)
+	}
+	if err := tx.RelinkSyntaxon("ASP-03", "KC03"); err != nil {
+		t.Fatalf("RelinkSyntaxon: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	keys, err := db.HabitatTypeKeysForSyntaxon(ctx, "KC03")
+	if err != nil {
+		t.Fatalf("HabitatTypeKeysForSyntaxon: %v", err)
+	}
+	if len(keys) != 1 {
+		t.Errorf("KC03 traegt %d Kanten, erwartet 1", len(keys))
+	}
+	alt, err := db.HabitatTypeKeysForSyntaxon(ctx, "ASP-03")
+	if err != nil {
+		t.Fatalf("HabitatTypeKeysForSyntaxon(ASP-03): %v", err)
+	}
+	if len(alt) != 0 {
+		t.Errorf("ASP-03 traegt noch Kanten: %v", alt)
+	}
+}
+
+// RelinkSyntaxon's two statements have separate error-wrap branches — pin the
+// second one (the DELETE) with a trigger that blocks only deletes, so the
+// leading INSERT OR IGNORE succeeds and only the second statement fails.
+func TestRelinkSyntaxonWrapsAnErrorFromTheDeleteStatement(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	if _, err := db.ExecContext(ctx,
+		`CREATE TRIGGER block_delete BEFORE DELETE ON habitat_type_syntaxon
+		 BEGIN SELECT RAISE(ABORT, 'blocked'); END`); err != nil {
+		t.Fatalf("creating trigger: %v", err)
+	}
 
 	tx, err := db.Begin(ctx)
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	if err := tx.UpsertSyntaxonAuthor("does-not-exist", "X", "Koch 1926", "AA01"); err == nil {
-		t.Fatal("UpsertSyntaxonAuthor(unknown id) = nil error, want an error")
+	key := domain.HabitatTypeKey{Typology: domain.DefaultTypologyID, Code: "U36"}
+	if err := tx.LinkSyntaxon(key, "ASP-03"); err != nil {
+		t.Fatalf("LinkSyntaxon: %v", err)
+	}
+	err = tx.RelinkSyntaxon("ASP-03", "KC03")
+	if err == nil {
+		t.Fatal("RelinkSyntaxon with a blocked DELETE = nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "removing relinked syntaxon") {
+		t.Errorf("error = %q, want it to name the DELETE failure", err)
 	}
 	if err := tx.Rollback(); err != nil {
 		t.Fatalf("Rollback: %v", err)
@@ -671,13 +748,11 @@ func TestIngestTx_MethodsWrapErrorsOnAClosedTransaction(t *testing.T) {
 			return tx.UpsertCrosswalk(domain.Crosswalk{From: key, To: key, Qualifier: domain.QualifierSame})
 		},
 		"UpsertSyntaxon": func() error { return tx.UpsertSyntaxon(domain.Syntaxon{ID: "x", Rank: "class", Name: "x"}) },
-		"UpsertSyntaxonAuthor(no parent)": func() error {
-			return tx.UpsertSyntaxonAuthor("x", "X", "Koch 1926", "")
+		"SetSyntaxonParent": func() error {
+			return tx.SetSyntaxonParent("x", "AA01", domain.ParentProvenanceDerived)
 		},
-		"UpsertSyntaxonAuthor(with parent)": func() error {
-			return tx.UpsertSyntaxonAuthor("x", "X", "Koch 1926", "AA01")
-		},
-		"LinkSyntaxon": func() error { return tx.LinkSyntaxon(key, "x") },
+		"RelinkSyntaxon": func() error { return tx.RelinkSyntaxon("x", "y") },
+		"LinkSyntaxon":   func() error { return tx.LinkSyntaxon(key, "x") },
 		"UpsertSpeciesRole": func() error {
 			return tx.UpsertSpeciesRole(domain.SpeciesRole{Key: key, VerbatimName: "x", Role: "diagnostic"})
 		},
