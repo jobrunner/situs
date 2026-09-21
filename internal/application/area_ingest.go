@@ -68,14 +68,14 @@ func ingestAreaRows(ctx context.Context, tx output.IngestTx, csvPath string) (Ar
 	var rep AreaReport
 	skip := newRowSkipper(&rep.SkippedRows, file, "area")
 
-	err := readAll(ctx, dir, file, ',', []string{"area_scheme", "area_code", "name_en"}, skip,
+	err := readAll(ctx, dir, file, ',', []string{"area_scheme", "area_code", colNameEN}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			a := domain.NamedArea{
 				Area: domain.Area{
 					Scheme: row[idx["area_scheme"]],
 					Code:   row[idx["area_code"]],
 				},
-				NameEN: row[idx["name_en"]],
+				NameEN: row[idx[colNameEN]],
 			}
 			if !a.IsComplete() {
 				skip(line, fmt.Errorf("incomplete area %s", a.Area))

@@ -27,6 +27,7 @@ const (
 	colCode       = "code"
 	colTypologyID = "typology_id"
 	colName       = "name"
+	colNameEN     = "name_en"
 )
 
 // IngestReport summarizes one ingest run.
@@ -259,7 +260,7 @@ func ingestHabitatTypes(ctx context.Context, tx output.IngestTx, dir string) (co
 	const file = "habitat_types.csv"
 	skip := newRowSkipper(&skipped, file, "habitat type")
 	err = readAll(ctx, dir, file, ',',
-		[]string{colTypologyID, colCode, "level", "name_en", "parent_code", "priority"}, skip,
+		[]string{colTypologyID, colCode, "level", colNameEN, "parent_code", "priority"}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			typologyID, perr := domain.ParseTypologyID(row[idx[colTypologyID]])
 			if perr != nil {
@@ -279,7 +280,7 @@ func ingestHabitatTypes(ctx context.Context, tx output.IngestTx, dir string) (co
 			h := domain.HabitatType{
 				Key:        domain.HabitatTypeKey{Typology: typologyID, Code: row[idx[colCode]]},
 				Level:      level,
-				NameEN:     row[idx["name_en"]],
+				NameEN:     row[idx[colNameEN]],
 				ParentCode: row[idx["parent_code"]],
 				Priority:   priority,
 			}

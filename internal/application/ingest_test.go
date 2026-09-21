@@ -441,9 +441,6 @@ type fakeRepo struct {
 		key        domain.HabitatTypeKey
 		syntaxonID string
 	}
-	authorUpdates []struct {
-		id, name, author, parentID string
-	}
 	allSyntaxaErr error
 	speciesRoles  []domain.SpeciesRole
 	speciesNames  []domain.SpeciesName
@@ -624,24 +621,83 @@ func (r *fakeRepo) UpsertSyntaxon(s domain.Syntaxon) error {
 	return nil
 }
 
-func (r *fakeRepo) UpsertSyntaxonAuthor(id, name, author, parentID string) error {
-	if err := r.failIfNamed("UpsertSyntaxonAuthor"); err != nil {
+// SetSyntaxonParent mirrors the sqlite adapter: an id the index does not
+// carry is an error, not a silent no-op, so a test seeding the wrong id
+// fails loudly instead of Task 7 checking a no-op that looked like success.
+func (r *fakeRepo) SetSyntaxonParent(id, parentID, provenance string) error {
+	if err := r.failIfNamed("SetSyntaxonParent"); err != nil {
 		return err
 	}
-	r.authorUpdates = append(r.authorUpdates, struct{ id, name, author, parentID string }{id, name, author, parentID})
 	for i := range r.syntaxa {
 		if r.syntaxa[i].ID == id {
-			r.syntaxa[i].Name = name
-			r.syntaxa[i].Author = author
-			if parentID != "" {
-				r.syntaxa[i].ParentID = parentID
-			}
+			r.syntaxa[i].ParentID = parentID
+			r.syntaxa[i].ParentProvenance = provenance
 			return nil
 		}
 	}
-	// Mirrors the sqlite adapter: an id the index does not carry is an error,
-	// not a silent no-op — a test seeding the wrong id must fail loudly.
-	return fmt.Errorf("fakeRepo: syntaxon %s not found for author update", id)
+	return fmt.Errorf("fakeRepo: kein Syntaxon %q", id)
+}
+
+// RelinkSyntaxon rewrites every habitat_type_syntaxon edge from from to to,
+// dropping the from edge instead of duplicating it if to is already linked
+// to the same habitat type.
+func (r *fakeRepo) RelinkSyntaxon(from, to string) error {
+	if err := r.failIfNamed("RelinkSyntaxon"); err != nil {
+		return err
+	}
+	linked := map[domain.HabitatTypeKey]bool{}
+	for _, l := range r.syntaxaLinks {
+		if l.syntaxonID == to {
+			linked[l.key] = true
+		}
+	}
+	kept := r.syntaxaLinks[:0]
+	for _, l := range r.syntaxaLinks {
+		switch {
+		case l.syntaxonID != from:
+			kept = append(kept, l)
+		case linked[l.key]:
+			// drop: to already carries this edge
+		default:
+			l.syntaxonID = to
+			kept = append(kept, l)
+		}
+	}
+	r.syntaxaLinks = kept
+	return nil
+}
+
+// SyntaxonIDsByAltCode mirrors the sqlite adapter: rows without an alt code
+// are absent from the map.
+func (r *fakeRepo) SyntaxonIDsByAltCode(_ context.Context) (map[string]string, error) {
+	out := map[string]string{}
+	for _, s := range r.syntaxa {
+		if s.AltCode != "" {
+			out[s.AltCode] = s.ID
+		}
+	}
+	return out, nil
+}
+
+// syntaxonByID is a test helper returning the zero value when id is unknown
+// — callers assert on the fields they care about, which fail loudly enough.
+func (r *fakeRepo) syntaxonByID(id string) domain.Syntaxon {
+	for _, s := range r.syntaxa {
+		if s.ID == id {
+			return s
+		}
+	}
+	return domain.Syntaxon{}
+}
+
+// has reports whether id was written to the fake index.
+func (r *fakeRepo) has(id string) bool {
+	for _, s := range r.syntaxa {
+		if s.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *fakeRepo) AllSyntaxa(_ context.Context) ([]domain.Syntaxon, error) {
