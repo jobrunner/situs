@@ -78,8 +78,11 @@ class SheetError(RuntimeError):
 
 
 class HeaderError(RuntimeError):
-    """A meta column a parser needs is missing — fail loudly instead of
-    silently defaulting every cell to empty."""
+    """A meta column a parser needs is missing, or the header row's structure
+    is not what this parser recognizes — e.g. a column at or past the
+    summary-column boundary that is not one of the four known summary
+    labels. Fail loudly instead of silently defaulting every cell to empty or
+    silently reading an unknown column as a territory."""
 
 
 class CellValueError(RuntimeError):
@@ -179,18 +182,33 @@ def _meta_index(head, xlsx_path):
 
 
 def _territories(head, meta, xlsx_path):
-    """The territory columns: every header column that is neither a meta
-    column nor a summary column, in column order. Derived rather than counted
-    off a fixed offset, so a further territory needs no code change and a
-    renamed summary column fails the slug check instead of being read as a
-    territory."""
+    """The territory columns: every header column left of the summary
+    columns, in column order. The boundary is STRUCTURAL, not a name count:
+    the first column whose header matches _SUMMARY_LABELS marks where the
+    territory zone ends, and every column at or past that point must also be
+    a recognized summary label. A fifth (or renamed) summary column, or a
+    summary column that precedes a territory column, is not silently read as
+    a 137th territory or silently ignored — it is a sheet structure this
+    parser does not recognize, so it aborts naming the column and its
+    position rather than guessing."""
     meta_cols = set(meta.values())
     out = []
     seen = {}
+    summary_boundary = None
     for ci in sorted(head):
         name = head[ci].strip()
-        if ci in meta_cols or name in _SUMMARY_LABELS or name == "":
+        if ci in meta_cols or name == "":
             continue
+        if name in _SUMMARY_LABELS:
+            if summary_boundary is None:
+                summary_boundary = ci
+            continue
+        if summary_boundary is not None:
+            raise HeaderError(
+                f"{xlsx_path} [{DATA_SHEET}]: column {name!r} at position "
+                f"{ci} lies at or after the summary columns (starting at "
+                f"position {summary_boundary}) but is not one of "
+                f"{_SUMMARY_LABELS}; unrecognized sheet structure")
         code = slugify(name)
         if code in seen and seen[code] != name:
             raise SlugCollisionError(

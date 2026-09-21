@@ -287,6 +287,44 @@ class ConvertTest(unittest.TestCase):
             with self.assertRaises(HeaderError):
                 convert(xlsx, out_dir)
 
+    def test_a_fifth_unrecognized_summary_column_aborts_instead_of_becoming_a_territory(self):
+        # A future format change might add a fifth summary column. It must
+        # not be silently read as a 137th territory just because its cell
+        # values happen to look plausible.
+        head = {
+            0: "Code 1", 1: "Code 2", 2: "Name", 3: "Name with author citation",
+            4: "Albania", 5: "Albania_coast", 6: "Armenia",
+            7: "Verified occurrences", 8: "Uncertain occurrences",
+            9: "All occurrences", 10: "% of uncertain occurrences",
+            11: "Total records",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            xlsx = os.path.join(tmp, "dist.xlsx")
+            make_workbook(xlsx, [head, row((0, "AA01A"), (1, "PAP-01A"), (2, "N"), (3, "N A"), (4, "1"))])
+            out_dir = os.path.join(tmp, "out")
+            os.makedirs(out_dir)
+            with self.assertRaises(HeaderError) as ctx:
+                convert(xlsx, out_dir)
+            self.assertIn("Total records", str(ctx.exception))
+
+    def test_a_summary_column_before_a_territory_column_aborts(self):
+        # The summary columns are structurally expected at the END of the
+        # sheet. A summary column that precedes a territory column is not
+        # the layout this parser recognizes, so it must abort rather than
+        # silently reorder or silently drop the later territory.
+        head = {
+            0: "Code 1", 1: "Code 2", 2: "Name", 3: "Name with author citation",
+            4: "Albania", 5: "Verified occurrences", 6: "Albania_coast",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            xlsx = os.path.join(tmp, "dist.xlsx")
+            make_workbook(xlsx, [head, row((0, "AA01A"), (1, "PAP-01A"), (2, "N"), (3, "N A"), (4, "1"))])
+            out_dir = os.path.join(tmp, "out")
+            os.makedirs(out_dir)
+            with self.assertRaises(HeaderError) as ctx:
+                convert(xlsx, out_dir)
+            self.assertIn("Albania_coast", str(ctx.exception))
+
     def test_the_report_carries_the_measured_value_histogram(self):
         report, _ = self._convert([
             row((0, "AA01A"), (1, "PAP-01A"), (2, "N"), (3, "N A"), (4, "1"), (5, "U")),
