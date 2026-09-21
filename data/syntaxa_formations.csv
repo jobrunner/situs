@@ -1,0 +1,26 @@
+letter,name_en,life_form_group
+A,Vegetation of the arctic zone,phanerogam
+B,Vegetation of the boreal zone,phanerogam
+C,Vegetation of the nemoral forest zone,phanerogam
+D,Vegetation of the steppe zone,phanerogam
+E,Vegetation of the continental desert zone,phanerogam
+F,Vegetation of the mediterranean zone,phanerogam
+G,"Vegetation of the Canary Islands, Madeira and Azores",phanerogam
+H,Alluvial forests and scrub,phanerogam
+I,Swamp forests and scrub,phanerogam
+J,Vegetation of coastal cliffs and dunes,phanerogam
+K,Vegetation of rock crevices and screes,phanerogam
+L,Arctic-alpine vegetation of snow-rich habitats,phanerogam
+M,Vegetation of saline and brackish waters and swamps,phanerogam
+N,Freshwater aquatic vegetation,phanerogam
+O,"Vegetation of freshwater springs, shorelines and swamps",phanerogam
+P,Vegetation of bogs and fens,phanerogam
+Q,Anthropogenic vegetation,phanerogam
+R,Epigaeic bryophyte and lichen vegetation,bryophyte_lichen
+S,Epilithic bryophyte and lichen vegetation,bryophyte_lichen
+T,"Bryophyte and lichen vegetation on bark, wood, leaves, and shaded boulders and base-rich cliff bases",bryophyte_lichen
+U,Vegetation of freshwater algae,algae
+V,Vegetation of soil algae,algae
+W,Aerophytic algal vegetation,algae
+X,Vegetation of snow and ice algae,algae
+Y,Vegetation of marine algae,algae
