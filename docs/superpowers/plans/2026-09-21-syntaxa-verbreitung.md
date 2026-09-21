@@ -894,7 +894,7 @@ sources:
 
 `pipelines/evc-distribution/README.md`, Muster `pipelines/eurovegchecklist/README.md`:
 
-```markdown
+````markdown
 # pipelines/evc-distribution — Verbreitung der Vegetationsverbände
 
 Wandelt die gepinnte Zenodo-XLSX mit der Verbreitung der europäischen
@@ -994,7 +994,7 @@ Baut ihre XLSX-Fixtures selbst — kein Netzwerk, keine Binärdatei im Repo
 nötig. Der wichtigste Fall ist `test_a_missing_cell_does_not_shift_the_
 following_ones`: er ist der Test, der eine positionelle Lesung auffliegen
 lässt.
-```
+````
 
 Die Bemerkung über die 6 abweichenden Summenzellen ist gemessen (`FA03A`,
 `FA03B`, `FA03C`, `FA03F`, `FA03G` und eine weitere): die Spalte
@@ -1725,7 +1725,7 @@ func (d *DB) AreasWithData(ctx context.Context, scheme string) ([]domain.NamedAr
 	}
 
 	rows, err := d.QueryContext(ctx, query, scheme)
-	// ... der bestehende Rumpf ab hier unverändert
+	// ... the existing body from here on, unchanged
 }
 ```
 
@@ -3571,7 +3571,9 @@ In `internal/ports/input/services.go`, in `IndexInfo`:
 	// renaming it would break every client that reads it. What it means is
 	// spelled out here and in the OpenAPI description instead.
 	AreaScheme string `json:"area_scheme"`
-	...
+
+	// (ConceptBackbones, SpeciesWithConcept and AreasWithData stay unchanged.)
+
 	// SyntaxonAreaScheme names the vocabulary ?area= codes come from ON THE
 	// SYNTAXA ROUTES. Named even when SyntaxaWithDistribution is zero: the
 	// scheme is a property of this release, the count one of this index.
@@ -3651,3 +3653,469 @@ git commit -m "feat(api): /v1/info misst Syntaxa-Gebietsschema und Abdeckung"
 ```
 
 ---
+
+### Task 11: Die Phase einhängen, ohne `runIngest` wachsen zu lassen
+
+**Files:**
+- Modify: `cmd/situs/ingest.go`
+- Modify: `CLAUDE.md`
+- Test: `cmd/situs/ingest_test.go`
+
+**Interfaces:**
+- Consumes: `application.IngestSyntaxonDistribution`, `application.SyntaxonDistributionReport` (Task 6); `application.IngestAreas` mit Schema-Menge (Task 5).
+- Produces: `ingestOutput` um `Territories application.AreaReport` und `SyntaxonDistribution application.SyntaxonDistributionReport` erweitert; `localOverlays` um dieselben zwei Felder.
+
+**`runIngest` darf nicht wachsen.** Seine Baseline im Funktionskomplexitäts-Ratchet ist **12**, und Teilprojekt A hängt dort schon eine Phase ein — C ist die zweite. Eine dritte Phase mit ihrem `if err != nil` reißt das Gate. Die neue Phase kommt deshalb **in den bestehenden Helfer `ingestLocalOverlays`**, und das ist nicht bloß eine Ausweichbewegung: dessen Doc-Kommentar beschreibt genau diese Sorte Schritt — „the two ingest steps that read nothing but a local CSV and ask no service at all". Die Territorien sind ein reines Namens-Overlay wie die WGSRPD-Namen, und die Verbreitung ist eine reine CSV-Quelle ohne hostus-Beteiligung. `runIngest` gewinnt damit **zwei Struktur-Zuweisungen und keine Verzweigung**.
+
+Reihenfolge innerhalb von `ingestLocalOverlays`: Gebietsnamen (beide Dateien) vor der Verbreitung. Nicht weil es eine Abhängigkeit gäbe — es gibt keinen Fremdschlüssel —, sondern weil `AreasWithData` die Namen als Overlay über die Codes legt und ein Leser, der die Reihenfolge umdreht, nach dem Grund suchen würde.
+
+- [ ] **Step 1: Die failing Tests schreiben**
+
+In `cmd/situs/ingest_test.go` (Muster: der bestehende Test, der den Report-JSON prüft):
+
+```go
+func TestIngestBerichtetTerritorienUndSyntaxaVerbreitung(t *testing.T) {
+	dir := t.TempDir()
+	writeMinimalIngestInput(t, dir) // the package's existing helper
+	writeCSV(t, dir, "evc_territories.csv",
+		"area_scheme,area_code,name_en\n"+
+			"evc_territory,austria-alps,Austria Alps\n"+
+			"evc_territory,albania,Albania\n")
+	writeCSV(t, dir, "syntaxon_distribution.csv",
+		"syntaxon_id,area_scheme,area_code,occurrence\n"+
+			"CA01A,evc_territory,austria-alps,verified\n")
+	writeCSV(t, dir, "syntaxon_distribution_coverage.csv",
+		"syntaxon_id,area_scheme\nCA01A,evc_territory\n")
+
+	out := runIngestForTest(t, dir) // parses the printed JSON
+	terr := out["Territories"].(map[string]any)
+	if terr["Areas"].(float64) != 2 {
+		t.Errorf("Territories.Areas = %v, erwartet 2", terr["Areas"])
+	}
+	dist := out["SyntaxonDistribution"].(map[string]any)
+	if dist["Written"].(float64) != 1 || dist["Covered"].(float64) != 1 {
+		t.Errorf("SyntaxonDistribution = %v, erwartet Written 1 / Covered 1", dist)
+	}
+}
+
+func TestIngestLaeuftOhneVerbreitungsdateienDurch(t *testing.T) {
+	// The optional source is genuinely optional: no file, no failure, and the
+	// report says zero rather than pretending.
+	dir := t.TempDir()
+	writeMinimalIngestInput(t, dir)
+
+	out := runIngestForTest(t, dir)
+	dist := out["SyntaxonDistribution"].(map[string]any)
+	if dist["Written"].(float64) != 0 || dist["Covered"].(float64) != 0 {
+		t.Errorf("SyntaxonDistribution = %v, erwartet Nullen", dist)
+	}
+	terr := out["Territories"].(map[string]any)
+	if terr["Areas"].(float64) != 0 {
+		t.Errorf("Territories.Areas = %v, erwartet 0", terr["Areas"])
+	}
+}
+```
+
+Hat das Paket keinen `runIngestForTest`-Helfer, dem bestehenden Muster folgen (Kommando mit `--csv-dir`/`--db` bauen, Ausgabe in einen Puffer, `json.Unmarshal`).
+
+- [ ] **Step 2: Tests laufen lassen und Fehlschlag sehen**
+
+Run: `go test ./cmd/situs/ -run TestIngest -v`
+Expected: FAIL — `out["Territories"]` und `out["SyntaxonDistribution"]` sind `nil`, der Typcast paniert bzw. schlägt fehl.
+
+- [ ] **Step 3: Implementieren**
+
+In `cmd/situs/ingest.go`, `localOverlays` erweitern:
+
+```go
+// localOverlays bundles the ingest steps that read nothing but a local CSV
+// and ask no service at all.
+type localOverlays struct {
+	areas        application.AreaReport
+	territories  application.AreaReport
+	descriptions application.DescriptionReport
+	distribution application.SyntaxonDistributionReport
+}
+```
+
+`ingestLocalOverlays` — der Doc-Kommentar wächst mit, und die zwei Gebietsdateien laufen über eine Schleife durch denselben Lader:
+
+```go
+// ingestLocalOverlays writes the area names, the habitat descriptions and the
+// syntaxon distribution. None of them asks a service; all of them read one
+// local CSV.
+//
+// Area names depend on nothing and nothing depends on them: they are a pure
+// overlay on the area codes the distribution steps write. TWO files, one
+// loader — wgsrpd_areas.csv and evc_territories.csv share the header
+// area_scheme,area_code,name_en, and IngestAreas checks the scheme against
+// the set of known ones, so a second loader would only be a second place for
+// the check to drift.
+//
+// Descriptions must run after IngestCSV, because every row is checked against
+// the habitat type it belongs to. The syntaxon distribution must run after
+// IngestSyntaxa, because a distribution row naming a syntaxon the index does
+// not carry is dropped and reported — which only means something once the
+// syntaxa are there.
+func ingestLocalOverlays(ctx context.Context, db *sqlite.DB, csvDir string) (localOverlays, error) {
+	var out localOverlays
+
+	for _, src := range []struct {
+		file   string
+		report *application.AreaReport
+	}{
+		{"wgsrpd_areas.csv", &out.areas},
+		{"evc_territories.csv", &out.territories},
+	} {
+		path := filepath.Join(csvDir, src.file)
+		report, err := application.IngestAreas(ctx, db, path)
+		if err != nil {
+			return localOverlays{}, fmt.Errorf("ingesting area names from %q: %w", path, err)
+		}
+		*src.report = report
+	}
+
+	// ... the existing description block, unchanged ...
+
+	distCSV := filepath.Join(csvDir, "syntaxon_distribution.csv")
+	coverageCSV := filepath.Join(csvDir, "syntaxon_distribution_coverage.csv")
+	distribution, err := application.IngestSyntaxonDistribution(ctx, db, distCSV, coverageCSV)
+	if err != nil {
+		return localOverlays{}, fmt.Errorf("ingesting syntaxon distribution from %q: %w", distCSV, err)
+	}
+	out.distribution = distribution
+
+	return out, nil
+}
+```
+
+`ingestOutput` erweitern:
+
+```go
+	AreaNames          application.AreaReport
+	// Territories is the second area-name file, reported separately rather
+	// than summed into AreaNames: 369 WGSRPD areas and 136 territories added
+	// up would be a figure that describes neither.
+	Territories          application.AreaReport
+	SyntaxonDistribution application.SyntaxonDistributionReport
+```
+
+und in `runIngest`, im `out := ingestOutput{...}`-Literal:
+
+```go
+		Territories:          overlays.territories,
+		SyntaxonDistribution: overlays.distribution,
+```
+
+Das sind zwei Zuweisungen, keine Verzweigung: `runIngest` behält seine Komplexität.
+
+`UnknownSyntaxa` und `SkippedRows` werden **nicht** in `runIngest` protokolliert — `IngestSyntaxonDistribution` warnt selbst (Task 6, Step 3), und eine zweite Warnung an derselben Sache wäre zwei Zeilen im Log, die dasselbe sagen und getrennt veralten. Der Report trägt sie ohnehin.
+
+- [ ] **Step 4: Tests laufen lassen und grün sehen**
+
+Run: `go test ./cmd/situs/ -v`
+Expected: PASS.
+
+- [ ] **Step 5: Komplexität prüfen**
+
+Run: `make codecharta`
+Expected: grün. Zu prüfen sind drei Zahlen:
+- `cmd/situs/ingest.go`, Funktionsdeckel: `runIngest` muss **≤ 12** bleiben. `ingestLocalOverlays` ist jetzt die zweitkomplexeste Funktion der Datei und muss **≤ 10** bleiben — sie hat eine Schleife und drei Fehlerzweige dazugewonnen. Reißt sie den Deckel, wandert der Verbreitungsschritt in eine eigene Funktion `ingestSyntaxonDistributionPhase(ctx, db, csvDir) (application.SyntaxonDistributionReport, error)`, die `ingestLocalOverlays` aufruft — nicht die Baseline anheben.
+- `cmd/situs/ingest.go`, Dateideckel: die Datei steht **nicht** in der `complexity`-Baseline, es gilt also `default_cap = 50`. Läuft sie darüber, kommen die Overlay-Helfer in eine neue Datei `cmd/situs/ingest_overlays.go`; der Deckel je Datei lässt sich durch Aufteilen befriedigen, weil die Summe mit dem Code wandert, und genau dafür ist er da.
+- Sinkt eine Baseline messbar, **senken**. Die Projektkonvention ist, den gemessenen Wert einzusetzen, nicht den alten stehen zu lassen (`_query_note` in `.codecharta-ratchet.json` hält das als Praxis fest).
+
+- [ ] **Step 6: `CLAUDE.md` nachziehen**
+
+Drei Stellen:
+
+1. Im Architektur-Abschnitt die Pipeline-Liste um eine Zeile:
+   ```
+   pipelines/evc-distribution/  # EVC-Verbreitungs-XLSX -> syntaxon_distribution.csv
+                       # + coverage + evc_territories.csv (python3, stdlib only)
+   ```
+2. Unter „Invariants that reviewers must check" die neue Zusage, gleichrangig neben der Dreiwertigkeit von `in_area`:
+   > - **Syntaxa-Verbreitung ist vierwertig.** `verified`, `uncertain`,
+   >   `absence` (Coverage-Zeile, keine Verbreitungszeile) und `unknown`
+   >   (keine Coverage-Zeile). `absence` und `unknown` dürfen an keiner Stelle
+   >   zusammengeworfen werden: `SyntaxonDetail.distribution` **fehlt** bei
+   >   `unknown` und trägt bei `absence` zwei leere Listen, und ein
+   >   `?area=`-Filter behält die Unbeurteilbaren unmarkiert. Gemessen sind
+   >   212 der 1326 Verbände `unknown`, darunter alle 190 Moos-, Flechten-
+   >   und Algenverbände — die Quelle deckt nur *vascular-plant dominated
+   >   vegetation* ab.
+   > - **Es gibt zwei Gebietsschemata und keine Abbildung zwischen ihnen.**
+   >   `wgsrpd_l3` für Arten, `evc_territory` für Syntaxa. Keine Antwort
+   >   rechnet ein Territorium in einen WGSRPD-Code um — dieselbe Haltung wie
+   >   bei ISO↔WGSRPD. Jede Abfrage, die Gebiete führt, ist
+   >   schemaparametrisiert und liest die Abdeckung aus der Tabelle des
+   >   jeweiligen Schemas.
+3. Im Abschnitt „Current State" die Umsetzung eintragen und in der Tabelle der Design-Dokumente das Spec vom 2026-09-21 (Teilprojekt C) samt diesem Plan nennen. Den Satz, dass „syntaxa distribution" außerhalb liegt, **entfernen** — er ist mit diesem Teilprojekt falsch geworden. Der Satz über ISO↔WGSRPD bleibt unverändert und gilt für `evc_territory` genauso.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add cmd/situs/ CLAUDE.md
+git commit -m "feat(ingest): Territorien und Syntaxa-Verbreitung als lokale Overlays einhaengen"
+```
+
+---
+
+### Task 12: Gegen den echten Index messen, absichern, dokumentieren
+
+**Files:**
+- Create: `internal/adapters/sqlite/distribution_integrity_test.go`
+- Modify: `docs/reference/measured-index.md`
+- Modify: `docs/reference/http-api.md`
+
+**Interfaces:**
+- Consumes: alles aus Task 1–11.
+- Produces: ein Integritätstest über einen gebauten Index; aktualisierte Referenzdokumentation.
+
+- [ ] **Step 1: Den Integritätstest schreiben**
+
+`internal/adapters/sqlite/distribution_integrity_test.go` — er baut den Index aus Fixtures, nicht aus einem Artefakt im Arbeitsverzeichnis: ein Test, der eine 233-KB-XLSX braucht, ist in CI wertlos.
+
+```go
+// The spec's central promise as a test: no bryophyte, lichen or algal
+// alliance carries a distribution statement, and none of them appears as
+// "does not occur" either. The second half is the one that is easy to lose —
+// a filter that drops the unjudgeable rows would satisfy the first half and
+// break the promise.
+func TestKeinKryptogamenverbandTraegtEineVerbreitungsaussage(t *testing.T) {
+	db := newTestDB(t)
+	seedCryptogamHierarchy(t, db) // formations C and R, classes CA/RA, orders
+	                              // CA01/RA01, alliances CA01A/RA01A; only
+	                              // CA01A gets distribution and coverage rows
+
+	rows, err := db.QueryContext(context.Background(),
+		`SELECT a.id FROM syntaxon a
+		 JOIN syntaxon o ON o.id = a.parent_id
+		 JOIN syntaxon c ON c.id = o.parent_id
+		 JOIN syntaxon_distribution_coverage v ON v.syntaxon_id = a.id
+		 WHERE a.rank = 'alliance' AND c.parent_id IN ('R','S','T','U','V','W','X','Y')`)
+	if err != nil {
+		t.Fatalf("Abfrage: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var wrong []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatalf("Scan: %v", err)
+		}
+		wrong = append(wrong, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows.Err: %v", err)
+	}
+	if len(wrong) != 0 {
+		t.Errorf("Kryptogamen-Verbaende mit Verbreitungsaussage: %v", wrong)
+	}
+}
+
+func TestKryptogamenverbandErscheintNichtAlsNichtvorkommen(t *testing.T) {
+	db := newTestDB(t)
+	seedCryptogamHierarchy(t, db)
+
+	got, err := db.SyntaxonDistribution(context.Background(), "RA01A", domain.SchemeEVCTerritory)
+	if err != nil {
+		t.Fatalf("SyntaxonDistribution: %v", err)
+	}
+	if got.Covered {
+		t.Fatal("RA01A ist covered, obwohl die Quelle nichts ueber Moosverbaende sagt")
+	}
+
+	// And it stays in an ?area=-filtered list, unmarked: dropping it would be
+	// the same false claim in the other direction.
+	occurrences, err := db.SyntaxonOccurrencesInArea(context.Background(),
+		domain.SchemeEVCTerritory, "austria-alps")
+	if err != nil {
+		t.Fatalf("SyntaxonOccurrencesInArea: %v", err)
+	}
+	if _, ok := occurrences["RA01A"]; ok {
+		t.Error("RA01A traegt eine Vorkommenszeile")
+	}
+	covered, err := db.SyntaxaWithCoverage(context.Background(), domain.SchemeEVCTerritory)
+	if err != nil {
+		t.Fatalf("SyntaxaWithCoverage: %v", err)
+	}
+	if covered["RA01A"] {
+		t.Error("RA01A steht in der Coverage-Menge")
+	}
+}
+
+func TestJedeVerbreitungszeileZeigtAufEinVorhandenesSyntaxon(t *testing.T) {
+	// No foreign keys by design, so this is the check that replaces them.
+	db := newTestDB(t)
+	seedCryptogamHierarchy(t, db)
+
+	for _, query := range []string{
+		`SELECT d.syntaxon_id FROM syntaxon_distribution d
+		 LEFT JOIN syntaxon s ON s.id = d.syntaxon_id WHERE s.id IS NULL`,
+		`SELECT v.syntaxon_id FROM syntaxon_distribution_coverage v
+		 LEFT JOIN syntaxon s ON s.id = v.syntaxon_id WHERE s.id IS NULL`,
+	} {
+		rows, err := db.QueryContext(context.Background(), query)
+		if err != nil {
+			t.Fatalf("Abfrage: %v", err)
+		}
+		var dangling []string
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				t.Fatalf("Scan: %v", err)
+			}
+			dangling = append(dangling, id)
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("rows.Err: %v", err)
+		}
+		_ = rows.Close()
+		if len(dangling) != 0 {
+			t.Errorf("baumelnde Verweise: %v", dangling)
+		}
+	}
+}
+```
+
+- [ ] **Step 2: Test laufen lassen**
+
+Run: `go test ./internal/adapters/sqlite/ -run 'Kryptogamen|TestJedeVerbreitungszeile' -v`
+Expected: PASS. Schlägt einer fehl, liegt ein echter Defekt vor — melden, nicht den Test aufweichen.
+
+- [ ] **Step 3: Vollen Ingest fahren und messen**
+
+Run:
+```bash
+bash pipelines/evc-distribution/build.sh
+make ingest-input
+go run ./cmd/situs ingest --csv-dir out/ingest-input --db out/situs-neu.sqlite
+```
+Expected im Report: `Territories: {"Areas": 136, "SkippedRows": 0}` und
+```json
+"SyntaxonDistribution": {
+  "Written": 11528, "Verified": 9608, "Uncertain": 1920,
+  "Covered": 1114, "SkippedRows": 0, "UnknownSyntaxa": ["CI01E"]
+}
+```
+`UnknownSyntaxa` muss **genau** `["CI01E"]` sein. Eine leere Liste hieße, dass die Fassungsdrift verschwiegen wird; mehr Einträge hießen, dass der Join nicht mehr trifft.
+
+- [ ] **Step 4: Den Index abfragen**
+
+Run:
+```bash
+sqlite3 out/situs-neu.sqlite "
+SELECT 'Verbreitungszeilen', COUNT(*) FROM syntaxon_distribution;
+SELECT occurrence, COUNT(*) FROM syntaxon_distribution GROUP BY 1 ORDER BY 1;
+SELECT 'Coverage', COUNT(*) FROM syntaxon_distribution_coverage;
+SELECT 'Territorien mit Daten', COUNT(DISTINCT area_code) FROM syntaxon_distribution;
+SELECT 'Territoriumsnamen', COUNT(*) FROM area WHERE area_scheme='evc_territory';
+SELECT 'WGSRPD-Namen', COUNT(*) FROM area WHERE area_scheme='wgsrpd_l3';
+SELECT 'Verbaende ohne Aussage', COUNT(*) FROM syntaxon s
+  WHERE s.rank='alliance' AND NOT EXISTS (
+    SELECT 1 FROM syntaxon_distribution_coverage v WHERE v.syntaxon_id=s.id);
+SELECT 'Kryptogamen mit Aussage', COUNT(*) FROM syntaxon a
+  JOIN syntaxon o ON o.id=a.parent_id JOIN syntaxon c ON c.id=o.parent_id
+  JOIN syntaxon_distribution_coverage v ON v.syntaxon_id=a.id
+  WHERE a.rank='alliance' AND c.parent_id IN ('R','S','T','U','V','W','X','Y');
+SELECT 'baumelnd', COUNT(*) FROM syntaxon_distribution d
+  LEFT JOIN syntaxon s ON s.id=d.syntaxon_id WHERE s.id IS NULL;
+SELECT 'Zeilen ohne Coverage', COUNT(DISTINCT d.syntaxon_id) FROM syntaxon_distribution d
+  LEFT JOIN syntaxon_distribution_coverage v
+    ON v.syntaxon_id=d.syntaxon_id AND v.area_scheme=d.area_scheme
+  WHERE v.syntaxon_id IS NULL;
+"
+```
+Expected: `Verbreitungszeilen 11528`; `uncertain 1920` und `verified 9608`; `Coverage 1114`; `Territorien mit Daten 136`; `Territoriumsnamen 136`; `WGSRPD-Namen 369`; `Verbaende ohne Aussage 212`; **`Kryptogamen mit Aussage 0`**; `baumelnd 0`; `Zeilen ohne Coverage 0`.
+
+Die beiden Nullen am Schluss sind die eigentlichen Zusagen: kein Kryptogamen-Verband bekommt eine Aussage, die die Quelle nicht macht, und keine Verbreitungszeile existiert ohne ihre Coverage-Zeile (sonst wäre `absence` für dieses Syntaxon wieder nicht von `unknown` zu trennen). Weicht eine Zahl ab: anhalten und melden.
+
+- [ ] **Step 5: Die Routen gegen den echten Index prüfen**
+
+Run:
+```bash
+SITUS_INDEX_PATH=out/situs-neu.sqlite go run ./cmd/situs serve &
+sleep 2
+curl -s localhost:8080/v1/info | python3 -m json.tool | grep -A1 'area_scheme\|syntaxa_with'
+curl -s 'localhost:8080/v1/areas?scheme=evc_territory' | python3 -c 'import json,sys; a=json.load(sys.stdin); print(len(a), a[0])'
+curl -s 'localhost:8080/v1/areas' | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))'
+curl -s -o /dev/null -w '%{http_code}\n' 'localhost:8080/v1/areas?scheme=evc-territory'
+curl -s 'localhost:8080/v1/syntaxon/CA01A' | python3 -m json.tool | head -30
+curl -s 'localhost:8080/v1/syntaxa?rank=alliance&area=austria-alps' | python3 -c '
+import json,sys
+a=json.load(sys.stdin)
+marked=[x for x in a if "occurrence" in x]
+carried=[x for x in a if "occurrence" not in x]
+print("gesamt", len(a), "markiert", len(marked), "mitgefuehrt", len(carried))'
+curl -s -o /dev/null -w '%{http_code}\n' 'localhost:8080/v1/syntaxa?rank=alliance&area=gibtsnicht'
+curl -s -o /dev/null -w '%{http_code}\n' 'localhost:8080/v1/syntaxa?area=austria-alps'
+kill %1
+```
+Expected: `/v1/info` nennt `"area_scheme": "wgsrpd_l3"`, `"syntaxon_area_scheme": "evc_territory"`, `"syntaxa_with_distribution": 1114`. `?scheme=evc_territory` liefert **136** Gebiete mit Namen, `/v1/areas` ohne Parameter unverändert **369**, `?scheme=evc-territory` **400**. `/v1/syntaxon/CA01A` trägt ein `distribution`-Objekt; ein Moosverband (etwa der erste aus `?rank=alliance&life_form_group=bryophyte_lichen`) trägt keines. Die gefilterte Liste zeigt „mitgefuehrt" = die Zahl der Verbände ohne Aussage (212, sofern der Filter über alle Verbände läuft). Beide Fehlerfälle **400**.
+
+`?area=` ohne `rank` muss 400 sein: der Vorgabewert ist `formation`, und Formationen tragen keine Verbreitung.
+
+- [ ] **Step 6: Referenzdokumentation aktualisieren**
+
+In `docs/reference/measured-index.md`, mit der Abfrage je Zahl, wie es die Datei hält:
+- Die Verbreitungszahlen: 11528 Zeilen (9608 `verified`, 1920 `uncertain`), 1114 Coverage-Zeilen, 136 Territorien mit Daten und 136 mit Namen, 212 Verbände ohne jede Aussage, davon 190 Kryptogamen-Verbände (137 Moos/Flechte, **53** Algen — nicht 51, siehe die Korrektur oben), dazu die 6 übrigen namentlich (`CT06A`, `DA12A`, `DA13A`, `DD01A`, `DD01B`, `DD01C`).
+- Den **wörtlich abgedruckten Ingest-Report** um `Territories` und `SyntaxonDistribution` erweitern.
+- Den **Fassungsunterschied** als eigenen Absatz: die Verbreitungsdatei nennt EVC-Fassung 3 (2024-06-12), die Hierarchie-Datei heißt `..._version_4.xlsx` und trägt in ihren Spaltenköpfen den Stand `EVC, version 2025-06-12`. Beide Angaben zur Hierarchie-Datei sind gemessen und meinen Verschiedenes — Dateifassung gegen EVC-Stand —, weshalb sie nebeneinander genannt und nicht zu einer verrechnet werden dürfen. Die belastbare Aussage über die Überdeckung ist die gemessene 1114/1115, nicht die Fassungsnummern; `CI01E` (`Campanulo-Nardion`, Altcode `NAR-01E`) wird namentlich genannt.
+- Die **Attribution**: Zenodo Record 11580949, CC-BY 4.0, und **beide** Veröffentlichungen (Preislerová et al. 2022, Appl Veg Sci 25: e12642; Preislerová et al. 2024, Appl Veg Sci 27: e12766).
+- Das gemessene `value_histogram` der Quellzellen `{"": 140112, "1": 9608, "U": 1920}` — die Zusage aus Abschnitt 9, dass die Wertemenge bei jedem Lauf gemessen und ausgewiesen wird.
+
+In `docs/reference/http-api.md`:
+- `GET /v1/areas`: der Parameter `?scheme=` mit Vorgabewert `wgsrpd_l3`, die erlaubten Werte, `INVALID_QUERY` bei einem unbekannten, und der Satz, dass es zwischen den Schemata keine Abbildung gibt.
+- `GET /v1/syntaxon/{id}`: das Feld `distribution` und die vier Zustände — **fehlend** heißt „keine Aussage", zwei leere Listen heißen „geprüft, kommt nirgends vor".
+- `GET /v1/syntaxa`: `?area=` und `?include=`, die Vorgabe `verified`, alle sechs Ablehnungsgründe, und das Feld `occurrence` samt seiner Dreiwertigkeit.
+- `GET /v1/info`: `syntaxon_area_scheme` und `syntaxa_with_distribution`, und dass `area_scheme` weiter die Artverbreitung meint.
+
+- [ ] **Step 7: Alle drei Gates**
+
+Run: `make verify && make mutation && make codecharta`
+Expected: alle drei grün.
+
+**Zum Coverage-Ratchet:** `internal/application` steht auf 100 %. Fällt der Floor, fehlt ein Testfall — häufig ein Fehlerzweig in `readOccurrenceRows`/`readCoverageRows` oder der `Stat`-Zweig, der nicht `IsNotExist` ist. Nicht senken.
+
+**Zum Mutationsgate:** `make mutation` läuft ein Paket je Aufruf über `scripts/mutation-gate.sh`; **niemals** gremlins mit `...` aufrufen (erzeugt still null Mutanten). Dieses Teilprojekt legt **kein** neues Go-Paket an, `.mutation-thresholds` bleibt also unverändert, solange die Schwellen halten. Die wahrscheinlichste überlebende Mutante ist der Vergleich `occurrence == domain.OccurrenceUncertain` in `SyntaxonDistribution` und in `readOccurrenceRows`: gegen sie hilft je ein Test, der **beide** Ausprägungen in derselben Antwort prüft — `TestSyntaxonDistributionLiefertSortierteListen` und `TestIngestSyntaxonDistributionFuelltBeideTabellen` tun genau das. Steigt die Punktzahl, den Schwellwert anheben (Raise-Only-Ratchet).
+
+**Zum Komplexitäts-Ratchet:** sinkt eine Baseline messbar, senken. `internal/application/query.go` gewinnt in Task 10 eine Verzweigung und darf seine Baseline von 72 nicht überschreiten; tut es das, wandert die Syntaxa-Messung in `syntaxon_distribution.go` (Task 10, Vorbemerkung).
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add internal/adapters/sqlite/distribution_integrity_test.go docs/
+git commit -m "test,docs: Verbreitungs-Integritaet absichern und gemessene Werte festhalten"
+```
+
+---
+
+## Self-Review
+
+**Spec-Abdeckung, Abschnitt für Abschnitt.**
+
+- **Abschnitt 1 (Die Quelle, gemessen).** Pin, SHA-256 und Größe in Task 2, Step 1 und im Manifest (Step 5); beide Zitate im Manifest und in `docs/reference/` (Task 12, Step 6). Die drei Blätter und die Auswahl nach Namen in Task 1 (`sheet_path`, `SheetSelectionTest`). Die Auswertung des Zellbezugs in Task 1 (`col_index`, `read_sheet`, `test_a_missing_cell_does_not_shift_the_following_ones`). Die Wertemenge `{"", "1", "U"}` als gemessenes `value_histogram` in Task 2, Step 2.
+- **Abschnitt 2 (Territorien als eigenes Schema).** `domain.SchemeEVCTerritory` mit Unterstrich in Task 3, Step 3; die Slug-Ableitung samt `_coast` und Kollisionsabbruch in Task 1 (`slugify`, `SlugifyTest`, `test_a_slug_collision_aborts_naming_both_columns`); der ungekürzte Spaltenname als `name_en` in `evc_territories.csv`; „keine Abbildung zwischen den Schemata" als Doc-Kommentar (Task 3), als OpenAPI-Beschreibung (Task 7, Step 5) und als `CLAUDE.md`-Invariante (Task 11, Step 6).
+- **Abschnitt 3 (Vier Zustände).** Beide Tabellen in `schema.sql`, nicht in `Migrate`, mit der `verifyTables`-Begründung und einem Test je Tabelle (Task 3). Die Unterscheidung `absence`/`unknown` wird an vier Stellen geprüft: im Repository (`TestSyntaxonDistributionTrenntAbsenceVonUnknown`, Task 4), im Ingest (`TestIngestSyntaxonDistributionBehaeltCoverageOhneVorkommen`, Task 6), in der Anwendung und im JSON (Task 8, alle drei Tests) und im Filter (Task 9, `TestSyntaxaByRankMitGebietBehaeltDieUnbeurteilbaren`). Die 212/1326 und die 190 Kryptogamen-Verbände in Task 12, Step 4.
+- **Abschnitt 4 (Pipeline).** Task 1 und 2 vollständig, inklusive der drei Verdrahtungsstellen (`scripts/collect-ingest-input.sh` als `OPTIONAL`, `Makefile`-Ziel `pipeline-test`, `manifest.yaml` + `README.md`) und der Pipeline-Liste in `CLAUDE.md` (Task 11, Step 6). Die Übersetzung `1`→`verified`/`U`→`uncertain` macht die Pipeline (Task 1, `_OCCURRENCE`), die CSV trägt die Langform. **Eine Abweichung:** drei Ausgaben statt zwei, begründet in Task 1 (ohne die Coverage-CSV ist der in Abschnitt 7 ausdrücklich gültige Fall nicht darstellbar).
+- **Abschnitt 5 (Ingest).** Task 6. **Eine Abweichung:** der zweite Parameter ist `coveragePath`, nicht `areaCSVPath` — Abschnitt 6.1 desselben Specs verbietet den zweiten Gebietslader, den `areaCSVPath` gewesen wäre. `Territories` fällt aus dem Report, weil die Zahl in `AreaReport` steht. `CI01E` namentlich: `TestIngestSyntaxonDistributionVerwirftUnbekanntenCodeUndMeldetIhn` (Task 6) und die Erwartung `UnknownSyntaxa == ["CI01E"]` im echten Lauf (Task 12, Step 3). Der Fassungsunterschied in `docs/reference/measured-index.md` (Task 12, Step 6).
+- **Abschnitt 6 (Read-API).** `SyntaxonDetail.distribution` in Task 8; `?area=`/`?include=` samt aller sechs Ablehnungen in Task 9; die beiden `/v1/info`-Felder mit beibehaltenem `area_scheme` in Task 10. Die drei Stellen aus Abschnitt 6 sind Task 5 (`IngestAreas`, Blocker 1), Task 4 (`AreasWithData`, Blocker 2) und Task 7 (`QueryService.Areas` und `/v1/areas?scheme=`, Blocker 3). **Ein vierter Fund derselben Art** ist in Task 4 dokumentiert: `KnownAreaCodes` leitet die Abdeckung ebenso aus `species_distribution` ab, und ohne den zweiten Zweig dort wäre jeder Territoriumscode auf `?area=` ein `INVALID_QUERY` — der Filter aus Abschnitt 6 also vollständig unbenutzbar. Das Spec führt ihn nicht auf.
+- **Abschnitt 7 (Fehlerbehandlung).** Alle sieben Zeilen der Tabelle haben einen Test: fehlende Datei nur gewarnt (Task 6, `TestIngestSyntaxonDistributionWarntNurBeiFehlenderDatei`); fehlendes Blatt bricht mit Blattnamen ab (Task 1, `test_a_missing_data_sheet_aborts_naming_it`); unbekannte Zellbelegung bricht mit Wert, Zeile und Spalte ab (Task 1, `test_an_unknown_cell_value_aborts_naming_value_row_and_column`); Slug-Kollision nennt beide Namen (Task 1); Verbandscode nicht im Index (Task 6); Coverage ohne Vorkommen gültig (Task 4 und 6 und 8); `?area=` mit unbekanntem Code `INVALID_QUERY` (Task 9, Anwendung und HTTP).
+- **Abschnitt 8 (Tests).** Die vier Bündel liegen in Task 1 (Pipeline, alle sechs genannten Fälle), Task 6 (Ingest, alle vier genannten Fälle), Task 8 und 9 (HTTP, alle drei genannten Fälle) und Task 12 (der Test über den gebauten Index, „kein Moos-, Flechten- oder Algenverband trägt eine Verbreitungsaussage", in beiden Richtungen).
+- **Abschnitt 9 (Prüfbare Zusagen).** Vier Zustände unterscheidbar → Task 3/4/6/8/9 wie oben. Kein Kryptogamen-Verband mit Aussage → Task 12, Step 2 und 4 (`Kryptogamen mit Aussage 0`). Wertemenge gemessen → Task 2, Step 2. Eigenes `area_scheme` ohne Umrechnung → Task 3, 7, 11. `CI01E` gemeldet → Task 6 und 12. Attribution beider Arbeiten → Manifest und `docs/reference/`.
+- **Abschnitt 10 (Bewusst außerhalb).** ISO/GPS-Abbildung, Vererbung nach oben, Kartenbilder und verbreitungsgestützte Gewichtung kommen in keinem Task vor. Der `README.md`-Abschnitt „Bewusst nicht drin" (Task 2, Step 6) hält es fest, damit es nicht als Auslassung gelesen wird.
+
+**Platzhalter-Scan.** Kein „TBD", kein „TODO", kein „analog zu Task N". Jeder Code-Step trägt den Code, den er meint: die Pipeline vollständig, die drei sqlite-Methoden vollständig, der Ingest in zwei Hälften vollständig, beide Handler-Funktionen vollständig. Die Fehlerbehandlung ist pro Fall benannt, nie als „angemessene Fehlerbehandlung". Wo ein Task auf bestehenden Code trifft, den Teilprojekt A oder B anlegt (`SyntaxaByRank`, `Syntaxon`, `handleSyntaxa`, `fakeRepo`, `newTestServer`), ist die einzufügende Stelle wörtlich zitiert und der Dateiname mit dem Vorbehalt „Name gemäß Repo" versehen — die Datei existiert zum Planungszeitpunkt noch nicht.
+
+**Typkonsistenz.**
+- `domain.SyntaxonDistribution` (Task 3) hat vier Felder; `Repository.SyntaxonDistribution` (Task 4) gibt genau diesen Typ zurück; `syntaxonDistributionOf` (Task 8) liest genau `Covered`, `Scheme`, `Verified`, `Uncertain`.
+- `input.SyntaxonDistribution` (Task 8) hat drei Felder und wird als **Zeiger** in `SyntaxonDetail` geführt — der Zeiger ist der vierte Zustand.
+- `IngestTx.UpsertSyntaxonDistribution(syntaxonID, scheme, code, occurrence string)` (Task 4) wird in Task 6 mit genau vier Strings in dieser Reihenfolge gerufen; `UpsertSyntaxonDistributionCoverage(syntaxonID, scheme string)` mit genau zwei.
+- `SyntaxonDistributionReport` (Task 6) trägt genau die Felder, die Task 6 setzt (`Written`, `Verified`, `Uncertain`, `Covered`, `SkippedRows`, `UnknownSyntaxa`) und Task 11 im JSON ausgibt. `Territories` ist bewusst **nicht** darin.
+- `input.SyntaxonAreaFilter` (Task 9) hat `Code` und `Include`; `SyntaxaByRank(ctx, rank, lifeFormGroup string, filter SyntaxonAreaFilter)` wird in Task 9 im Handler mit demselben Wert gerufen, den `syntaxonAreaFilter(r, rank)` liefert.
+- `QueryService.Areas(ctx, scheme string)` (Task 7) wird in `handleAreas` mit dem validierten Schema gerufen; `Repository.AreasWithData(ctx, scheme)` und `KnownAreaCodes(ctx, scheme)` nehmen denselben String.
+- `domain.OccurrenceVerified`/`OccurrenceUncertain` (Task 3) sind die einzigen Werte, die im Schema-`CHECK`, in `_OCCURRENCE` der Pipeline, in `includeValues` des Handlers und im OpenAPI-Enum stehen — vier Stellen, ein Wertepaar, und Task 3, Step 1 nagelt die Zeichenketten in einem Domänentest fest.
+
+**Zwei bewusste Brüche in der Mitte.** Nach Task 4 kompilieren `internal/application` und `internal/adapters/http` nicht, weil `fakeRepo` und `fakeQueryService` die neuen Port-Methoden nicht haben; Task 5 bis 7 stellen den Zustand her, und Task 4, Step 5 sagt das ausdrücklich und begrenzt den Testlauf auf zwei Pakete. Nach Task 7 ist `Areas(ctx)` überall auf `Areas(ctx, scheme)` umgestellt — ein Bruch, der nur in einem Task steht. Die Alternative — Port, Anwendung, Adapter und Tests in einem Task — wäre ein Task, den ein Prüfer nicht mehr in Teilen ablehnen kann.
+
+**Was dieser Plan nicht kann.** Die Reihenfolge setzt voraus, dass Teilprojekt A **und** B gemergt sind. Ohne A gibt es keine EVC-Primärcodes, gegen die `known[id]` prüft (jede der 1115 Zeilen landete in `UnknownSyntaxa`); ohne B gibt es weder `SyntaxonDetail` noch `GET /v1/syntaxa`, also die Objekte, die Task 8 und 9 erweitern. Task 1 bis 6 sind von B unabhängig und könnten parallel laufen; Task 7 ist von beiden unabhängig. Wer C vorzieht, fängt dort an und hält Task 8 bis 10 zurück.

@@ -114,8 +114,9 @@ das ist der eine Punkt dieses Specs, an dem man sich vertun kann:
 Die vierte Zeile ist nicht theoretisch: die Quelle deckt ausdrücklich nur
 *vascular-plant dominated vegetation* ab. Von den 1310 EVC-Verbänden tragen
 1114 eine Verbreitungszeile, **196 nicht** — darunter alle 137 Moos- und
-Flechtenverbände und 51 der 53 Algenverbände, also genau die Vegetation, die
-Teilprojekt A überhaupt erst in den Index holt. Dazu kommen die 16 Verbände,
+Flechtenverbände und **alle 53** Algenverbände, also genau die Vegetation, die
+Teilprojekt A überhaupt erst in den Index holt (190 Kryptogamen-Verbände, dazu
+sechs Phanerogamen-Verbände, die die Quelle nicht führt). Dazu kommen die 16 Verbände,
 die nur die EEA-Quelle führt und die in der Verbreitungsdatei folglich auch
 nicht stehen: im Index sind damit **212 der 1326 Verbände** ohne jede
 Verbreitungsaussage. Für sie ist jede Aussage über jedes Territorium
@@ -171,10 +172,33 @@ dokumentierte Ausnahme gilt nur für die übernommenen Trait-Konverter).
 
 ```
 xlsx_to_csv.py --xlsx artifacts/…database.xlsx --out-dir out
-  → out/syntaxon_distribution.csv  (syntaxon_id|area_scheme|area_code|occurrence)
-  → out/evc_territories.csv        (area_scheme|area_code|name_en)
+  → out/syntaxon_distribution.csv          (syntaxon_id|area_scheme|area_code|occurrence)
+  → out/syntaxon_distribution_coverage.csv (syntaxon_id|area_scheme)
+  → out/evc_territories.csv                (area_scheme|area_code|name_en)
   → out/report.json
 ```
+
+**Drei Ausgaben, nicht zwei.** Die Coverage-Tabelle aus Abschnitt 3 ist aus
+`syntaxon_distribution.csv` allein **nicht** rekonstruierbar: ein Verband, der
+in der Quelle steht, aber in keinem Territorium vorkommt, hinterlässt dort
+keine Zeile und wäre von einem Verband, den die Quelle nicht führt, nicht zu
+unterscheiden. Genau diesen Fall erklärt Abschnitt 7 für gültig
+(„geprüft, kommt in keinem Territorium vor"), also braucht er eine eigene
+Datei. Heute ist sie für keine Zeile die einzige Information — aber die
+Unterscheidung darf nicht davon abhängen.
+
+**Randleerzeichen müssen abgeschnitten werden.** Gemessen tragen drei
+Verbandscodes der Quelle ein nachgestelltes Leerzeichen (`JD02B `, `JD02C `,
+`JE01B `). Ohne `strip()` erkennt die Mustererkennung nur 1112 statt 1115
+gültige Codes, und der Join fällt von 1114 auf 1111 — drei stillschweigend
+verlorene Verbände. Jede Codezelle wird deshalb getrimmt, bevor sie gegen das
+Muster geprüft wird.
+
+**Am Blattende stehen vier Summen*zeilen***, nicht nur die vier
+Summen*spalten* (`Verified occurrences`, `Uncertain occurrences`,
+`All occurrences`, `% of uncertain occurrences` treten in beiden Richtungen
+auf). Die Zeilenauswahl über das Verbandscode-Muster schließt sie aus; eine
+Auswahl „alles außer der Kopfzeile" würde sie als Daten lesen.
 
 **Die Übersetzung `1` → `verified` und `U` → `uncertain` macht die Pipeline**,
 nicht der Go-Ingest: die CSV trägt schon die Langform, die der `CHECK` aus
@@ -218,7 +242,7 @@ type SyntaxonDistributionReport struct {
 	UnknownSyntaxa []string // source codes the index does not know
 }
 
-func IngestSyntaxonDistribution(ctx context.Context, repo output.Repository, csvPath, areaCSVPath string) (SyntaxonDistributionReport, error)
+func IngestSyntaxonDistribution(ctx context.Context, repo output.Repository, csvPath, coveragePath string) (SyntaxonDistributionReport, error)
 ```
 
 Läuft nach `IngestSyntaxa` (Teilprojekt A) — die Syntaxon-IDs müssen im Index
@@ -228,6 +252,11 @@ offline.
 
 `IngestTx` bekommt `UpsertSyntaxonDistribution(syntaxonID string, scheme, code, occurrence string) error` und
 `UpsertSyntaxonDistributionCoverage(syntaxonID, scheme string) error`.
+
+Der zweite Parameter heißt `coveragePath`, **nicht** `areaCSVPath`: die
+Gebietsnamen lädt `IngestAreas` (Abschnitt 2, Punkt 1), diese Funktion hat
+keinen zweiten Gebietslader. Sie liest die Verbreitungszeilen und die
+Coverage-Zeilen.
 
 Eine Zeile mit einem Code, den der Index nicht kennt, wird **nicht**
 geschrieben, in `UnknownSyntaxa` vermerkt und gewarnt; der Lauf geht weiter.
@@ -303,7 +332,7 @@ Geschmacksfrage ist. Die beiden Namen stehen damit nebeneinander, und die
 Beschreibung im OpenAPI sagt bei beiden ausdrücklich, wessen Verbreitung sie
 betreffen.
 
-### Drei Stellen, an denen das zweite Schema heute auflaufen würde
+### Vier Stellen, an denen das zweite Schema heute auflaufen würde
 
 Die `area`-Tabelle ist schemaparametrisiert (Primärschlüssel
 `(area_scheme, area_code)`) und trägt die Territorien ohne Änderung. Der Weg
@@ -324,7 +353,15 @@ dorthin und zurück ist es **nicht**:
    unter jedem Schema-Argument unsichtbar. Die Methode bekommt einen zweiten
    Zweig über `syntaxon_distribution`; welche Tabelle sie befragt, entscheidet
    das Schema.
-3. **`QueryService.Areas(ctx)` und `GET /v1/areas` kennen kein Schema.** Der
+3. **`KnownAreaCodes` prüft ebenfalls nur `species_distribution`.**
+   `internal/adapters/sqlite/read.go` fragt dort
+   `SELECT DISTINCT area_code FROM species_distribution WHERE area_scheme = ?`.
+   Gegen diese Liste validiert die Leseseite jeden `?area=`-Wert — ein
+   Territoriumscode wäre also **immer** `INVALID_QUERY`, und der Filter aus
+   Abschnitt 6 damit vollständig unbenutzbar. Dieselbe Behandlung wie bei
+   `AreasWithData`: ein zweiter Zweig über `syntaxon_distribution`, nach
+   Schema entschieden.
+4. **`QueryService.Areas(ctx)` und `GET /v1/areas` kennen kein Schema.** Der
    Eingangsport nimmt keinen Parameter, und `handleAreas` gibt keinen weiter.
    `/v1/areas` bekommt deshalb `?scheme=` mit Vorgabewert `wgsrpd_l3` — damit
    bleibt jede heutige Anfrage unverändert beantwortet, und die Antwort mischt
