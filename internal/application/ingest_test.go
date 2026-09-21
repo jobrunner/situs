@@ -496,6 +496,11 @@ type fakeRepo struct {
 	// descriptionErr fails Description, exercising the detail route's
 	// description error path.
 	descriptionErr error
+	// The navigation failures (subproject B): each fails exactly one of the
+	// new reads, so a use-case test can pin that the failure surfaces.
+	syntaxonChildrenErr  error
+	syntaxonAncestorsErr error
+	habitatTypeCountErr  error
 }
 
 // fakeDistribution is one recorded UpsertDistribution call.

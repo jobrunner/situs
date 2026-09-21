@@ -692,6 +692,62 @@ func (r *fakeRepo) Syntaxa(_ context.Context, key domain.HabitatTypeKey) ([]doma
 	return out, nil
 }
 
+func (r *fakeRepo) SyntaxonChildren(_ context.Context, parentID string) ([]domain.Syntaxon, error) {
+	if r.syntaxonChildrenErr != nil {
+		return nil, r.syntaxonChildrenErr
+	}
+	out := []domain.Syntaxon{}
+	for _, s := range r.syntaxa {
+		if s.ParentID == parentID {
+			out = append(out, s)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
+
+// SyntaxonAncestors mirrors the sqlite adapter including the distinction that
+// matters: an unknown start id wraps output.ErrNotFound, a dangling parent_id
+// does not. A fake that collapsed the two would let a 404-for-an-existing-id
+// bug pass the use-case test.
+func (r *fakeRepo) SyntaxonAncestors(ctx context.Context, id string) ([]domain.Syntaxon, error) {
+	if r.syntaxonAncestorsErr != nil {
+		return nil, r.syntaxonAncestorsErr
+	}
+	current, err := r.Syntaxon(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	out := []domain.Syntaxon{}
+	for steps := 0; current.ParentID != ""; steps++ {
+		if steps == 3 {
+			return nil, fmt.Errorf("fakeRepo: syntaxon %q has more than 3 ancestors", id)
+		}
+		parent, perr := r.Syntaxon(ctx, current.ParentID)
+		if perr != nil {
+			return nil, fmt.Errorf("fakeRepo: syntaxon %q has parent_id %q, which no row carries",
+				current.ID, current.ParentID)
+		}
+		out = append(out, parent)
+		current = parent
+	}
+	slices.Reverse(out)
+	return out, nil
+}
+
+func (r *fakeRepo) HabitatTypeCountForSyntaxon(_ context.Context, syntaxonID string) (int, error) {
+	if r.habitatTypeCountErr != nil {
+		return 0, r.habitatTypeCountErr
+	}
+	n := 0
+	for _, link := range r.syntaxaLinks {
+		if link.syntaxonID == syntaxonID {
+			n++
+		}
+	}
+	return n, nil
+}
+
 func (r *fakeRepo) HabitatTypeKeysForSyntaxon(_ context.Context, syntaxonID string) ([]domain.HabitatTypeKey, error) {
 	if r.syntaxonKeysErr != nil {
 		return nil, r.syntaxonKeysErr

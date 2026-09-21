@@ -107,6 +107,20 @@ type Repository interface {
 	// Used by the FloraVeg hierarchy-matching pass to find every
 	// already-ingested EUNIS alliance to match its own names against.
 	AllSyntaxa(ctx context.Context) ([]domain.Syntaxon, error)
+	// SyntaxonChildren returns the direct children of parentID, ordered by id.
+	// An alliance has none: an empty slice is the answer, not an error — that
+	// is the lower bound of the free data (see the known ceiling).
+	SyntaxonChildren(ctx context.Context, parentID string) ([]domain.Syntaxon, error)
+	// SyntaxonAncestors walks parent_id to the root, OUTERMOST first
+	// (formation, class, order), and is empty for a formation. An unknown id
+	// is ErrNotFound; a parent_id pointing at a missing row and a cycle are
+	// both index defects and are reported as plain errors that do NOT wrap
+	// ErrNotFound, so a caller cannot turn them into a 404 for an id that
+	// exists.
+	SyntaxonAncestors(ctx context.Context, id string) ([]domain.Syntaxon, error)
+	// HabitatTypeCountForSyntaxon counts the edges of exactly this syntaxon,
+	// not its descendants', and without loading them.
+	HabitatTypeCountForSyntaxon(ctx context.Context, syntaxonID string) (int, error)
 	// HabitatTypeKeysForSyntaxon returns the habitat types a syntaxon is linked
 	// to — the m:n direction.
 	HabitatTypeKeysForSyntaxon(ctx context.Context, syntaxonID string) ([]domain.HabitatTypeKey, error)
