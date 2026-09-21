@@ -227,6 +227,30 @@ func TestSyntaxa_UnbekannteLebensformGruppeIst400UndErreichtDenPortNicht(t *test
 	}
 }
 
+// A dangling parent_id is the one inconsistency only this route can surface:
+// the application layer reports it as an index inconsistency (f.err), and that
+// has to answer INTERNAL_ERROR, never NOT_FOUND — "the id does not exist" and
+// "the index is broken" are different statements to a client.
+func TestSyntaxon_UnerwarteterFehlerIst500MitInternalError(t *testing.T) {
+	q := seededQueryService()
+	q.err = errFakeIndex
+	srv := newTestServer(t, q)
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/syntaxon/BRO-01A", nil))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	env := body["error"].(map[string]any)
+	if env["code"] != httpapi.CodeInternalError {
+		t.Errorf("code = %v, erwartet INTERNAL_ERROR", env["code"])
+	}
+}
+
 func TestSyntaxa_FehlerDesIndexIst500(t *testing.T) {
 	q := seededQueryService()
 	q.syntaxaErr = errFakeIndex
