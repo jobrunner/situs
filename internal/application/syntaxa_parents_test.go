@@ -138,6 +138,69 @@ func TestIngestSyntaxaMeldetMehrdeutigenNamensabgleich(t *testing.T) {
 	}
 }
 
+// --- Fix-Runde 1: an ambiguous name match no longer blocks the sibling
+// try — the two are independent paths (siblings find each other over the
+// alt code, not the name), and a real unanimous answer must win over an
+// avoidable orphan. Both tests call assignRemainingParents directly
+// because IngestSyntaxa discards its SyntaxaReport on a failed run, and
+// the second case needs to inspect AmbiguousMatches and Orphans on exactly
+// that outcome. ---
+
+func TestAssignRemainingParentsLoestMehrdeutigenNamensabgleichUeberGeschwisterkonsensAuf(t *testing.T) {
+	repo := newFakeRepo()
+	// SIB-01E must already exist for SetSyntaxonParent to find it — mirrors
+	// what writeEunisOnly would have written in step 3.
+	repo.syntaxa = append(repo.syntaxa, domain.Syntaxon{ID: "SIB-01E", Rank: domain.SyntaxonRankAlliance})
+	rows := []hierarchyRow{
+		// Two FloraVeg alliances share the name "Testverband": the name
+		// match is ambiguous. Their alt codes are SIB-01E's siblings
+		// (SIB-01) and unanimously point at CA02.
+		{code: "CA02A", rank: domain.SyntaxonRankAlliance, name: "Testverband", parentCode: "CA02", altCode: "SIB-01A"},
+		{code: "CA02B", rank: domain.SyntaxonRankAlliance, name: "Testverband", parentCode: "CA02", altCode: "SIB-01B"},
+	}
+	rep := &SyntaxaReport{}
+	eunisOnly := []eunisOnlyRow{{id: "SIB-01E", name: "Testverband Dritter 1980"}}
+
+	if err := assignRemainingParents(repo, eunisOnly, rows, rep); err != nil {
+		t.Fatalf("assignRemainingParents: %v", err)
+	}
+	if rep.ParentsDerived != 1 {
+		t.Errorf("ParentsDerived = %d, erwartet 1", rep.ParentsDerived)
+	}
+	if len(rep.AmbiguousMatches) != 1 || rep.AmbiguousMatches[0] != "SIB-01E" {
+		t.Errorf("AmbiguousMatches = %v, erwartet [SIB-01E]", rep.AmbiguousMatches)
+	}
+	if len(rep.Orphans) != 0 {
+		t.Errorf("Orphans = %v, erwartet leer — der Geschwisterkonsens hat entschieden", rep.Orphans)
+	}
+	got := repo.syntaxonByID("SIB-01E")
+	if got.ParentID != "CA02" || got.ParentProvenance != domain.ParentProvenanceDerived {
+		t.Errorf("SIB-01E = %q/%q, erwartet CA02/derived", got.ParentID, got.ParentProvenance)
+	}
+}
+
+func TestAssignRemainingParentsBleibtWaiseBeiMehrdeutigemNamensabgleichOhneKonsens(t *testing.T) {
+	repo := newFakeRepo()
+	rows := []hierarchyRow{
+		// Same ambiguous name collision, but this time without alt codes:
+		// no siblings exist for MEH-02Z's group at all.
+		{code: "CA02A", rank: domain.SyntaxonRankAlliance, name: "Testverband", parentCode: "CA02"},
+		{code: "CA03A", rank: domain.SyntaxonRankAlliance, name: "Testverband", parentCode: "CA03"},
+	}
+	rep := &SyntaxaReport{}
+	eunisOnly := []eunisOnlyRow{{id: "MEH-02Z", name: "Testverband Dritter 1980"}}
+
+	if err := assignRemainingParents(repo, eunisOnly, rows, rep); err != nil {
+		t.Fatalf("assignRemainingParents: %v", err)
+	}
+	if len(rep.AmbiguousMatches) != 1 || rep.AmbiguousMatches[0] != "MEH-02Z" {
+		t.Errorf("AmbiguousMatches = %v, erwartet [MEH-02Z]", rep.AmbiguousMatches)
+	}
+	if len(rep.Orphans) != 1 || rep.Orphans[0] != "MEH-02Z" {
+		t.Errorf("Orphans = %v, erwartet [MEH-02Z] — kein Konsens, also bleibt es eine Waise", rep.Orphans)
+	}
+}
+
 // --- Coverage for the paths the six brief tests do not reach: error
 // wrapping from SetSyntaxonParent, the pre-Begin altcode read, and the
 // idempotent RelinkSyntaxon nachlauf. ---

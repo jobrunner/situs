@@ -63,21 +63,27 @@ func assignRemainingParents(tx output.IngestTx, eunisOnly []eunisOnlyRow, rows [
 	return nil
 }
 
-// resolveParent tries the name match first, falling back to sibling
-// consensus only when the name match found nothing at all — an ambiguous
-// name match is not guessed, but it also does not stop the sibling try.
+// resolveParent tries the name match first, then sibling consensus.
+// ambiguous and a found parentID are NOT mutually exclusive: an ambiguous
+// name match is never guessed from, but it does not stop the sibling try
+// either, because the ambiguity is purely a property of the name path —
+// siblings find each other over the alt code, which does not care whether
+// two FloraVeg names happen to tie in length. Refusing the sibling's
+// unanimous answer just because the name path also (independently) saw two
+// equally-long candidates would trade a real answer for an avoidable
+// orphan, and a broken parent chain is the worse failure of the two. The
+// ambiguity is still reported in AmbiguousMatches either way — resolving
+// via sibling consensus does not hide it, it only stops it from being a
+// dead end on its own.
 func resolveParent(row eunisOnlyRow, allianceRows []hierarchyRow, parents map[string]string) (parentID, provenance string, ambiguous bool) {
 	match, amb := longestPrefixMatch(row.name, allianceRows)
-	if amb {
-		return "", "", true
-	}
-	if match != nil {
+	if !amb && match != nil {
 		return match.parentCode, domain.ParentProvenanceOfficial, false
 	}
 	if sibling := siblingConsensus(row.id, parents); sibling != "" {
-		return sibling, domain.ParentProvenanceDerived, false
+		return sibling, domain.ParentProvenanceDerived, amb
 	}
-	return "", "", false
+	return "", "", amb
 }
 
 // longestPrefixMatch finds the FloraVeg alliance whose name is the longest
