@@ -219,6 +219,59 @@ func TestIngestAreas_SkipsAForeignAreaScheme(t *testing.T) {
 	}
 }
 
+func TestIngestAreasSchreibtBeideSchemata(t *testing.T) {
+	for _, tc := range []struct{ name, scheme, code, nameEN string }{
+		{"wgsrpd", "wgsrpd_l3", "GER", "Germany"},
+		{"evc", "evc_territory", "austria-alps", "Austria Alps"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newFakeRepo()
+			path := filepath.Join(t.TempDir(), "areas.csv")
+			content := "area_scheme,area_code,name_en\n" + tc.scheme + "," + tc.code + "," + tc.nameEN + "\n"
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatalf("Schreiben: %v", err)
+			}
+
+			rep, err := IngestAreas(context.Background(), repo, path)
+			if err != nil {
+				t.Fatalf("IngestAreas: %v", err)
+			}
+			if rep.Areas != 1 || rep.SkippedRows != 0 {
+				t.Fatalf("Report = %+v, erwartet 1 Gebiet und 0 uebersprungene", rep)
+			}
+			got := repo.area(tc.scheme, tc.code)
+			if got.NameEN != tc.nameEN {
+				t.Errorf("Name = %q, erwartet %q", got.NameEN, tc.nameEN)
+			}
+		})
+	}
+}
+
+func TestIngestAreasUeberspringtUnbekanntesSchema(t *testing.T) {
+	// A typo must still be caught. "evc-territory" with a hyphen is the exact
+	// mistake the underscore decision in the spec exists to keep visible.
+	repo := newFakeRepo()
+	path := filepath.Join(t.TempDir(), "areas.csv")
+	content := "area_scheme,area_code,name_en\n" +
+		"evc-territory,austria-alps,Austria Alps\n" +
+		"iso3166,DE,Germany\n" +
+		"evc_territory,albania,Albania\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("Schreiben: %v", err)
+	}
+
+	rep, err := IngestAreas(context.Background(), repo, path)
+	if err != nil {
+		t.Fatalf("IngestAreas: %v", err)
+	}
+	if rep.Areas != 1 || rep.SkippedRows != 2 {
+		t.Errorf("Report = %+v, erwartet 1 Gebiet und 2 uebersprungene", rep)
+	}
+	if repo.hasArea("evc-territory", "austria-alps") {
+		t.Error("das Bindestrich-Schema wurde geschrieben")
+	}
+}
+
 // `situs ingest --csv-dir .` hands IngestAreas a bare relative filename, whose
 // directory half is "" — which os.OpenRoot (csvReader's confinement) does not
 // read as "the current directory". The file exists, so the ingest must read it.
