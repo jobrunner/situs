@@ -109,6 +109,77 @@ func TestHabitatType_SyntaxonAuthorAndParentIDAreOmittedWhenEmpty(t *testing.T) 
 	}
 }
 
+func TestHabitatType_SyntaxonCarriesProvenanceFields(t *testing.T) {
+	q := seededQueryService()
+	detail := q.types["eunis@2021:R22"]
+	detail.Syntaxa = []input.SyntaxonRef{
+		{ID: "CAK-01C", Rank: "alliance", Name: "Cakilion edentulae Br.-Bl. 1931",
+			AltCode: "TST-01A", Source: "evc", ParentProvenance: "official"},
+	}
+	q.types["eunis@2021:R22"] = detail
+	srv := newTestServer(t, q)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/habitat-type/eunis@2021/R22", nil)
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got struct {
+		Syntaxa []map[string]any `json:"syntaxa"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if len(got.Syntaxa) != 1 {
+		t.Fatalf("syntaxa = %+v, want 1 entry", got.Syntaxa)
+	}
+	syn := got.Syntaxa[0]
+	for field, want := range map[string]any{
+		"alt_code":          "TST-01A",
+		"source":            "evc",
+		"parent_provenance": "official",
+	} {
+		if got := syn[field]; got != want {
+			t.Errorf("%s = %v, erwartet %v", field, got, want)
+		}
+	}
+}
+
+func TestHabitatType_SyntaxonOmitsEmptyProvenanceFields(t *testing.T) {
+	q := seededQueryService()
+	detail := q.types["eunis@2021:R22"]
+	detail.Syntaxa = []input.SyntaxonRef{
+		{ID: "XYZ-01", Rank: "alliance", Name: "Nomatchion nowhereii"},
+	}
+	q.types["eunis@2021:R22"] = detail
+	srv := newTestServer(t, q)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/habitat-type/eunis@2021/R22", nil)
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got struct {
+		Syntaxa []map[string]any `json:"syntaxa"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if len(got.Syntaxa) != 1 {
+		t.Fatalf("syntaxa = %+v, want 1 entry", got.Syntaxa)
+	}
+	syn := got.Syntaxa[0]
+	for _, field := range []string{"alt_code", "source", "parent_provenance", "life_form_group"} {
+		if _, ok := syn[field]; ok {
+			t.Errorf("%s erscheint, obwohl leer", field)
+		}
+	}
+}
+
 func TestHabitatType_CrosswalksAreEmptyNotNullWhenNoneExist(t *testing.T) {
 	srv := newTestServer(t, seededQueryService())
 

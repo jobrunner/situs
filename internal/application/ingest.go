@@ -33,11 +33,9 @@ const (
 
 // IngestReport summarizes one ingest run.
 type IngestReport struct {
-	HabitatTypes  int
-	Crosswalks    int
-	Syntaxa       int
-	SyntaxonLinks int
-	SkippedRows   int
+	HabitatTypes int
+	Crosswalks   int
+	SkippedRows  int
 }
 
 // rowSkipper counts and logs a row this file could not use, without aborting
@@ -53,12 +51,16 @@ func newRowSkipper(skipped *int, file, entity string) rowSkipper {
 	}
 }
 
-// IngestCSV loads typologies, habitat types, crosswalks and syntaxa from the
-// CSVs in dir (produced by pipelines/eunis) into repo. It is one atomic
-// transaction: any repository error rolls back and is returned; a malformed
-// row is counted in SkippedRows and logged, never silently dropped and never
+// IngestCSV loads typologies, habitat types and crosswalks from the CSVs in
+// dir (produced by pipelines/eunis) into repo. It is one atomic transaction:
+// any repository error rolls back and is returned; a malformed row is
+// counted in SkippedRows and logged, never silently dropped and never
 // aborting the run (the sole exception is typologies.csv, see
-// ingestTypologies).
+// ingestTypologies). Syntaxa are no longer part of this transaction —
+// IngestSyntaxa (syntaxa_ingest.go) owns them, in its own transaction. None
+// of typologies, habitat types or crosswalks carries a foreign key into the
+// syntaxa tables, so the split has no consequence for what either
+// transaction can see.
 func IngestCSV(ctx context.Context, repo output.Repository, dir string) (IngestReport, error) {
 	tx, err := repo.Begin(ctx)
 	if err != nil {
@@ -100,20 +102,6 @@ func ingestAll(ctx context.Context, tx output.IngestTx, dir string) (IngestRepor
 		return IngestReport{}, err
 	}
 	rep.Crosswalks = crosswalks
-	rep.SkippedRows += skipped
-
-	syntaxa, skipped, err := ingestSyntaxa(ctx, tx, dir)
-	if err != nil {
-		return IngestReport{}, err
-	}
-	rep.Syntaxa = syntaxa
-	rep.SkippedRows += skipped
-
-	links, skipped, err := ingestSyntaxonLinks(ctx, tx, dir)
-	if err != nil {
-		return IngestReport{}, err
-	}
-	rep.SyntaxonLinks = links
 	rep.SkippedRows += skipped
 
 	return rep, nil
@@ -329,26 +317,6 @@ func ingestCrosswalks(ctx context.Context, tx output.IngestTx, dir string) (coun
 	return count, skipped, err
 }
 
-func ingestSyntaxa(ctx context.Context, tx output.IngestTx, dir string) (count, skipped int, err error) {
-	const file = "syntaxa.csv"
-	skip := newRowSkipper(&skipped, file, "syntaxon")
-	err = readAll(ctx, dir, file, ',', []string{"id", colRank, colName, "parent_id"}, skip,
-		func(idx map[string]int, row []string, line int) error {
-			s := domain.Syntaxon{
-				ID:       row[idx["id"]],
-				Rank:     row[idx[colRank]],
-				Name:     row[idx[colName]],
-				ParentID: row[idx["parent_id"]],
-			}
-			if err := tx.UpsertSyntaxon(s); err != nil {
-				return fmt.Errorf("%s:%d: %w", file, line, err)
-			}
-			count++
-			return nil
-		})
-	return count, skipped, err
-}
-
 // parseOptionalFloat mirrors parseOptionalInt: an empty fidelity/constancy
 // column is absence of data, never a zero value.
 func parseOptionalFloat(s string) (*float64, error) {
@@ -361,24 +329,4 @@ func parseOptionalFloat(s string) (*float64, error) {
 		return nil, err
 	}
 	return &f, nil
-}
-
-func ingestSyntaxonLinks(ctx context.Context, tx output.IngestTx, dir string) (count, skipped int, err error) {
-	const file = "habitat_type_syntaxa.csv"
-	skip := newRowSkipper(&skipped, file, "syntaxon link")
-	err = readAll(ctx, dir, file, ',', []string{colTypologyID, colCode, "syntaxon_id"}, skip,
-		func(idx map[string]int, row []string, line int) error {
-			typologyID, perr := domain.ParseTypologyID(row[idx[colTypologyID]])
-			if perr != nil {
-				skip(line, perr)
-				return nil
-			}
-			key := domain.HabitatTypeKey{Typology: typologyID, Code: row[idx[colCode]]}
-			if err := tx.LinkSyntaxon(key, row[idx["syntaxon_id"]]); err != nil {
-				return fmt.Errorf("%s:%d: %w", file, line, err)
-			}
-			count++
-			return nil
-		})
-	return count, skipped, err
 }

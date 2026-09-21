@@ -100,14 +100,28 @@ type SyntaxonRef struct {
 	Rank string `json:"rank"`
 	Name string `json:"name"`
 	// Author is the authorship citation, taken verbatim from FloraVeg.EU's own
-	// already-separated column — absent when no FloraVeg match was found, never
-	// a guessed split of Name.
+	// already-separated column — absent for the units that only the EEA-EUNIS
+	// source carries.
 	Author string `json:"author,omitempty"`
 	// ParentID references a FloraVeg order code (class -> order -> alliance
-	// hierarchy) — absent when unknown. A plain string reference, not a
-	// schema-bound foreign key: two id schemes (EUNIS alliance codes, FloraVeg
-	// class/order codes) coexist here.
+	// hierarchy) — absent only for a formation, the root of the hierarchy. A
+	// plain string reference, not a schema-bound foreign key: two id schemes
+	// (EUNIS alliance codes, FloraVeg class/order codes) coexist here.
 	ParentID string `json:"parent_id,omitempty"`
+
+	// AltCode is the EEA-EUNIS code of the same syntaxon — a client
+	// holding an old code can switch over with it, without guessing.
+	AltCode string `json:"alt_code,omitempty"`
+	// Source is "evc" or "eunis": which source this row carries.
+	Source string `json:"source,omitempty"`
+	// ParentProvenance is "official" or "derived". A derived parent is
+	// never presented as a source-backed statement.
+	ParentProvenance string `json:"parent_provenance,omitempty"`
+	// LifeFormGroup is only filled on formation rows, so empty in every
+	// response that exists today. The field is here already because
+	// sub-project B delivers the formations as []SyntaxonRef and filters
+	// on it.
+	LifeFormGroup string `json:"life_form_group,omitempty"`
 }
 
 // CrosswalkRef is the far side of a correspondence, seen from the queried type.

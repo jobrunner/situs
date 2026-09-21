@@ -39,11 +39,33 @@ func seedDir(t *testing.T) string {
 	writeCSV(t, dir, "crosswalks.csv",
 		"from_typology,from_code,to_typology,to_code,qualifier\n"+
 			"eunis@2021,R22,annex1,6510,=\n")
-	writeCSV(t, dir, "syntaxa.csv",
-		"id,rank,name,parent_id\nARR,alliance,Arrhenatherion elatioris,MOL\n")
-	writeCSV(t, dir, "habitat_type_syntaxa.csv",
-		"typology_id,code,syntaxon_id\neunis@2021,R22,ARR\n")
 	return dir
+}
+
+// The syntaxa CSVs are still present in the pipeline's output directory
+// (other tools read them), but writing vegetation units and their edges is
+// IngestSyntaxa's job now (Task 5-7) — IngestCSV must leave them alone.
+func TestIngestCSVSchreibtKeineSyntaxaMehr(t *testing.T) {
+	repo := newFakeRepo()
+	dir := t.TempDir()
+	writeCSV(t, dir, "typologies.csv", "id,scheme,version,name,source_ref\neunis@2021,eunis,2021,EUNIS,\n")
+	writeCSV(t, dir, "habitat_types.csv",
+		"typology_id,code,level,name_en,parent_code,priority\neunis@2021,T1,1,Wald,,\n")
+	writeCSV(t, dir, "crosswalks.csv",
+		"from_typology,from_code,to_typology,to_code,qualifier\n")
+	// The files are present but must no longer be read by IngestCSV.
+	writeCSV(t, dir, "syntaxa.csv", "id,rank,name,parent_id\nX-01A,alliance,Darf nicht rein,\n")
+	writeCSV(t, dir, "habitat_type_syntaxa.csv", "typology_id,code,syntaxon_id\neunis@2021,T1,X-01A\n")
+
+	if _, err := IngestCSV(context.Background(), repo, dir); err != nil {
+		t.Fatalf("IngestCSV: %v", err)
+	}
+	if repo.has("X-01A") {
+		t.Error("IngestCSV hat ein Syntaxon geschrieben")
+	}
+	if len(repo.syntaxaLinks) != 0 {
+		t.Errorf("IngestCSV hat %d Kanten geschrieben", len(repo.syntaxaLinks))
+	}
 }
 
 func TestIngestCSV_LoadsEverySource(t *testing.T) {
@@ -55,11 +77,8 @@ func TestIngestCSV_LoadsEverySource(t *testing.T) {
 	if rep.HabitatTypes != 2 {
 		t.Errorf("HabitatTypes = %d, want 2", rep.HabitatTypes)
 	}
-	if rep.Crosswalks != 1 || rep.SyntaxonLinks != 1 {
-		t.Errorf("Crosswalks/SyntaxonLinks = %d/%d, want 1/1", rep.Crosswalks, rep.SyntaxonLinks)
-	}
-	if rep.Syntaxa != 1 {
-		t.Errorf("Syntaxa = %d, want 1", rep.Syntaxa)
+	if rep.Crosswalks != 1 {
+		t.Errorf("Crosswalks = %d, want 1", rep.Crosswalks)
 	}
 	if !repo.committed {
 		t.Error("ingest did not commit")
@@ -181,8 +200,8 @@ func TestIngestCSV_SkipWarningNamesFileAndLine(t *testing.T) {
 
 func TestIngestCSV_MissingFileFails(t *testing.T) {
 	dir := seedDir(t)
-	if err := os.Remove(filepath.Join(dir, "syntaxa.csv")); err != nil {
-		t.Fatalf("removing syntaxa.csv: %v", err)
+	if err := os.Remove(filepath.Join(dir, "crosswalks.csv")); err != nil {
+		t.Fatalf("removing crosswalks.csv: %v", err)
 	}
 
 	repo := newFakeRepo()
@@ -267,24 +286,6 @@ func TestIngestCSV_SkipsMalformedLevelAndPriority(t *testing.T) {
 	}
 }
 
-func TestIngestCSV_SkipsMalformedSyntaxonLinkTypology(t *testing.T) {
-	dir := seedDir(t)
-	writeCSV(t, dir, "habitat_type_syntaxa.csv",
-		"typology_id,code,syntaxon_id\neunis@2021,R22,ARR\n,R99,ARR\n")
-
-	repo := newFakeRepo()
-	rep, err := IngestCSV(context.Background(), repo, dir)
-	if err != nil {
-		t.Fatalf("IngestCSV: %v", err)
-	}
-	if rep.SyntaxonLinks != 1 {
-		t.Errorf("SyntaxonLinks = %d, want 1", rep.SyntaxonLinks)
-	}
-	if rep.SkippedRows != 1 {
-		t.Errorf("SkippedRows = %d, want 1 (empty typology id)", rep.SkippedRows)
-	}
-}
-
 func TestIngestCSV_RepositoryErrorRollsBackAndReturnsTheError(t *testing.T) {
 	repo := newFakeRepo()
 	repo.failOn = "UpsertHabitatType"
@@ -342,18 +343,18 @@ func TestIngestCSV_MissingDirectoryFails(t *testing.T) {
 
 func TestIngestCSV_EmptyFileFailsOnTheHeader(t *testing.T) {
 	dir := seedDir(t)
-	writeCSV(t, dir, "syntaxa.csv", "")
+	writeCSV(t, dir, "crosswalks.csv", "")
 
 	repo := newFakeRepo()
 	if _, err := IngestCSV(context.Background(), repo, dir); err == nil {
-		t.Fatal("IngestCSV(empty syntaxa.csv) = nil error, want an error")
+		t.Fatal("IngestCSV(empty crosswalks.csv) = nil error, want an error")
 	}
 }
 
 func TestIngestCSV_MalformedCSVSyntaxFails(t *testing.T) {
 	dir := seedDir(t)
-	writeCSV(t, dir, "syntaxa.csv",
-		"id,rank,name,parent_id\nARR,alliance,\"unterminated,MOL\n")
+	writeCSV(t, dir, "crosswalks.csv",
+		"from_typology,from_code,to_typology,to_code,qualifier\neunis@2021,R22,\"unterminated,6510,=\n")
 
 	repo := newFakeRepo()
 	if _, err := IngestCSV(context.Background(), repo, dir); err == nil {
@@ -411,7 +412,7 @@ func TestIngestCSV_SkipsMalformedCrosswalkTypologies(t *testing.T) {
 }
 
 func TestIngestCSV_RepositoryErrorPerEntity(t *testing.T) {
-	for _, failOn := range []string{"UpsertTypology", "UpsertHabitatType", "UpsertCrosswalk", "UpsertSyntaxon", "LinkSyntaxon"} {
+	for _, failOn := range []string{"UpsertTypology", "UpsertHabitatType", "UpsertCrosswalk"} {
 		t.Run(failOn, func(t *testing.T) {
 			repo := newFakeRepo()
 			repo.failOn = failOn

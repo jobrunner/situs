@@ -75,6 +75,8 @@ func seedIngestDir(t *testing.T) string {
 		"typology_id,code,level,name_en,parent_code,priority\neunis@2021,R22,3,Hay meadow,R2,\n")
 	writeIngestCSV(t, dir, "crosswalks.csv",
 		"from_typology,from_code,to_typology,to_code,qualifier\n")
+	writeIngestCSV(t, dir, "syntaxa_formations.csv", "letter,name_en,life_form_group\nA,Woodland,phanerogam\n")
+	writeIngestCSV(t, dir, "syntaxa_hierarchy.csv", "code,rank,name,author,parent_code,alt_code\n")
 	writeIngestCSV(t, dir, "syntaxa.csv", "id,rank,name,parent_id\n")
 	writeIngestCSV(t, dir, "habitat_type_syntaxa.csv", "typology_id,code,syntaxon_id\n")
 	writeIngestCSV(t, dir, "species_roles.csv",
@@ -287,6 +289,8 @@ func TestIngestCommand_ReportsFailedConceptsFromThePacedDecorator(t *testing.T) 
 		"typology_id,code,level,name_en,parent_code,priority\neunis@2021,R22,3,Hay meadow,R2,\n")
 	writeIngestCSV(t, dir, "crosswalks.csv",
 		"from_typology,from_code,to_typology,to_code,qualifier\n")
+	writeIngestCSV(t, dir, "syntaxa_formations.csv", "letter,name_en,life_form_group\nA,Woodland,phanerogam\n")
+	writeIngestCSV(t, dir, "syntaxa_hierarchy.csv", "code,rank,name,author,parent_code,alt_code\n")
 	writeIngestCSV(t, dir, "syntaxa.csv", "id,rank,name,parent_id\n")
 	writeIngestCSV(t, dir, "habitat_type_syntaxa.csv", "typology_id,code,syntaxon_id\n")
 	writeIngestCSV(t, dir, "species_roles.csv",
@@ -423,17 +427,21 @@ func TestIngestLeavesTheIndexAsASingleFileOutOfWAL(t *testing.T) {
 	}
 }
 
-func TestIngestCommandRunsSyntaxaHierarchyIngestAfterEUNISSyntaxa(t *testing.T) {
+func TestIngestCommandRunsSyntaxaIngestAfterIngestCSV(t *testing.T) {
 	stubHostus(t)
 	dir := seedIngestDir(t)
-	// Overwrite syntaxa.csv/habitat_type_syntaxa.csv with one real EUNIS
-	// alliance so the hierarchy step has something to match against.
-	writeIngestCSV(t, dir, "syntaxa.csv", "id,rank,name,parent_id\nCAK-01C,alliance,Cakilion edentulae Br.-Bl. 1931,\n")
-	writeIngestCSV(t, dir, "habitat_type_syntaxa.csv", "typology_id,code,syntaxon_id\neunis@2021,R22,CAK-01C\n")
+	// One real FloraVeg class/order/alliance, its alt_code being the EEA
+	// code the habitat type edge is written against — so the edge is
+	// remapped onto the FloraVeg primary code during this run.
+	writeIngestCSV(t, dir, "syntaxa_formations.csv",
+		"letter,name_en,life_form_group\nC,Vegetation of the nemoral forest zone,phanerogam\n")
 	writeIngestCSV(t, dir, "syntaxa_hierarchy.csv",
-		"code,rank,name,author,parent_code\n"+
-			"AA01,order,Cakiletalia,Tüxen 1950,AA\n"+
-			"AA01A,alliance,Cakilion edentulae,Br.-Bl. 1931,AA01\n")
+		"code,rank,name,author,parent_code,alt_code\n"+
+			"CA,class,Testklasse,Moor 1950,,\n"+
+			"CA01,order,Testordnung,Moor 1960,CA,\n"+
+			"CA01A,alliance,Testverband,Moor 1970,CA01,TST-01A\n")
+	writeIngestCSV(t, dir, "syntaxa.csv", "id,rank,name,parent_id\n")
+	writeIngestCSV(t, dir, "habitat_type_syntaxa.csv", "typology_id,code,syntaxon_id\neunis@2021,R22,TST-01A\n")
 	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
 
 	root := newRootCmd()
@@ -444,11 +452,22 @@ func TestIngestCommandRunsSyntaxaHierarchyIngestAfterEUNISSyntaxa(t *testing.T) 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("executing ingest: %v", err)
 	}
-	if !strings.Contains(out.String(), `"AlliancesMatched": 1`) {
-		t.Errorf("output = %q, want the report to show one matched alliance", out.String())
+	var parsed map[string]any
+	if err := json.Unmarshal(out.Bytes(), &parsed); err != nil {
+		t.Fatalf("unmarshaling report: %v", err)
 	}
-	if !strings.Contains(out.String(), `"OrdersWritten": 1`) {
-		t.Errorf("output = %q, want the report to show one FloraVeg order written", out.String())
+	syntaxa, ok := parsed["Syntaxa"].(map[string]any)
+	if !ok {
+		t.Fatalf("report %s has no \"Syntaxa\" object", out.String())
+	}
+	if got := syntaxa["AlliancesWritten"]; got != float64(1) {
+		t.Errorf("Syntaxa.AlliancesWritten = %v, want 1", got)
+	}
+	if got := syntaxa["OrdersWritten"]; got != float64(1) {
+		t.Errorf("Syntaxa.OrdersWritten = %v, want 1", got)
+	}
+	if got := syntaxa["LinksRemapped"]; got != float64(1) {
+		t.Errorf("Syntaxa.LinksRemapped = %v, want 1 (the edge onto the EEA alt code)", got)
 	}
 }
 
@@ -492,9 +511,13 @@ func TestIngestCommand_ReportIncludesTraits(t *testing.T) {
 	}
 }
 
-func TestIngestCommandRunsWithoutASyntaxaHierarchyFile(t *testing.T) {
+// An empty (header-only) syntaxa_hierarchy.csv is a valid run with nothing
+// to write — seedIngestDir's default. Unlike the file's absence, this must
+// not fail: the formations/hierarchy files being present is what
+// IngestSyntaxa requires, not that they carry any rows.
+func TestIngestCommandRunsWithAnEmptySyntaxaHierarchyFile(t *testing.T) {
 	stubHostus(t)
-	dir := seedIngestDir(t) // no syntaxa_hierarchy.csv written
+	dir := seedIngestDir(t)
 	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
 
 	root := newRootCmd()
@@ -503,21 +526,30 @@ func TestIngestCommandRunsWithoutASyntaxaHierarchyFile(t *testing.T) {
 	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", dbPath})
 
 	if err := root.Execute(); err != nil {
-		t.Fatalf("executing ingest without syntaxa_hierarchy.csv: %v", err)
+		t.Fatalf("executing ingest with an empty syntaxa_hierarchy.csv: %v", err)
 	}
-	if !strings.Contains(out.String(), `"ClassesWritten": 0`) {
-		t.Errorf("output = %q, want a present-but-zero SyntaxaHierarchy report", out.String())
+	var parsed map[string]any
+	if err := json.Unmarshal(out.Bytes(), &parsed); err != nil {
+		t.Fatalf("unmarshaling report: %v", err)
+	}
+	syntaxa, ok := parsed["Syntaxa"].(map[string]any)
+	if !ok {
+		t.Fatalf("report %s has no \"Syntaxa\" object", out.String())
+	}
+	if got := syntaxa["ClassesWritten"]; got != float64(0) {
+		t.Errorf("Syntaxa.ClassesWritten = %v, want a present-but-zero report", got)
 	}
 }
 
-// A malformed syntaxa_hierarchy.csv (missing a required column) must fail
-// the whole ingest run, wrapped with the "ingesting syntaxa hierarchy" text
-// this command adds — this is the run's own error-wrapping branch, not
-// application.IngestSyntaxaHierarchy's.
-func TestIngestCommandFailsOnAMalformedSyntaxaHierarchyCSV(t *testing.T) {
+// A missing syntaxa_hierarchy.csv must fail the whole ingest run, wrapped
+// with the "ingesting syntaxa from" text ingestSyntaxaPhase adds — this is
+// the run's own error-wrapping branch, not application.IngestSyntaxa's.
+func TestIngestCommandFailsOnAMissingSyntaxaHierarchyCSV(t *testing.T) {
 	stubHostus(t)
 	dir := seedIngestDir(t)
-	writeIngestCSV(t, dir, "syntaxa_hierarchy.csv", "code,rank,name,parent_code\nAA,class,X,\n") // missing "author"
+	if err := os.Remove(filepath.Join(dir, "syntaxa_hierarchy.csv")); err != nil {
+		t.Fatalf("removing syntaxa_hierarchy.csv: %v", err)
+	}
 
 	root := newRootCmd()
 	root.SetOut(&bytes.Buffer{})
@@ -525,10 +557,10 @@ func TestIngestCommandFailsOnAMalformedSyntaxaHierarchyCSV(t *testing.T) {
 
 	err := root.Execute()
 	if err == nil {
-		t.Fatal("executing ingest with a malformed syntaxa_hierarchy.csv = nil error, want an error")
+		t.Fatal("executing ingest with a missing syntaxa_hierarchy.csv = nil error, want an error")
 	}
-	if !strings.Contains(err.Error(), "ingesting syntaxa hierarchy") {
-		t.Errorf("error = %q, want it to name the syntaxa hierarchy ingest step", err)
+	if !strings.Contains(err.Error(), "ingesting syntaxa from") {
+		t.Errorf("error = %q, want it to name the syntaxa ingest step", err)
 	}
 }
 

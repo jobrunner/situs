@@ -173,7 +173,7 @@ type ingestOutput struct {
 	DistributionFailed int
 	Localizations      int
 	DerivedLabels      int
-	SyntaxaHierarchy   application.SyntaxaHierarchyReport
+	Syntaxa            application.SyntaxaReport
 	AreaNames          application.AreaReport
 	Descriptions       application.DescriptionReport
 	Traits             application.TraitReport
@@ -241,6 +241,34 @@ func ingestLocalizationFiles(ctx context.Context, db *sqlite.DB, csvDir string) 
 	return total, nil
 }
 
+// ingestSyntaxaPhase runs the syntaxa ingest and logs its non-fatal
+// warnings, so runIngest itself gains exactly one branch instead of one per
+// warning kind.
+//
+// Runs after IngestCSV (the habitat types must be in the index for the edge
+// check) and before the localization steps. Unlike before, the hierarchy is
+// not an optional addition: without it the index ends up with no syntaxa
+// hierarchy at all, so the ingest fails instead of shipping it.
+func ingestSyntaxaPhase(ctx context.Context, db *sqlite.DB, csvDir string) (application.SyntaxaReport, error) {
+	rep, err := application.IngestSyntaxa(ctx, db, csvDir)
+	if err != nil {
+		return application.SyntaxaReport{}, fmt.Errorf("ingesting syntaxa from %q: %w", csvDir, err)
+	}
+	if len(rep.AltCodeCollisions) > 0 {
+		slog.WarnContext(ctx, "syntaxa ingest found alt-code collisions", "codes", rep.AltCodeCollisions)
+	}
+	if len(rep.AmbiguousMatches) > 0 {
+		slog.WarnContext(ctx, "syntaxa ingest found ambiguous name matches", "ids", rep.AmbiguousMatches)
+	}
+	if len(rep.UnknownLinkTargets) > 0 {
+		slog.WarnContext(ctx, "syntaxa ingest dropped edges to unknown syntaxa", "targets", rep.UnknownLinkTargets)
+	}
+	if rep.ParentsDerived > 0 {
+		slog.WarnContext(ctx, "syntaxa ingest derived parents from sibling consensus", "count", rep.ParentsDerived)
+	}
+	return rep, nil
+}
+
 // sealIndex runs the two steps that belong after the last write.
 //
 // The first is a measurement: hostus.entry_backbone is configurable, the prefix
@@ -291,13 +319,12 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath, crosswalk
 		return fmt.Errorf("ingesting %q: %w", csvDir, err)
 	}
 
-	// Runs right after the EUNIS alliances are indexed (IngestCSV, above) and
-	// before species/localization/derivation, which do not depend on it and
-	// which it does not depend on.
-	hierarchyCSV := filepath.Join(csvDir, "syntaxa_hierarchy.csv")
-	hierarchyReport, err := application.IngestSyntaxaHierarchy(ctx, db, hierarchyCSV)
+	// Runs right after IngestCSV puts the habitat types in the index (the
+	// edge check needs them) and before species/localization/derivation,
+	// which do not depend on it and which it does not depend on.
+	syntaxa, err := ingestSyntaxaPhase(ctx, db, csvDir)
 	if err != nil {
-		return fmt.Errorf("ingesting syntaxa hierarchy from %q: %w", hierarchyCSV, err)
+		return err
 	}
 
 	overlays, err := ingestLocalOverlays(ctx, db, csvDir)
@@ -357,7 +384,7 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath, crosswalk
 		DistributionFailed: distSrc.FailedConcepts(),
 		Localizations:      localizations,
 		DerivedLabels:      derivedLabels,
-		SyntaxaHierarchy:   hierarchyReport,
+		Syntaxa:            syntaxa,
 		AreaNames:          overlays.areas,
 		Descriptions:       overlays.descriptions,
 		Traits:             traitReport,

@@ -23,8 +23,8 @@ type AreaReport struct {
 // of static reference data situs must not need another service for.
 //
 // A missing csvPath is "no area names pinned yet", not an error, mirroring
-// IngestSyntaxaHierarchy: an index without them still answers every query,
-// its area codes simply stay unnamed.
+// IngestLocalizations' optional CSVs: an index without them still answers
+// every query, its area codes simply stay unnamed.
 func IngestAreas(ctx context.Context, repo output.Repository, csvPath string) (AreaReport, error) {
 	if _, err := os.Stat(csvPath); err != nil {
 		if os.IsNotExist(err) {

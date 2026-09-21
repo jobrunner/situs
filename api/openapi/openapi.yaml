@@ -617,19 +617,44 @@ components:
           type: string
         rank:
           type: string
-          enum: [class, order, alliance]
+          enum: [formation, class, order, alliance]
         name:
           type: string
         author:
           type: string
           description: >-
-            Autorschafts-Zitat, direkt aus FloraVeg.EU übernommen; fehlt, wenn
-            kein FloraVeg-Treffer gefunden wurde.
+            Autorschafts-Zitat, direkt aus FloraVeg.EU übernommen; fehlt bei
+            den Einheiten, die nur die EEA-EUNIS-Quelle führt.
         parent_id:
           type: string
           description: >-
-            Verweist auf einen FloraVeg-Klasse-/Ordnungscode (reine
-            String-Referenz, kein Fremdschlüssel); fehlt, wenn unbekannt.
+            Verweist auf den übergeordneten Syntaxon (reine String-Referenz,
+            kein Fremdschlüssel). Fehlt nur bei einer Formation — sie ist die
+            Wurzel der Hierarchie.
+        alt_code:
+          type: string
+          description: >-
+            Der EEA-EUNIS-Code desselben Syntaxons; fehlt bei Formationen und
+            bei Einheiten, die nur eine der beiden Quellen kennt.
+        source:
+          type: string
+          enum: [evc, eunis]
+          description: >-
+            Welche Quelle diese Zeile führt: die EuroVegChecklist (evc) oder
+            allein die EEA-EUNIS-Zuordnung (eunis).
+        parent_provenance:
+          type: string
+          enum: [official, derived]
+          description: >-
+            Ob parent_id aus der Quelle stammt (official) oder aus dem
+            Geschwisterkonsens abgeleitet wurde (derived).
+        life_form_group:
+          type: string
+          enum: [phanerogam, bryophyte_lichen, algae]
+          description: >-
+            Die Lebensform-Gruppe der Formation. Nur auf Formationszeilen
+            gesetzt und deshalb in Antworten, die Verbände oder Ordnungen
+            tragen, nicht vorhanden.
     TraitValue:
       type: object
       required: [dim, value]
