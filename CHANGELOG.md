@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.11.1](https://github.com/jobrunner/situs/compare/v0.11.0...v0.11.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **serve:** Diagnose dem Symlink folgen lassen, Beiwagen-Fall benennen ([0150fe0](https://github.com/jobrunner/situs/commit/0150fe0a7aacf7ba655c4930059f23d4fa10e3a4))
+* **serve:** WAL-Index beim Start benennen statt Dateirechte zu vermuten ([8fe3f69](https://github.com/jobrunner/situs/commit/8fe3f698ccdfd0631c6c8b5d7ea755c2370c4b39))
+* **serve:** WAL-Index beim Start benennen statt Dateirechte zu vermuten ([6bc9f23](https://github.com/jobrunner/situs/commit/6bc9f23801f411342eda0a3e88529ca8564006a1))
+
 ## [0.11.0](https://github.com/jobrunner/situs/compare/v0.10.0...v0.11.0) (2026-09-21)
 
 
