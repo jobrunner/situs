@@ -17,15 +17,21 @@ python3 pipelines/eurlex/extract.py eurlex-de.xhtml \
 
 ```bash
 sqlite3 situs.sqlite "SELECT h.code FROM habitat_type h
-  WHERE h.typology_id='eunis@2021' AND h.level=3
+  WHERE h.typology_id='eunis@2021' AND h.level IN (1,2,3)
   AND NOT EXISTS (SELECT 1 FROM habitat_type_crosswalk c
     WHERE c.from_code=h.code AND c.to_typology='annex1' AND c.qualifier='=')" > expected.txt
 sqlite3 -separator '\t' situs.sqlite \
-  "SELECT code,name_en FROM habitat_type WHERE typology_id='eunis@2021' AND level=3" > index-names.tsv
+  "SELECT code,name_en FROM habitat_type WHERE typology_id='eunis@2021' AND level IN (1,2,3)" > index-names.tsv
 python3 pipelines/eurlex/merge.py data/localizations-de-situs.csv \
   --version "$(cat VERSION)" --official localizations.csv \
   --expected-codes expected.txt --index-names index-names.tsv -o localizations.csv
 ```
+
+Die Level-Menge ist **1 bis 3**, nicht nur 3: Level 1 und 2 tragen keinen
+`=`-Crosswalk nach `annex1` (gemessen: keiner der 49 Codes), die Ableitung
+erreicht sie also nie, und ohne verfasste Zeilen bliebe die Ebene englisch, die
+in der App als Gruppenknopf zuerst sichtbar ist. Gemessen am 2026-09-21: **290**
+verfasste Typen, **394** Zeilen, davon 104 `vernacular`.
 
 `merge.py` schreibt **nichts**, wenn die verfasste Datei ihre Zusagen bricht:
 eine fehlende oder überzählige Code-Menge, ein doppelter Code, ein

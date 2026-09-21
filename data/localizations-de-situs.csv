@@ -1,4 +1,4 @@
-# Von situs verfasste deutsche Namen für EUNIS-Level-3-Habitattypen.
+# Von situs verfasste deutsche Namen für EUNIS-Habitattypen der Level 1 bis 3.
 #
 # Diese Datei ist die Quelle für alle Zeilen mit provenance=situs: hier steht,
 # was situs selbst übersetzt hat, und keine externe Quelle steht dahinter.
@@ -20,13 +20,34 @@
 #             der weiter reicht als der Typ, ist eine falsche Gleichsetzung und
 #             bleibt weg.
 #
-# Nur EUNIS-Level 3, und nur Typen OHNE '='-Crosswalk nach annex1 — wo eine
+# EUNIS-Level 1 bis 3, und nur Typen OHNE '='-Crosswalk nach annex1 — wo eine
 # Ableitung aus dem amtlichen Anhang-I-Namen existiert, wird nichts erfunden.
+# Level 1 und 2 haben gar keinen '='-Crosswalk (gemessen: keiner der 49 Codes),
+# und die Ableitung erreicht sie auch nicht — ohne diese Zeilen bliebe ein
+# Gruppenknopf in der App auf Dauer englisch.
+#
+# Auf Level 1 und 2 steht vernacular_de nur dort, wo der etablierte Begriff
+# denselben Umfang trägt UND ihn nicht schon ein Untertyp führt: 'Hochmoor'
+# gehört Q11, deshalb bleibt Q1 ('Hoch- und Deckenmoore') ohne Volksnamen. Ein
+# Volksname, der auf zwei Ebenen dasselbe meint, macht die Rückwärtssuche
+# mehrdeutig.
+#
+# Die Umfangsregel schlägt auf dieser Ebene oft zu, weil Sammeltypen selten
+# genau einen deutschen Begriff haben: 'Laubwald' ist WEITER als T1 (es schließt
+# den immergrünen Laubwald T2 ein), 'Phrygana' ist ENGER als S7 (dort stehen
+# auch Igelpolsterheiden), 'Acker' ist enger als V1 (mit Gartenbauflächen),
+# 'Alpiner Rasen' enger als R4 (mit der subalpinen Stufe), 'Felsflur' enger als
+# U3 (mit Karren und Felskuppen). Alle fünf tragen deshalb nur name_de.
 #
 # Gruppen in EUNIS-Reihenfolge: N Küste, Q Moore/Sümpfe, R Grasland,
-# S Gebüsch/Heide, T Wald, U Fels/Geröll, V Kulturland.
+# S Gebüsch/Heide, T Wald, U Fels/Geröll, V Kulturland. Je Gruppe zuerst der
+# Level-1-Code, dann die Level-2-Codes, dann die Level-3-Codes.
 code,name_en,name_de,vernacular_de
-# --- N — Küste, Strände, Dünen (21) ---
+# --- N — Küste, Strände, Dünen (25) ---
+N,"Coastal habitats","Küstenlebensräume",
+N1,"Coastal dunes and sandy shores","Küstendünen und Sandufer",
+N2,"Coastal shingle","Küstenkies",
+N3,"Rock cliffs, ledges and shores, including the supralittoral","Felsklippen, Felsbänder und Felsufer einschließlich des Supralitorals",
 N11,"Atlantic, Baltic and Arctic sand beach","Atlantischer, baltischer und arktischer Sandstrand",Sandstrand
 N12,"Mediterranean and Black Sea sand beach","Mediterraner und Schwarzmeer-Sandstrand",
 N13,"Atlantic and Baltic shifting coastal dune","Atlantische und baltische Wanderdüne der Küste",Weißdüne
@@ -48,7 +69,14 @@ N31,"Atlantic and Baltic rocky sea cliff and shore","Atlantische und baltische F
 N32,"Mediterranean and Black Sea rocky sea cliff and shore","Mediterrane und Schwarzmeer-Felsküste und Felsufer",
 N34,"Atlantic and Baltic soft sea cliff","Atlantisches und baltisches Kliff in weichem Substrat",Kliff
 N35,"Mediterranean and Black Sea soft sea cliff","Mediterranes und Schwarzmeer-Kliff in weichem Substrat",
-# --- Q — Moore, Sümpfe, Röhrichte (19) ---
+# --- Q — Moore, Sümpfe, Röhrichte (26) ---
+Q,"Wetlands","Feuchtgebiete",
+Q1,"Raised and blanket bogs","Hoch- und Deckenmoore",
+Q2,"Valley mires, poor fens and transition mires","Talmoore, sauerarme Niedermoore und Übergangsmoore",
+Q3,"Palsa mires","Palsamoore",Palsamoor
+Q4,"Base-rich fens and calcareous spring mires","Basenreiche Niedermoore und Kalk-Quellmoore",
+Q5,"Helophyte beds","Sumpfpflanzenbestände",
+Q6,"Periodically exposed shores","Zeitweilig trockenfallende Ufer",
 Q11,"Raised bog","Hochmoor",Hochmoor
 Q13,"Ombrotrophic percolation mire","Ombrotrophes Durchströmungsmoor",
 Q21,"Oceanic valley mire","Ozeanisches Talmoor",
@@ -68,7 +96,15 @@ Q54,"Inland saline or brackish helophyte bed","Binnenländischer Salz- oder Brac
 Q61,"Periodically exposed shore with stable, eutrophic sediments with pioneer or ephemeral vegetation","Zeitweilig trockenfallendes Ufer mit stabilen, eutrophen Sedimenten und Pionier- oder ephemerer Vegetation",
 Q62,"Periodically exposed shore with stable, mesotrophic sediments with pioneer or ephemeral vegetation","Zeitweilig trockenfallendes Ufer mit stabilen, mesotrophen Sedimenten und Pionier- oder ephemerer Vegetation",
 Q63,"Periodically exposed saline shore with pioneer or ephemeral vegetation","Zeitweilig trockenfallendes Salzufer mit Pionier- oder ephemerer Vegetation",
-# --- R — Grasland, Säume, Steppen (53) ---
+# --- R — Grasland, Säume, Steppen (61) ---
+R,"Grasslands and lands dominated by forbs, mosses or lichens","Grasland und von Kräutern, Moosen oder Flechten beherrschte Flächen",
+R1,"Dry grasslands","Trockenrasen",Trockenrasen
+R2,"Mesic grasslands","Frisches Grasland",Frischgrünland
+R3,"Seasonally wet and wet grasslands","Wechselfeuchtes und nasses Grasland",Feuchtgrünland
+R4,"Alpine and subalpine grasslands","Alpines und subalpines Grasland",
+R5,"Forest fringes and clearings and tall forb stands","Waldsäume, Waldschläge und Hochstaudenfluren",
+R6,"Inland salt steppes and salt marshes","Binnenland-Salzsteppen und Salzwiesen",
+R7,"Sparsely wooded grasslands","Locker bewaldetes Grasland",
 R11,"Pannonian and Pontic sandy steppe","Pannonische und pontische Sandsteppe",
 R12,"Cryptogam- and annual-dominated vegetation on siliceous rock outcrops","Kryptogamen- und annuellenreiche Vegetation auf Silikatfelskuppen",
 R13,"Cryptogam- and annual-dominated vegetation on calcareous and ultramafic rock outcrops","Kryptogamen- und annuellenreiche Vegetation auf Kalk- und Ultrabasitfelskuppen",
@@ -122,7 +158,17 @@ R65,"Continental subsaline alluvial pasture and meadow","Kontinentale subsaline 
 R71,"Temperate wooded pasture and meadow","Temperate Weide und Wiese mit Baumbestand",Hutewald
 R72,"Hemiboreal and boreal wooded pasture and meadow","Hemiboreale und boreale Weide und Wiese mit Baumbestand",
 R73,"Mediterranean wooded pasture and meadow","Mediterrane Weide und Wiese mit Baumbestand",
-# --- S — Gebüsch, Zwergstrauchheide, Macchie (38) ---
+# --- S — Gebüsch, Zwergstrauchheide, Macchie (48) ---
+S,"Heathland, scrub and tundra","Zwergstrauchheiden, Gebüsche und Tundra",
+S1,"Tundra","Tundra",Tundra
+S2,"Arctic, alpine and subalpine scrub","Arktisches, alpines und subalpines Gebüsch",
+S3,"Temperate and mediterranean-montane scrub","Temperates und mediterran-montanes Gebüsch",
+S4,"Temperate shrub heathland","Temperate Zwergstrauchheide",Zwergstrauchheide
+S5,"Maquis, arborescent matorral and thermo-Mediterranean scrub","Macchie, baumförmiges Matorral und thermomediterranes Gebüsch",
+S6,"Garrigue","Garigue",Garigue
+S7,"Spiny Mediterranean heaths (phrygana, hedgehog-heaths and related coastal cliff vegetation)","Dornige mediterrane Heiden (Phrygana, Igelpolsterheiden und verwandte Küstenfelsvegetation)",
+S8,"Thermo-Atlantic xerophytic scrub","Thermoatlantisches xerophytisches Gebüsch",
+S9,"Riverine and fen scrubs","Ufer- und Niedermoorgebüsche",
 S11,"Shrub tundra","Strauchtundra",
 S12,"Moss and lichen tundra","Moos- und Flechtentundra",
 S21,"Subarctic and alpine dwarf Salix scrub","Subarktisches und alpines Zwergweiden-Gebüsch",Zwergweiden-Gebüsch
@@ -161,7 +207,12 @@ S82,"Madeiran xerophytic scrub","Madeirisches xerophytisches Gebüsch",
 S91,"Temperate riparian scrub","Temperates Ufergebüsch",Weiden-Ufergebüsch
 S92,"Salix fen scrub","Weiden-Moorgebüsch",Weidenbruch
 S94,"Semi-desert riparian scrub","Halbwüsten-Ufergebüsch",
-# --- T — Wald und Gehölzbestände (46) ---
+# --- T — Wald und Gehölzbestände (51) ---
+T,"Forest and other wooded land","Wald und sonstige Gehölzflächen",
+T1,"Deciduous broadleaved forest","Sommergrüner Laubwald",
+T2,"Broadleaved evergreen forest","Immergrüner Laubwald",
+T3,"Coniferous forest","Nadelwald",Nadelwald
+T4,"Lines of trees, small anthropogenic forests, recently felled forest, early-stage forest and coppice","Baumreihen, kleine anthropogene Wälder, kürzlich geschlagener Wald, Wald früher Entwicklungsstadien und Niederwald",
 T11,"Temperate Salix and Populus riparian forest","Temperater Weiden- und Pappel-Auwald",Weichholzaue
 T12,"Alnus glutinosa-Alnus incana forest on riparian and mineral soils","Schwarz- und Grauerlenwald auf Auen- und Mineralböden",Erlen-Auwald
 T14,"Mediterranean and Macaronesian riparian forest","Mediterraner und makaronesischer Auwald",
@@ -208,7 +259,15 @@ T3N,"Coniferous plantation of site-native trees","Nadelholzforst mit gebietsheim
 T41,"Early-stage natural and semi-natural forest and regrowth","Naturnaher Wald früher Entwicklungsstadien und Wiederaufwuchs",Pionierwald
 T42,"Coppice and early stage plantations","Niederwald und Forste früher Entwicklungsstadien",Niederwald
 T43,"Recently felled areas","Kürzlich geschlagene Flächen",Kahlschlag
-# --- U — Fels, Geröll, Schutt, Eis, Höhlen (33) ---
+# --- U — Fels, Geröll, Schutt, Eis, Höhlen (41) ---
+U,"Inland habitats with no or little soil and mostly with sparse vegetation","Binnenland-Lebensräume ohne oder mit wenig Boden und meist mit lückiger Vegetation",
+U1,"Terrestrial underground caves, cave systems, passages and waterbodies","Terrestrische unterirdische Höhlen, Höhlensysteme, Gänge und Gewässer",
+U2,"Screes","Schutthalden",Schutthalde
+U3,"Inland cliffs, rock pavements and outcrops","Felswände, Felsplatten und Felskuppen des Binnenlands",
+U4,"Snow or ice-dominated habitats","Von Schnee oder Eis beherrschte Lebensräume",
+U5,"Miscellaneous inland habitats usually with very sparse or no vegetation","Sonstige Binnenland-Lebensräume, meist mit sehr lückiger oder fehlender Vegetation",
+U6,"Recent volcanic features","Junge Vulkanbildungen",
+U7,"Unvegetated or sparsely vegetated gravel bars","Vegetationsfreie oder lückig bewachsene Kiesbänke",Kiesbank
 U11,"Cave","Höhle",Höhle
 U12,"Disused underground mines and tunnels","Aufgelassene Bergwerke und Tunnel unter Tage",Stollen
 U21,"Boreal and arctic siliceous scree and block field","Boreale und arktische Silikatschutthalde und Blockfeld",
@@ -242,7 +301,14 @@ U61,"Subarctic volcanic field","Subarktisches Vulkanfeld",
 U62,"Mediterranean, Macaronesian and temperate volcanic field","Mediterranes, makaronesisches und temperates Vulkanfeld",
 U71,"Unvegetated or sparsely vegetated gravel bars in montane and alpine regions","Vegetationsfreie oder lückig bewachsene Kiesbänke der montanen und alpinen Lagen",Alpine Kiesbank
 U72,"Unvegetated or sparsely vegetated gravel bars in the Mediterranean region","Vegetationsfreie oder lückig bewachsene Kiesbänke des Mittelmeerraums",
-# --- V — Kulturland, Gärten, Hecken, Pflanzungen (31) ---
+# --- V — Kulturland, Gärten, Hecken, Pflanzungen (38) ---
+V,"Vegetated man-made habitats","Bewachsene anthropogene Lebensräume",
+V1,"Arable land and market gardens","Acker- und Gartenbauflächen",
+V2,"Cultivated areas of gardens and parks","Bewirtschaftete Garten- und Parkflächen",
+V3,"Artificial grasslands and herb dominated habitats","Künstliche Rasen und von Kräutern beherrschte Lebensräume",
+V4,"Hedgerows","Hecken",Hecke
+V5,"Shrub plantations","Strauchpflanzungen",
+V6,"Tree dominated man-made habitats","Von Bäumen beherrschte anthropogene Lebensräume",
 V11,"Intensive unmixed crops","Intensiv genutzte Reinkulturen",Intensivacker
 V12,"Mixed crops of market gardens and horticulture","Mischkulturen des Gemüse- und Gartenbaus",Gärtnerei
 V13,"Arable land with unmixed crops grown by low-intensity agricultural methods","Acker mit Reinkulturen extensiver Bewirtschaftung",Extensivacker
