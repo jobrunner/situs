@@ -511,7 +511,7 @@ func TestReadOnlyHintStaysSilentOnEverythingElse(t *testing.T) {
 		{"kein SQLite-Fehler", errors.New("connection reset")},
 		{"anderer SQLite-Code", &sqlitedriver.Error{}},
 	} {
-		if hint := readOnlyHint(tc.err); hint != "" {
+		if hint := readOnlyHint("irrelevant.sqlite", tc.err); hint != "" {
 			t.Errorf("%s: readOnlyHint = %q, want empty", tc.name, hint)
 		}
 	}
@@ -536,6 +536,68 @@ func TestVerifyServeSchemaReportsRowFailures(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: error = %v, want it to mention %q", tc.name, err, tc.want)
+		}
+	}
+}
+
+// indexFileHint answers from the file itself, not from a result code, because
+// the same code means different things in different environments: the WAL case
+// that this hint exists for arrives as SQLITE_READONLY_DIRECTORY from a
+// chmod'ed directory and as SQLITE_CANTOPEN from a read-only bind mount.
+func TestIndexFileHintReadsTheFile(t *testing.T) {
+	dir := t.TempDir()
+
+	walIndex := filepath.Join(dir, "wal.sqlite")
+	db, err := OpenForIngest(t.Context(), walIndex) // left in WAL on purpose
+	if err != nil {
+		t.Fatalf("OpenForIngest = %v, want no error", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	finalized := filepath.Join(dir, "final.sqlite")
+	seedIndex(t, finalized)
+
+	garbage := filepath.Join(dir, "garbage.sqlite")
+	if err := os.WriteFile(garbage, []byte("this is not a database"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		path string
+		want string
+	}{
+		{"WAL-Index", walIndex, "WAL"},
+		{"finalisierter Index", finalized, "directory"},
+		{"keine Datenbank", garbage, "not a SQLite database"},
+		{"fehlende Datei", filepath.Join(dir, "absent.sqlite"), "no such file"},
+	} {
+		hint := indexFileHint(tc.path)
+		if !strings.Contains(hint, tc.want) {
+			t.Errorf("%s: hint = %q, want it to mention %q", tc.name, hint, tc.want)
+		}
+	}
+}
+
+// The WAL hint has to carry the way out, not just the diagnosis: this is the
+// error an operator meets when upgrading with an index built by an earlier
+// release.
+func TestIndexFileHintNamesTheWayOutOfWAL(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "wal.sqlite")
+	db, err := OpenForIngest(t.Context(), path)
+	if err != nil {
+		t.Fatalf("OpenForIngest = %v, want no error", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	hint := indexFileHint(path)
+	for _, want := range []string{"wal_checkpoint", "journal_mode=DELETE", "situs ingest"} {
+		if !strings.Contains(hint, want) {
+			t.Errorf("hint = %q, want it to name %q", hint, want)
 		}
 	}
 }

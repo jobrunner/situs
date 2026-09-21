@@ -9,7 +9,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"regexp"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 
 	sqlitedriver "modernc.org/sqlite"
@@ -70,7 +72,7 @@ func OpenReadOnly(ctx context.Context, path string) (*DB, error) {
 	}
 	if err := sqlDB.PingContext(ctx); err != nil {
 		return nil, errors.Join(
-			fmt.Errorf("opening sqlite index %q read-only%s: %w", path, readOnlyHint(err), err),
+			fmt.Errorf("opening sqlite index %q read-only%s: %w", path, readOnlyHint(path, err), err),
 			sqlDB.Close())
 	}
 	// A ping is not enough. An empty file, a half-finished copy, a foreign
@@ -83,124 +85,79 @@ func OpenReadOnly(ctx context.Context, path string) (*DB, error) {
 	return &DB{DB: sqlDB}, nil
 }
 
-// readOnlyHint turns the two SQLite result codes an operator actually meets
-// into the next step. Both are failures of the environment, not of the query,
-// and both look alike from the outside: the service does not come up.
+// readOnlyHint explains a failed read-only open, for the two result codes that
+// mean "the environment is wrong" rather than "the query is wrong".
 //
-//   - SQLITE_CANTOPEN — the file is not there, or the process may not read it.
-//   - SQLITE_READONLY_DIRECTORY — the directory cannot be written to, and
-//     SQLite wants to write: the index still carries WAL mode, so even a pure
-//     reader needs the -shm sidecar. An index built before this release is
-//     exactly that, and re-running the ingest finalizes it.
-func readOnlyHint(err error) string {
+// Which of the two arrives says nothing about the cause — the same broken index
+// answers SQLITE_READONLY_DIRECTORY from a chmod'ed directory and
+// SQLITE_CANTOPEN from a read-only bind mount (measured against the 0.11.0
+// image with /db mounted :ro). So the code only decides WHETHER to explain;
+// what is wrong is read from the file itself.
+func readOnlyHint(path string, err error) string {
 	var sqliteErr *sqlitedriver.Error
 	if !errors.As(err, &sqliteErr) {
 		return ""
 	}
 	switch sqliteErr.Code() {
-	case sqlite3.SQLITE_CANTOPEN:
-		return " (no such file, or not readable by this process)"
-	case sqlite3.SQLITE_READONLY_DIRECTORY:
-		return " (the directory is not writable and this index still carries WAL mode — re-run `situs ingest` with this release to finalize it, or mount the directory writable)"
+	case sqlite3.SQLITE_CANTOPEN, sqlite3.SQLITE_READONLY_DIRECTORY:
+		return indexFileHint(path)
 	default:
 		return ""
 	}
 }
 
-// schemaTables is the table list schema.sql actually creates, read from the
-// embedded statements rather than repeated here. A hand-kept copy would drift
-// the first time someone adds a table, and it would drift silently — the check
-// below would keep passing.
-var schemaTables = regexp.MustCompile(`CREATE TABLE IF NOT EXISTS ([a-z_]+)`)
+// sqliteMagic opens every SQLite database file, and walWriteVersion is what
+// byte 18 of that header carries while the database is in WAL mode. Both are
+// part of the on-disk format, which SQLite keeps stable by contract.
+const (
+	sqliteMagic      = "SQLite format 3\x00"
+	sqliteHeaderPeek = 20
+	walWriteVersion  = 2
+)
 
-// migratedColumns are the columns Migrate adds to an existing index, each with
-// the static PRAGMA that reads its table. They are where version skew actually
-// shows up: an index from 0.8.0 carries every table but not
-// habitat_description.provenance, and a 0.9.0 binary serving it answers every
-// habitat-type request with INTERNAL_ERROR. Checking tables alone would let
-// that through.
-//
-// The PRAGMA is spelled out per entry rather than built from the table name:
-// every statement in this package is a literal, and PRAGMA takes no bound
-// parameter.
-var migratedColumns = []struct {
-	table   string
-	pragma  string
-	columns []string
-}{
-	{"species_role", `PRAGMA table_info(species_role)`, []string{"provenance", "derived_from"}},
-	{"habitat_description", `PRAGMA table_info(habitat_description)`, []string{"provenance"}},
-}
-
-// verifyServeSchema reports whether the opened file is an index this binary can
-// serve. It is deliberately more than a "does one table exist" probe: a foreign
-// SQLite file may well have a habitat_type table of its own.
-func verifyServeSchema(ctx context.Context, db *sql.DB) error {
-	if err := verifyTables(ctx, db); err != nil {
-		return err
-	}
-	return verifyMigratedColumns(ctx, db)
-}
-
-// verifyTables checks that every table schema.sql creates is there.
-func verifyTables(ctx context.Context, db *sql.DB) error {
-	present, err := tableNames(ctx, db)
+// indexFileHint looks at the file and says what is wrong with it. The WAL case
+// is the one that matters in practice: an index built before 0.11.0 is still in
+// WAL mode, a read-only handle on it needs the -shm sidecar, and a read-only
+// mount cannot have one. That failure looks exactly like a missing file from
+// the outside, and guessing "no such file" sends an operator to check
+// permissions that are perfectly fine.
+func indexFileHint(path string) string {
+	header, err := peekHeader(path)
 	if err != nil {
-		return err
+		return " (no such file, or not readable by this process)"
 	}
-	missing := []string{}
-	for _, m := range schemaTables.FindAllStringSubmatch(schema, -1) {
-		if !present[m[1]] {
-			missing = append(missing, m[1])
-		}
+	if len(header) < sqliteHeaderPeek || string(header[:len(sqliteMagic)]) != sqliteMagic {
+		return " (not a SQLite database)"
 	}
-	if len(missing) > 0 {
-		return fmt.Errorf(
-			"missing table(s) %s — an empty file, an interrupted copy, an index from an older release, or not a situs index at all; run `situs ingest` with this release",
-			strings.Join(missing, ", "))
+	if header[18] == walWriteVersion {
+		return " (this index is still in WAL mode, and a read-only handle on it needs a -shm sidecar it cannot create here" +
+			" — rebuild it with `situs ingest` of this release, or finalize the file in place where it is writable:" +
+			" sqlite3 <index> 'PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;')"
 	}
-	return nil
+	return " (the file is readable and finalized, so the directory itself must be unreadable or not traversable for this process)"
 }
 
-// tableNames reads the table names the opened file actually carries.
-func tableNames(ctx context.Context, db *sql.DB) (map[string]bool, error) {
-	rows, err := db.QueryContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'table'`)
+// peekHeader reads the first bytes of path through an os.Root confined to its
+// directory — the same confinement the CSV ingest uses.
+func peekHeader(path string) ([]byte, error) {
+	root, err := os.OpenRoot(filepath.Dir(path))
 	if err != nil {
-		return nil, fmt.Errorf("reading the table list: %w", err)
+		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() { _ = root.Close() }()
 
-	present := map[string]bool{}
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return nil, fmt.Errorf("scanning the table list: %w", err)
-		}
-		present[name] = true
+	f, err := root.Open(filepath.Base(path))
+	if err != nil {
+		return nil, err
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating the table list: %w", err)
-	}
-	return present, nil
-}
+	defer func() { _ = f.Close() }()
 
-// verifyMigratedColumns checks the columns an older index is missing even when
-// every table is there.
-func verifyMigratedColumns(ctx context.Context, db *sql.DB) error {
-	for _, t := range migratedColumns {
-		columns, err := tableColumns(ctx, db, t.pragma)
-		if err != nil {
-			return fmt.Errorf("reading %s columns: %w", t.table, err)
-		}
-		for _, want := range t.columns {
-			if !columns[want] {
-				return fmt.Errorf(
-					"%s has no %s column — the index predates this release; run `situs ingest` with it",
-					t.table, want)
-			}
-		}
+	header := make([]byte, sqliteHeaderPeek)
+	n, err := io.ReadFull(f, header)
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+		return nil, err
 	}
-	return nil
+	return header[:n], nil
 }
 
 // uriEscaper turns the three characters that mean something else inside a
