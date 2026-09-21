@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.11.0](https://github.com/jobrunner/situs/compare/v0.10.0...v0.11.0) (2026-09-21)
+
+
+### Features
+
+* **data:** deutsche Namen für die EUNIS-Level 1 und 2 ([5dee1c3](https://github.com/jobrunner/situs/commit/5dee1c3c05a6fd2c0c6bd86856b15849ecab6ef6))
+* **data:** deutsche Namen für die EUNIS-Level 1 und 2 ([eb73606](https://github.com/jobrunner/situs/commit/eb73606e76ce701ba8d4657debd381f984d68e9f))
+* **serve:** Index read-only öffnen, Ingest hinterlässt eine Datei ([6c7bf38](https://github.com/jobrunner/situs/commit/6c7bf38da568202b67c1d9fdfdae719bb7d8739e))
+* **serve:** Index read-only öffnen, Ingest hinterlässt eine Datei ([389ee7d](https://github.com/jobrunner/situs/commit/389ee7ddcdd03680746a9adaa316a17671247827))
+
+
+### Bug Fixes
+
+* **data:** zu enge und zu weite Volksnamen auf Level 1/2 entfernen ([298bac1](https://github.com/jobrunner/situs/commit/298bac1cc85a937c791c621b054fc58d448af91b))
+* **deploy:** Container erzwungen ersetzen, Traversierrechte nennen ([c1a193d](https://github.com/jobrunner/situs/commit/c1a193da24c4af44a62d77140e0c7608f0f3fefa))
+* **serve:** vollständiges Schema prüfen statt einer Tabelle ([ce9fcdf](https://github.com/jobrunner/situs/commit/ce9fcdf942974742f2f70b92e13b173e2d3c1ff1))
+
 ## [0.10.0](https://github.com/jobrunner/situs/compare/v0.9.0...v0.10.0) (2026-09-20)
 
 
