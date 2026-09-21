@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 
 	"github.com/jobrunner/situs/internal/domain"
 	"github.com/jobrunner/situs/internal/ports/output"
@@ -86,12 +87,19 @@ func IngestSyntaxa(ctx context.Context, repo output.Repository, dir string) (Syn
 	if err != nil {
 		return SyntaxaReport{}, err
 	}
+	// Read before Begin: this is the index's state from BEFORE this run's
+	// own writes, needed to tell a truly stale alt code (Task 7's
+	// idempotent relink) from what this very transaction is about to write.
+	existingAltCodes, err := repo.SyntaxonIDsByAltCode(ctx)
+	if err != nil {
+		return SyntaxaReport{}, fmt.Errorf("reading existing syntaxon alt codes: %w", err)
+	}
 
 	tx, err := repo.Begin(ctx)
 	if err != nil {
 		return SyntaxaReport{}, fmt.Errorf("beginning syntaxa ingest transaction: %w", err)
 	}
-	if err := writeSyntaxa(ctx, tx, dir, formations, rows, &rep); err != nil {
+	if err := writeSyntaxa(ctx, tx, dir, formations, rows, existingAltCodes, &rep); err != nil {
 		if rbErr := tx.Rollback(); rbErr != nil {
 			return SyntaxaReport{}, fmt.Errorf("%w (rollback also failed: %w)", err, rbErr)
 		}
@@ -110,7 +118,7 @@ func IngestSyntaxa(ctx context.Context, repo output.Repository, dir string) (Syn
 // id this transaction wrote so writeLinks can tell an edge to a real
 // syntaxon from one to nothing at all.
 func writeSyntaxa(ctx context.Context, tx output.IngestTx, dir string,
-	formations map[string]domain.Syntaxon, rows []hierarchyRow, rep *SyntaxaReport) error {
+	formations map[string]domain.Syntaxon, rows []hierarchyRow, existingAltCodes map[string]string, rep *SyntaxaReport) error {
 	written := map[string]bool{}
 	if err := writeFormations(tx, formations, written, rep); err != nil {
 		return err
@@ -129,12 +137,48 @@ func writeSyntaxa(ctx context.Context, tx output.IngestTx, dir string,
 			byAlt[r.altCode] = r.code
 		}
 	}
-	if err := writeEunisOnly(ctx, tx, dir, byAlt, written, rep); err != nil {
+	eunisOnly, err := writeEunisOnly(ctx, tx, dir, byAlt, written, rep)
+	if err != nil {
 		return err
 	}
 	// Step 4: the edges. An EEA syntaxon id with a FloraVeg counterpart
 	// gets resolved to the primary code; one without stays as it is.
-	return writeLinks(ctx, tx, dir, byAlt, written, rep)
+	if err := writeLinks(ctx, tx, dir, byAlt, written, rep); err != nil {
+		return err
+	}
+	// Step 5: the remaining EEA-only rows' parents — name match, then
+	// sibling consensus, then orphan.
+	if err := assignRemainingParents(tx, eunisOnly, rows, rep); err != nil {
+		return err
+	}
+	// A chain that breaks at one point makes the orientation service
+	// worthless at exactly that point — that must not be a warning one
+	// skims past.
+	if len(rep.Orphans) > 0 {
+		sort.Strings(rep.Orphans)
+		return fmt.Errorf("%d syntaxa have no parent after every step: %s",
+			len(rep.Orphans), strings.Join(rep.Orphans, ", "))
+	}
+	return relinkStaleAltCodes(tx, existingAltCodes, byAlt)
+}
+
+// relinkStaleAltCodes repairs a repeat ingest onto an already-filled index:
+// an alt code that used to BE a syntaxon's own primary id (from a run
+// before FloraVeg carried it) still has habitat-type edges under that old
+// id. existing was read before Begin, so it is the index's state before
+// this run's own writes; without that, a fresh row this very run wrote
+// under the primary code would look "stale" too.
+func relinkStaleAltCodes(tx output.IngestTx, existing, byAlt map[string]string) error {
+	for altCode, oldID := range existing {
+		primary, ok := byAlt[altCode]
+		if !ok || oldID == primary {
+			continue
+		}
+		if err := tx.RelinkSyntaxon(oldID, primary); err != nil {
+			return fmt.Errorf("relinking %s to %s: %w", oldID, primary, err)
+		}
+	}
+	return nil
 }
 
 // writeFormations writes the 25 EuroVegChecklist sections as the root of
@@ -204,18 +248,20 @@ func writeHierarchy(tx output.IngestTx, rows []hierarchyRow, formations map[stri
 // sibling consensus. Name is kept exactly as the file has it: the historical
 // EUNIS combi-string with embedded authorship, never split heuristically.
 func writeEunisOnly(ctx context.Context, tx output.IngestTx, dir string,
-	byAlt map[string]string, written map[string]bool, rep *SyntaxaReport) error {
+	byAlt map[string]string, written map[string]bool, rep *SyntaxaReport) ([]eunisOnlyRow, error) {
+	var eunisOnly []eunisOnlyRow
 	skip := newRowSkipper(&rep.SkippedRows, fileEunisSyntaxa, "eunis-only syntaxon")
-	return readAll(ctx, dir, fileEunisSyntaxa, ',', []string{"id", colRank, colName, "parent_id"}, skip,
+	err := readAll(ctx, dir, fileEunisSyntaxa, ',', []string{"id", colRank, colName, "parent_id"}, skip,
 		func(idx map[string]int, row []string, _ int) error {
 			id := row[idx["id"]]
 			if _, ok := byAlt[id]; ok {
 				return nil
 			}
+			name := row[idx[colName]]
 			s := domain.Syntaxon{
 				ID:     id,
 				Rank:   row[idx[colRank]],
-				Name:   row[idx[colName]],
+				Name:   name,
 				Source: domain.SyntaxonSourceEUNIS,
 			}
 			if err := tx.UpsertSyntaxon(s); err != nil {
@@ -223,8 +269,13 @@ func writeEunisOnly(ctx context.Context, tx output.IngestTx, dir string,
 			}
 			written[id] = true
 			rep.EunisOnly++
+			eunisOnly = append(eunisOnly, eunisOnlyRow{id: id, name: name})
 			return nil
 		})
+	if err != nil {
+		return nil, err
+	}
+	return eunisOnly, nil
 }
 
 // writeLinks writes habitat_type_syntaxa.csv's edges. A target that is a key

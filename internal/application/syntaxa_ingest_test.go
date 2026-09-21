@@ -304,8 +304,12 @@ func TestIngestSyntaxaMeldetFehlgeschlagenesRollback(t *testing.T) {
 func TestIngestSyntaxaSchreibtNurEeaEinheitenOhneFloraVegGegenstueck(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
-		formations: minimalFormations, hierarchy: minimalHierarchy,
-		// TST-01A has a FloraVeg counterpart (CA01A), EIG-01A does not.
+		// TST-01A has a FloraVeg counterpart (CA01A), EIG-01A does not, but
+		// a name match resolves its parent (Task 7): a genuinely
+		// unresolvable EIG-01A would fail the whole ingest as an orphan.
+		formations: minimalFormations,
+		hierarchy: minimalHierarchy +
+			"RA02A,alliance,Eigenverband,Moor 1990,RA01,XYZ-01A\n",
 		eunis: "id,rank,name,parent_id\n" +
 			"TST-01A,alliance,Testverband Moor 1970,\n" +
 			"EIG-01A,alliance,Eigenverband Moor 1990,\n",
@@ -353,7 +357,11 @@ func TestIngestSyntaxaLoestKantenUeberDenAltcodeAuf(t *testing.T) {
 func TestIngestSyntaxaBehaeltKanteAufEeaEigeneEinheit(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
-		formations: minimalFormations, hierarchy: minimalHierarchy,
+		// A name match resolves EIG-01A's parent (Task 7); an unresolvable
+		// row would fail the whole ingest as an orphan.
+		formations: minimalFormations,
+		hierarchy: minimalHierarchy +
+			"RA02A,alliance,Eigenverband,Moor 1990,RA01,XYZ-01A\n",
 		eunis: "id,rank,name,parent_id\nEIG-01A,alliance,Eigenverband Moor 1990,\n",
 		links: "typology_id,code,syntaxon_id\neunis@2021,T11,EIG-01A\n",
 	})
