@@ -112,6 +112,31 @@ CREATE TABLE IF NOT EXISTS species_distribution (
 CREATE INDEX IF NOT EXISTS idx_species_distribution_area
   ON species_distribution(area_scheme, area_code);
 
+-- Which territories a syntaxon occurs in. One row per OCCUPIED cell of the
+-- source table: absence is the absence of a row, exactly as in
+-- species_distribution.
+CREATE TABLE IF NOT EXISTS syntaxon_distribution (
+  syntaxon_id TEXT NOT NULL,
+  area_scheme TEXT NOT NULL,
+  area_code   TEXT NOT NULL,
+  occurrence  TEXT NOT NULL CHECK (occurrence IN ('verified', 'uncertain')),
+  PRIMARY KEY (syntaxon_id, area_scheme, area_code)
+);
+CREATE INDEX IF NOT EXISTS idx_syntaxon_distribution_area
+  ON syntaxon_distribution(area_scheme, area_code);
+
+-- Which syntaxa the source makes any statement about at all. WITHOUT this
+-- table "does not occur" cannot be told from "nobody looked" — an alliance
+-- with 136 empty cells looks exactly like one the source does not list. The
+-- source covers vascular-plant dominated vegetation only: measured, 212 of
+-- the index's 1326 alliances have no row here, including every bryophyte,
+-- lichen and algal one.
+CREATE TABLE IF NOT EXISTS syntaxon_distribution_coverage (
+  syntaxon_id TEXT NOT NULL,
+  area_scheme TEXT NOT NULL,
+  PRIMARY KEY (syntaxon_id, area_scheme)
+);
+
 -- Pflanzenökologische Zeigerwerte (EIVE, Tichý, Midolo). Jede Zeile ist ein
 -- Wert einer Dimension in einem Vokabular für ein Konzept; niche_width/
 -- n_systems sind NULL, wenn das Vokabular sie nicht liefert (Tichý/Midolo
