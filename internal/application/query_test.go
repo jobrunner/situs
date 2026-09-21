@@ -1296,6 +1296,47 @@ func TestIndexInfo_ReportsTheBackboneTheIndexWasBuiltFrom(t *testing.T) {
 	}
 }
 
+func TestIndexInfoMisstSyntaxaVerbreitung(t *testing.T) {
+	repo := newFakeRepo()
+	repo.syntaxonCoverage = append(repo.syntaxonCoverage,
+		fakeSyntaxonCoverage{SyntaxonID: "CA01A", Scheme: domain.SchemeEVCTerritory},
+		fakeSyntaxonCoverage{SyntaxonID: "CA01B", Scheme: domain.SchemeEVCTerritory},
+	)
+	q := NewQueryService(repo)
+
+	info, err := q.IndexInfo(context.Background())
+	if err != nil {
+		t.Fatalf("IndexInfo: %v", err)
+	}
+	if info.SyntaxonAreaScheme != domain.SchemeEVCTerritory {
+		t.Errorf("SyntaxonAreaScheme = %q, erwartet evc_territory", info.SyntaxonAreaScheme)
+	}
+	if info.SyntaxaWithDistribution != 2 {
+		t.Errorf("SyntaxaWithDistribution = %d, erwartet 2", info.SyntaxaWithDistribution)
+	}
+	// The existing field keeps its meaning and its name.
+	if info.AreaScheme != domain.SchemeWGSRPDL3 {
+		t.Errorf("AreaScheme = %q, erwartet wgsrpd_l3", info.AreaScheme)
+	}
+}
+
+func TestIndexInfoZaehltNullOhneVerbreitungsingest(t *testing.T) {
+	// Zero is a true statement about this index, not a placeholder.
+	repo := newFakeRepo()
+	q := NewQueryService(repo)
+
+	info, err := q.IndexInfo(context.Background())
+	if err != nil {
+		t.Fatalf("IndexInfo: %v", err)
+	}
+	if info.SyntaxaWithDistribution != 0 {
+		t.Errorf("SyntaxaWithDistribution = %d, erwartet 0", info.SyntaxaWithDistribution)
+	}
+	if info.SyntaxonAreaScheme != domain.SchemeEVCTerritory {
+		t.Errorf("SyntaxonAreaScheme = %q — das Schema ist auch ohne Daten benannt", info.SyntaxonAreaScheme)
+	}
+}
+
 // Both index reads must surface. A self-description that quietly reports zeros
 // after a failed read would be worse than no answer: a client would conclude
 // "wrong backbone" from a broken database.
@@ -1306,6 +1347,7 @@ func TestIndexInfo_SurfacesEitherFailingRead(t *testing.T) {
 	}{
 		{"concept ids", func(r *fakeRepo, err error) { r.conceptIDsErr = err }},
 		{"known area codes", func(r *fakeRepo, err error) { r.areasErr = err }},
+		{"syntaxa with coverage", func(r *fakeRepo, err error) { r.syntaxaWithCoverageErr = err }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			wantErr := errors.New("index unreadable")

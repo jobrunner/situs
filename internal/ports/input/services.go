@@ -373,12 +373,25 @@ type IndexInfo struct {
 	ConceptBackbones []string `json:"concept_backbones"`
 	// SpeciesWithConcept is the number of distinct concept ids the index holds.
 	SpeciesWithConcept int `json:"species_with_concept"`
-	// AreaScheme names the vocabulary ?area= codes come from.
+	// AreaScheme names the vocabulary ?area= codes come from ON THE SPECIES
+	// ROUTES. It keeps its singular name although there are now two schemes:
+	// a field name in a published answer is not a matter of taste, and
+	// renaming it would break every client that reads it. What it means is
+	// spelled out here and in the OpenAPI description instead.
 	AreaScheme string `json:"area_scheme"`
 	// AreasWithData is the number of distinct area codes with distribution
 	// rows. It is zero until a distribution ingest has run — which is a true
 	// statement about the index, not a placeholder.
 	AreasWithData int `json:"areas_with_data"`
+	// SyntaxonAreaScheme names the vocabulary ?area= codes come from ON THE
+	// SYNTAXA ROUTES. Named even when SyntaxaWithDistribution is zero: the
+	// scheme is a property of this release, the count one of this index.
+	SyntaxonAreaScheme string `json:"syntaxon_area_scheme"`
+	// SyntaxaWithDistribution is the number of syntaxa the source makes any
+	// statement about (the coverage rows). It is zero until a distribution
+	// ingest has run — a true statement about the index, not a placeholder.
+	// Measured against the pinned artifacts: 1114 of 1326 alliances.
+	SyntaxaWithDistribution int `json:"syntaxa_with_distribution"`
 }
 
 // SpeciesSearchHit is one hit of the index-own name search.

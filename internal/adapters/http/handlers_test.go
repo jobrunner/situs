@@ -1137,10 +1137,12 @@ func seededQueryService() *fakeQueryService {
 			{ID: "eunis@2021", Scheme: "eunis", Version: "2021", Name: "EUNIS 2021", HabitatTypes: 2},
 		},
 		indexInfo: input.IndexInfo{
-			ConceptBackbones:   []string{"wcvp"},
-			SpeciesWithConcept: 2,
-			AreaScheme:         domain.SchemeWGSRPDL3,
-			AreasWithData:      3,
+			ConceptBackbones:        []string{"wcvp"},
+			SpeciesWithConcept:      2,
+			AreaScheme:              domain.SchemeWGSRPDL3,
+			AreasWithData:           3,
+			SyntaxonAreaScheme:      domain.SchemeEVCTerritory,
+			SyntaxaWithDistribution: 1,
 		},
 		searchHits: []input.SpeciesSearchHit{
 			{VerbatimName: "Fagus sylvatica", ConceptID: strPtr("wcvp:concept:83891")},

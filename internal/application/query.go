@@ -311,11 +311,17 @@ func (q *QueryService) IndexInfo(ctx context.Context) (input.IndexInfo, error) {
 	if err != nil {
 		return input.IndexInfo{}, fmt.Errorf("listing known area codes: %w", err)
 	}
+	covered, err := q.repo.SyntaxaWithCoverage(ctx, domain.SchemeEVCTerritory)
+	if err != nil {
+		return input.IndexInfo{}, fmt.Errorf("counting syntaxa with distribution: %w", err)
+	}
 	return input.IndexInfo{
-		ConceptBackbones:   backbonesOf(ids),
-		SpeciesWithConcept: len(ids),
-		AreaScheme:         domain.SchemeWGSRPDL3,
-		AreasWithData:      len(areas),
+		ConceptBackbones:        backbonesOf(ids),
+		SpeciesWithConcept:      len(ids),
+		AreaScheme:              domain.SchemeWGSRPDL3,
+		AreasWithData:           len(areas),
+		SyntaxonAreaScheme:      domain.SchemeEVCTerritory,
+		SyntaxaWithDistribution: len(covered),
 	}, nil
 }
 

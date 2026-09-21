@@ -56,10 +56,12 @@ func TestInfoDescribesTheIndex(t *testing.T) {
 	}
 	var got struct {
 		Index struct {
-			ConceptBackbones   []string `json:"concept_backbones"`
-			SpeciesWithConcept int      `json:"species_with_concept"`
-			AreaScheme         string   `json:"area_scheme"`
-			AreasWithData      int      `json:"areas_with_data"`
+			ConceptBackbones        []string `json:"concept_backbones"`
+			SpeciesWithConcept      int      `json:"species_with_concept"`
+			AreaScheme              string   `json:"area_scheme"`
+			AreasWithData           int      `json:"areas_with_data"`
+			SyntaxonAreaScheme      string   `json:"syntaxon_area_scheme"`
+			SyntaxaWithDistribution int      `json:"syntaxa_with_distribution"`
 		} `json:"index"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
@@ -73,6 +75,40 @@ func TestInfoDescribesTheIndex(t *testing.T) {
 	}
 	if got.Index.AreaScheme != "wgsrpd_l3" {
 		t.Errorf("area_scheme = %q, want wgsrpd_l3", got.Index.AreaScheme)
+	}
+	if got.Index.SyntaxonAreaScheme != "evc_territory" {
+		t.Errorf("syntaxon_area_scheme = %q, want evc_territory", got.Index.SyntaxonAreaScheme)
+	}
+	if got.Index.SyntaxaWithDistribution != 1 {
+		t.Errorf("syntaxa_with_distribution = %d, want the measured figure passed through", got.Index.SyntaxaWithDistribution)
+	}
+}
+
+// The existing area_scheme field is species-only and is not renamed; the new
+// syntaxon_area_scheme field carries the syntaxa side. Both must be readable
+// side by side without one shadowing the other.
+func TestInfoJSONTraegtBeideGebietsschemata(t *testing.T) {
+	rec := serve(t, newTestServer(t, seededQueryService()), http.MethodGet, "/v1/info")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		Index map[string]any `json:"index"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decoding body %q: %v", rec.Body, err)
+	}
+	for field, want := range map[string]any{
+		"area_scheme":          "wgsrpd_l3",
+		"syntaxon_area_scheme": "evc_territory",
+	} {
+		if got := body.Index[field]; got != want {
+			t.Errorf("%s = %v, erwartet %v", field, got, want)
+		}
+	}
+	if _, ok := body.Index["syntaxa_with_distribution"]; !ok {
+		t.Error("syntaxa_with_distribution fehlt")
 	}
 }
 

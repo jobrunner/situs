@@ -1158,7 +1158,15 @@ components:
     # erfundene Fassung wäre schlimmer als keine.
     IndexInfo:
       type: object
-      required: [concept_backbones, species_with_concept, area_scheme, areas_with_data]
+      required:
+        [
+          concept_backbones,
+          species_with_concept,
+          area_scheme,
+          areas_with_data,
+          syntaxon_area_scheme,
+          syntaxa_with_distribution,
+        ]
       properties:
         concept_backbones:
           type: array
@@ -1177,7 +1185,13 @@ components:
           example: 3135
         area_scheme:
           type: string
-          description: Das Vokabular, aus dem `?area=`-Codes stammen.
+          enum: [wgsrpd_l3]
+          description: >-
+            Das Vokabular der `?area=`-Codes auf den **Arten**-Routen
+            (WGSRPD Level 3). Der Name steht in der Einzahl, weil er vor dem
+            zweiten Schema veröffentlicht wurde und ein Feldname in einer
+            Antwort keine Geschmacksfrage ist — siehe `syntaxon_area_scheme`
+            für das der Syntaxa.
           example: wgsrpd_l3
         areas_with_data:
           type: integer
@@ -1187,6 +1201,24 @@ components:
             über den Index, kein Platzhalter. Es ist eine Anzahl und keine Liste:
             *welche* Codes gültig sind, sagt keine Route.
           example: 366
+        syntaxon_area_scheme:
+          type: string
+          enum: [evc_territory]
+          description: >-
+            Das Vokabular der `?area=`-Codes auf den **Syntaxa**-Routen (die
+            136 EVC-Territorien). Steht auch dann, wenn
+            `syntaxa_with_distribution` 0 ist: das Schema gehört zu dieser
+            Fassung des Dienstes, die Zahl zu diesem Index. Zwischen den
+            beiden Schemata gibt es keine Abbildung.
+          example: evc_territory
+        syntaxa_with_distribution:
+          type: integer
+          description: >-
+            Gemessene Zahl der Syntaxa, über die die Quelle **überhaupt** eine
+            Aussage macht. 0 bis ein Verbreitungs-Ingest gelaufen ist — das
+            ist eine wahre Aussage über den Index, kein Platzhalter. Gemessen
+            gegen die gepinnten Artefakte: 1114.
+          example: 1114
     TraitSummary:
       type: object
       required: [requested, known, unknown, vocabularies]
