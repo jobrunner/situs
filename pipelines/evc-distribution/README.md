@@ -41,7 +41,7 @@ Gemessen gegen die gepinnte Datei: **1115** Verbände, **136** Territorien,
 **4** übersprungene Summenzeilen, 0 sonstige übersprungene Zeilen, und das
 `value_histogram` `{"": 140112, "1": 9608, "U": 1920}`.
 
-## Drei Dinge, die gemessen und nicht angenommen sind
+## Vier Dinge, die gemessen und nicht angenommen sind
 
 - **Die Zelle wird über ihr `r`-Attribut gelesen.** Excel lässt leere Zellen
   in der XML weg. Bei 136 überwiegend leeren Spalten je Zeile liefert eine
@@ -57,6 +57,12 @@ Gemessen gegen die gepinnte Datei: **1115** Verbände, **136** Territorien,
   letzte vier Zeilen. Beide werden an derselben Beschriftungsmenge erkannt.
   Ungeprüft wären die Zeilen vier Pseudo-Verbände mit Werten wie `133` und
   `36.666666666666664`.
+- **Drei Verbandscodes tragen ein nachgestelltes Leerzeichen**: `JD02B `,
+  `JD02C ` und `JE01B `. Ohne `strip()` vor der Musterprüfung erkennt die
+  Pipeline nur **1112** statt der tatsächlichen **1115** gültigen Codes — die
+  drei mit dem Leerzeichen fallen durch das Muster und verschwänden
+  stillschweigend, ebenso aus dem Join gegen die FloraVeg-Hierarchie (1111
+  statt 1114 Treffer). Eine Eigenschaft der Quelldatei, kein Programmierstil.
 
 ## Vier Zustände, nicht drei
 
