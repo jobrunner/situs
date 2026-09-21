@@ -816,6 +816,101 @@ func TestIngestCommandFailsOnMalformedAreaNames(t *testing.T) {
 	}
 }
 
+// The two area-name files share one loader and one report shape but are
+// reported separately (AreaNames vs. Territories): summing 369 WGSRPD areas
+// with 136 territories would describe neither. The distribution files must
+// run after IngestSyntaxa so a distribution row naming a known syntaxon is
+// actually counted as Covered.
+func TestIngestBerichtetTerritorienUndSyntaxaVerbreitung(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t)
+	writeIngestCSV(t, dir, "syntaxa_formations.csv",
+		"letter,name_en,life_form_group\nC,Vegetation of the nemoral forest zone,phanerogam\n")
+	writeIngestCSV(t, dir, "syntaxa_hierarchy.csv",
+		"code,rank,name,author,parent_code,alt_code\n"+
+			"CA,class,Testklasse,Moor 1950,,\n"+
+			"CA01,order,Testordnung,Moor 1960,CA,\n"+
+			"CA01A,alliance,Testverband,Moor 1970,CA01,\n")
+	writeIngestCSV(t, dir, "evc_territories.csv",
+		"area_scheme,area_code,name_en\n"+
+			"evc_territory,austria-alps,Austria Alps\n"+
+			"evc_territory,albania,Albania\n")
+	writeIngestCSV(t, dir, "syntaxon_distribution.csv",
+		"syntaxon_id,area_scheme,area_code,occurrence\n"+
+			"CA01A,evc_territory,austria-alps,verified\n")
+	writeIngestCSV(t, dir, "syntaxon_distribution_coverage.csv",
+		"syntaxon_id,area_scheme\nCA01A,evc_territory\n")
+	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", dbPath})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("executing ingest: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(out.Bytes(), &parsed); err != nil {
+		t.Fatalf("unmarshaling report: %v", err)
+	}
+	terr, ok := parsed["Territories"].(map[string]any)
+	if !ok {
+		t.Fatalf("report %s has no \"Territories\" object", out.String())
+	}
+	if got := terr["Areas"]; got != float64(2) {
+		t.Errorf("Territories.Areas = %v, erwartet 2", got)
+	}
+	dist, ok := parsed["SyntaxonDistribution"].(map[string]any)
+	if !ok {
+		t.Fatalf("report %s has no \"SyntaxonDistribution\" object", out.String())
+	}
+	if got := dist["Written"]; got != float64(1) {
+		t.Errorf("SyntaxonDistribution.Written = %v, erwartet 1", got)
+	}
+	if got := dist["Covered"]; got != float64(1) {
+		t.Errorf("SyntaxonDistribution.Covered = %v, erwartet 1", got)
+	}
+}
+
+// The optional source is genuinely optional: no file, no failure, and the
+// report says zero rather than pretending.
+func TestIngestLaeuftOhneVerbreitungsdateienDurch(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t) // no evc_territories.csv / syntaxon_distribution*.csv written
+	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", dbPath})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("executing ingest without the syntaxon distribution files: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(out.Bytes(), &parsed); err != nil {
+		t.Fatalf("unmarshaling report: %v", err)
+	}
+	terr, ok := parsed["Territories"].(map[string]any)
+	if !ok {
+		t.Fatalf("report %s has no \"Territories\" object", out.String())
+	}
+	if got := terr["Areas"]; got != float64(0) {
+		t.Errorf("Territories.Areas = %v, erwartet 0", got)
+	}
+	dist, ok := parsed["SyntaxonDistribution"].(map[string]any)
+	if !ok {
+		t.Fatalf("report %s has no \"SyntaxonDistribution\" object", out.String())
+	}
+	if got := dist["Written"]; got != float64(0) {
+		t.Errorf("SyntaxonDistribution.Written = %v, erwartet 0", got)
+	}
+	if got := dist["Covered"]; got != float64(0) {
+		t.Errorf("SyntaxonDistribution.Covered = %v, erwartet 0", got)
+	}
+}
+
 func TestIngestCommandIngestsHabitatDescriptions(t *testing.T) {
 	stubHostus(t)
 	dir := seedIngestDir(t)

@@ -106,11 +106,25 @@ known in advance — measured end to end, see
 `docs/reference/measured-index.md`. The explorer at `GET /` has its first
 rendered panel for the hierarchy alongside the existing raw-JSON view.
 
-**Next action:** Teilprojekt C (Syntaxa-Verbreitung, distribution) is specced
-but not implemented. Deliberately out of scope so far: scoring/ranking, the
-ESy rule engine, the EUNIS-2012 key, full plot classification, co-occurrence
-ranking, an Article-17 filter, and any ISO↔WGSRPD mapping (the frontend
-derives the area code from GPS).
+**Teilprojekt C (Syntaxa-Verbreitung) is implemented through Task 11.** The
+second area scheme (`evc_territory`, 136 EVC territories, domain
+`SchemeEVCTerritory`) sits alongside `wgsrpd_l3` with no mapping between the
+two. `SyntaxonDetail.distribution` is present with data when the source has a
+coverage row and absent when it does not — the fourth-valued distinction from
+`in_area`'s three, see the invariant below. `GET /v1/syntaxa?area=&include=`
+filters by occurrence while keeping the unjudgeable syntaxa unmarked, and
+`GET /v1/info` now measures `syntaxon_area_scheme` and
+`syntaxa_with_distribution` the same way it already measured the species side.
+`pipelines/evc-distribution/` and `application.IngestSyntaxonDistribution` are
+wired into `situs ingest` as local overlays, after `IngestSyntaxa` (the
+syntaxon ids must exist first) and after the area-name overlay (which now
+loads both `wgsrpd_areas.csv` and `evc_territories.csv` through one loader).
+**Next action:** Task 12 of the plan — measuring the whole pipeline against
+the real pinned artifact and updating the reference docs — has not run yet.
+Deliberately out of scope so far: scoring/ranking, the ESy rule engine, the
+EUNIS-2012 key, full plot classification, co-occurrence ranking, an Article-17
+filter, and any ISO↔WGSRPD mapping (the frontend derives the area code from
+GPS).
 
 ## Design documents (read these before implementing)
 
@@ -125,7 +139,8 @@ derives the area code from GPS).
 | `docs/superpowers/specs/2026-09-21-syntaxa-quellenumkehr-design.md` | Teilprojekt A: FloraVeg.EU as the primary syntaxa source, full formation→class→order→alliance hierarchy. **Authoritative**, revises `2026-08-30-situs-syntaxa-hierarchie-design.md`. |
 | `docs/superpowers/specs/2026-09-21-syntaxa-navigation-design.md` | Teilprojekt B: the HTTP navigation routes over the hierarchy A builds. **Authoritative.** |
 | `docs/superpowers/plans/2026-09-21-syntaxa-navigation.md` | Its TDD implementation plan (6 tasks). |
-| `docs/superpowers/specs/2026-09-21-syntaxa-verbreitung-design.md` | Teilprojekt C (not yet implemented): syntaxa distribution, join over the EVC primary codes A introduces. |
+| `docs/superpowers/specs/2026-09-21-syntaxa-verbreitung-design.md` | Teilprojekt C: syntaxa distribution, the second area scheme (`evc_territory`), join over the EVC primary codes A introduces. **Authoritative.** |
+| `docs/superpowers/plans/2026-09-21-syntaxa-verbreitung.md` | Its TDD implementation plan (12 tasks); implemented through Task 11, Task 12 (real-artifact measurement) still open. |
 
 ## Ubiquitous Language (do not deviate)
 
@@ -264,6 +279,21 @@ remain stdlib-only.
   collapse the third state into `false`, and `only_in_area` must keep the
   unknowables — a list that silently drops what it cannot judge is dishonestly
   clean.
+- **Syntaxa-Verbreitung ist vierwertig.** `verified`, `uncertain`,
+  `absence` (Coverage-Zeile, keine Verbreitungszeile) und `unknown`
+  (keine Coverage-Zeile). `absence` und `unknown` dürfen an keiner Stelle
+  zusammengeworfen werden: `SyntaxonDetail.distribution` **fehlt** bei
+  `unknown` und trägt bei `absence` zwei leere Listen, und ein
+  `?area=`-Filter behält die Unbeurteilbaren unmarkiert. Gemessen sind
+  212 der 1326 Verbände `unknown`, darunter alle 190 Moos-, Flechten-
+  und Algenverbände — die Quelle deckt nur *vascular-plant dominated
+  vegetation* ab.
+- **Es gibt zwei Gebietsschemata und keine Abbildung zwischen ihnen.**
+  `wgsrpd_l3` für Arten, `evc_territory` für Syntaxa. Keine Antwort
+  rechnet ein Territorium in einen WGSRPD-Code um — dieselbe Haltung wie
+  bei ISO↔WGSRPD. Jede Abfrage, die Gebiete führt, ist
+  schemaparametrisiert und liest die Abdeckung aus der Tabelle des
+  jeweiligen Schemas.
 - **`children` and `ancestors` are always in the JSON, even empty — never
   `omitempty`, never `nil`.** A formation with no ancestors and an alliance
   with no children are the normal case for `GET /v1/syntaxon/{id}`, not an

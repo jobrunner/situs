@@ -103,31 +103,57 @@ type ingestOutput struct {
 	DerivedLabels      int
 	Syntaxa            application.SyntaxaReport
 	AreaNames          application.AreaReport
-	Descriptions       application.DescriptionReport
-	Traits             application.TraitReport
+	// Territories is the second area-name file, reported separately rather
+	// than summed into AreaNames: 369 WGSRPD areas and 136 territories added
+	// up would be a figure that describes neither.
+	Territories          application.AreaReport
+	SyntaxonDistribution application.SyntaxonDistributionReport
+	Descriptions         application.DescriptionReport
+	Traits               application.TraitReport
 }
 
-// localOverlays bundles the two ingest steps that read nothing but a local
-// CSV and ask no service at all.
+// localOverlays bundles the ingest steps that read nothing but a local CSV
+// and ask no service at all.
 type localOverlays struct {
 	areas        application.AreaReport
+	territories  application.AreaReport
 	descriptions application.DescriptionReport
+	distribution application.SyntaxonDistributionReport
 }
 
-// ingestLocalOverlays writes the area names and the habitat descriptions.
+// ingestLocalOverlays writes the area names, the habitat descriptions and the
+// syntaxon distribution. None of them asks a service; all of them read one
+// local CSV.
+//
 // Area names depend on nothing and nothing depends on them: they are a pure
-// overlay on the area codes the distribution step writes later. Descriptions
-// must run after IngestCSV, because every row is checked against the habitat
-// type it belongs to, and those have to be in the index first.
+// overlay on the area codes the distribution steps write. TWO files, one
+// loader — wgsrpd_areas.csv and evc_territories.csv share the header
+// area_scheme,area_code,name_en, and IngestAreas checks the scheme against
+// the set of known ones, so a second loader would only be a second place for
+// the check to drift.
+//
+// Descriptions must run after IngestCSV, because every row is checked against
+// the habitat type it belongs to. The syntaxon distribution must run after
+// IngestSyntaxa, because a distribution row naming a syntaxon the index does
+// not carry is dropped and reported — which only means something once the
+// syntaxa are there.
 func ingestLocalOverlays(ctx context.Context, db *sqlite.DB, csvDir string) (localOverlays, error) {
 	var out localOverlays
 
-	areaCSV := filepath.Join(csvDir, "wgsrpd_areas.csv")
-	areas, err := application.IngestAreas(ctx, db, areaCSV)
-	if err != nil {
-		return localOverlays{}, fmt.Errorf("ingesting area names from %q: %w", areaCSV, err)
+	for _, src := range []struct {
+		file   string
+		report *application.AreaReport
+	}{
+		{"wgsrpd_areas.csv", &out.areas},
+		{"evc_territories.csv", &out.territories},
+	} {
+		path := filepath.Join(csvDir, src.file)
+		report, err := application.IngestAreas(ctx, db, path)
+		if err != nil {
+			return localOverlays{}, fmt.Errorf("ingesting area names from %q: %w", path, err)
+		}
+		*src.report = report
 	}
-	out.areas = areas
 
 	// Two description files, two kinds of text. The EUNIS factsheets are their
 	// authors' own wording; the Annex I descriptions are written by situs from
@@ -147,6 +173,14 @@ func ingestLocalOverlays(ctx context.Context, db *sqlite.DB, csvDir string) (loc
 		out.descriptions.SkippedRows += report.SkippedRows
 		out.descriptions.SkippedUnknownCode += report.SkippedUnknownCode
 	}
+
+	distCSV := filepath.Join(csvDir, "syntaxon_distribution.csv")
+	coverageCSV := filepath.Join(csvDir, "syntaxon_distribution_coverage.csv")
+	distribution, err := application.IngestSyntaxonDistribution(ctx, db, distCSV, coverageCSV)
+	if err != nil {
+		return localOverlays{}, fmt.Errorf("ingesting syntaxon distribution from %q: %w", distCSV, err)
+	}
+	out.distribution = distribution
 
 	return out, nil
 }
@@ -305,17 +339,19 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath, crosswalk
 	}
 
 	out := ingestOutput{
-		IngestReport:       report,
-		Species:            speciesReport,
-		ResolutionRate:     speciesReport.ResolutionRate(),
-		Distribution:       distributionReport,
-		DistributionFailed: distSrc.FailedConcepts(),
-		Localizations:      localizations,
-		DerivedLabels:      derivedLabels,
-		Syntaxa:            syntaxa,
-		AreaNames:          overlays.areas,
-		Descriptions:       overlays.descriptions,
-		Traits:             traitReport,
+		IngestReport:         report,
+		Species:              speciesReport,
+		ResolutionRate:       speciesReport.ResolutionRate(),
+		Distribution:         distributionReport,
+		DistributionFailed:   distSrc.FailedConcepts(),
+		Localizations:        localizations,
+		DerivedLabels:        derivedLabels,
+		Syntaxa:              syntaxa,
+		AreaNames:            overlays.areas,
+		Territories:          overlays.territories,
+		SyntaxonDistribution: overlays.distribution,
+		Descriptions:         overlays.descriptions,
+		Traits:               traitReport,
 	}
 	enc := json.NewEncoder(cmd.OutOrStdout())
 	enc.SetIndent("", "  ")
