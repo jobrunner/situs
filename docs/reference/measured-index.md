@@ -47,8 +47,8 @@ Verbreitung gegen einen laufenden hostus.
 | Habitattypen (über `eunis@2021` + `eunis@2012` + `annex1`) | **7937** |
 | Maximales Level der eunis@2021-Klassifikationshierarchie | **8** |
 | Crosswalk-Zeilen (Versions- **und** Anhang-I-Crosswalk) | **4307** |
-| Syntaxa | **1050** |
-| Habitattyp↔Syntaxon-Verknüpfungen | **1283** |
+| Syntaxa (`syntaxon`, nach Rang) | 25 Formationen, 150 Klassen, 381 Ordnungen, **1326** Verbände (1882 gesamt) |
+| Habitattyp↔Syntaxon-Verknüpfungen | **1282** |
 | Zeilen in `species_roles.csv` | **13791** |
 
 Die Crosswalks sind ausschließlich auf **Level 3** befüllt, obwohl die
@@ -76,42 +76,145 @@ aufgenommen, statt seine Zeilen zu verwerfen.
 
 ## Syntaxa-Tiefe (offener Punkt 1)
 
-Vorkommende Ränge: **`alliance`** (Verband) und **`order`** (Ordnung). Der
-Verband ist praktisch durchgehend das Ende; gemessen gibt es genau **eine**
-Ausnahme auf Ordnungs-Ebene (`Moltkeetalia petraeae`). **Assoziationen kommen
-nicht vor** und sind in keiner freien paneuropäischen Quelle verfügbar — das ist
-die dokumentierte Decke, kein Versäumnis.
+!!! info "Referenzlauf: 2026-09-21, Syntaxa-Quellenumkehr"
 
-### Volle Hierarchie via FloraVeg.EU (2026-08-30)
+    Die Zahlen dieses Abschnitts stammen aus einem vollständigen
+    `situs ingest`-Lauf am 2026-09-21 gegen die realen EEA-/FloraVeg-Artefakte
+    (Task 9 des Plans `2026-09-21-syntaxa-quellenumkehr`), **nicht** mehr aus
+    dem Referenzlauf vom 2026-09-16. FloraVeg.EU (die EuroVegChecklist) ist
+    seither die **Primärquelle** der Syntaxa-Hierarchie; die EEA-EUNIS-Zuordnung
+    liefert nur noch die Habitattyp-Kanten und die Verbände, die FloraVeg nicht
+    führt. Die Auflösungsquoten in „Namensauflösung", „Verbreitung" und
+    „Zeigerwerte" unten sind von dieser Umkehrung unberührt und bleiben am
+    2026-09-16-Lauf gemessen.
+
+Vorkommende Ränge: **`formation`** (die Wurzel — die 25
+EuroVegChecklist-Sektionen A–Y), **`class`**, **`order`**, **`alliance`**.
+Jede Nicht-Formations-Zeile hat einen `parent_id`, der in höchstens drei
+Schritten eine Formation erreicht — geprüft am realen Index (siehe unten) und
+durch `internal/adapters/sqlite/hierarchy_integrity_test.go` als
+Fixture-Integritätstest festgehalten. Der Verband ist praktisch durchgehend
+das Ende der EUNIS-Seite; **Assoziationen kommen nicht vor** und sind in
+keiner freien paneuropäischen Quelle verfügbar — das ist die dokumentierte
+Decke, kein Versäumnis.
+
+### Volle Hierarchie via FloraVeg.EU als Primärquelle
 
 `pipelines/eurovegchecklist/` lädt die EuroVegChecklist (Mucina et al. 2016 +
-Updates, Version 4) und liefert Klasse/Ordnung/Verband mit Codes und
-Autorschaft. Gemessen gegen die reale Datei: **1841** Zeilen, **150**
-Klassen, **381** Ordnungen, **1310** Verbände (siehe
-`pipelines/eurovegchecklist/out/report.json`) — deckungsgleich mit den Zahlen
-aus `docs/research/situs-eea-eunis-2021-spike.md`.
+Updates, Version 4) und liefert Klasse/Ordnung/Verband mit Codes, Autorschaft
+und Altcode. `data/syntaxa_formations.csv` liefert die 25 Formationszeilen
+(Sektionen A–Y mit Lebensform-Gruppe). Beide sind seit der Quellenumkehr
+**Pflichtquellen** — ihr Fehlen bricht den Ingest ab, statt einen Index ohne
+Hierarchie stillschweigend zu bauen.
 
-Von den **1050** EUNIS-Verbänden im Index (1049 Rang `alliance` + die eine
-`Moltkeetalia petraeae`-Ausnahme auf Rang `order`) fanden **1011** einen
-FloraVeg-Namenstreffer (Name + Author + ParentID von FloraVeg übernommen —
-der historische EUNIS-Kombi-String wird dabei durch FloraVegs sauberen Namen
-ersetzt), **38** blieben ohne Treffer (Name bleibt der historische
-EUNIS-Kombi-String, `Author=""`), **0** Mehrfachtreffer wurden nicht geraten
-(`AmbiguousMatches`).
+Gemessen gegen `out/situs-neu.sqlite`, gebaut mit `go run ./cmd/situs ingest
+--csv-dir out/ingest-input --db out/situs-neu.sqlite`:
 
-Gemessen mit einem echten `situs ingest`-Lauf gegen beide Pipelines; der
-Referenzlauf 2026-09-16 bestätigt dieselben Zahlen (die Auflösungsquoten
-stehen im Abschnitt „Namensauflösung" unten):
+```sql
+SELECT rank, COUNT(*) FROM syntaxon GROUP BY 1 ORDER BY 1;
+-- formation|25
+-- class|150
+-- order|381
+-- alliance|1326
+
+SELECT COUNT(*) FROM syntaxon WHERE rank<>'formation' AND parent_id='';
+-- 0  (keine Waise)
+
+SELECT COUNT(*) FROM syntaxon WHERE parent_provenance='derived';
+-- 10  (Geschwisterkonsens)
+
+SELECT COUNT(*) FROM syntaxon WHERE source='eunis';
+-- 16  (EEA-eigene Zeilen ohne FloraVeg-Gegenstück)
+```
+
+Von den **1326** Verbänden im Index sind **1310** aus der FloraVeg-Hierarchie
+direkt übernommen (Name, Author, ParentID stammen von FloraVeg) und **16** rein
+EEA-eigen (`source='eunis'`, historischer EUNIS-Kombi-String, `Author=""`).
+Von diesen 16 fanden **6** ihren Elternteil per Namensabgleich gegen die
+FloraVeg-Verbandsnamen (`parent_provenance='official'`), **10** per
+Geschwisterkonsens innerhalb ihrer EEA-Ordnungsgruppe
+(`parent_provenance='derived'`) — keiner blieb Waise.
+
+Der wörtliche `Syntaxa`-Block aus dem Ingest-Report (`SyntaxaReport`, ersetzt
+seit dieser Umkehrung das frühere Feldpaar `Syntaxa`/`SyntaxonLinks` von
+`IngestReport`):
 
 ```json
-"SyntaxaHierarchy": {
+"Syntaxa": {
+  "FormationsWritten": 25,
   "ClassesWritten": 150,
   "OrdersWritten": 381,
-  "AlliancesMatched": 1011,
-  "AlliancesUnmatched": 38,
-  "AmbiguousMatches": null
+  "AlliancesWritten": 1310,
+  "EunisOnly": 16,
+  "LinksWritten": 1283,
+  "LinksRemapped": 1265,
+  "ParentsByName": 6,
+  "ParentsDerived": 10,
+  "Orphans": null,
+  "AltCodeCollisions": null,
+  "AmbiguousMatches": null,
+  "UnknownLinkTargets": null,
+  "SkippedRows": 0,
+  "SkippedUnknownSection": 0,
+  "SkippedPattern": 0
 }
 ```
+
+`AlliancesWritten` (1310) zählt nur die FloraVeg-Hierarchiezeilen; zusammen mit
+`EunisOnly` (16) ergibt das die 1326 Verbandszeilen der `syntaxon`-Tabelle.
+`LinksWritten` (1283) zählt Schreibversuche, nicht die am Ende distinkten
+Zeilen — die idempotente Umschreibung einer EEA-Kante auf den FloraVeg-Primärcode
+(`RelinkSyntaxon`) kann zwei Schreibversuche auf dieselbe Zielkante
+zusammenfallen lassen (siehe die `U36`/`ASP-03`/`KC03`-Sonderfall unten); die
+`habitat_type_syntaxon`-Tabelle selbst trägt danach **1282** Zeilen.
+
+### Der stille Namensabgleichsfehler: `AMM-02B` → `JD02`, nicht `JE01`
+
+Der Altcode-Join löst EEA-Kanten über den Altcode auf FloraVegs Primärcode
+auf. Gemessen am Nachfolger von `alt_code='AMM-02B'`:
+
+```sql
+SELECT id, parent_id FROM syntaxon WHERE alt_code='AMM-02B';
+-- JD02B|JD02
+```
+
+`JD02` ist korrekt — der alte, auf reinem Namensvergleich beruhende Abgleich
+hätte hier still `JE01` geliefert (ein Nachbarcode mit ähnlichem, aber
+falschem Namen). Der Altcode-Join über die eindeutige EEA-ID vermeidet genau
+diese Fehlklasse.
+
+### Kryptogamen-Verbände (Sektionen R–Y)
+
+Verbände, deren Formation (über Klasse → Ordnung → Verband) in den
+EuroVegChecklist-Sektionen R–Y liegt (Kryptogamen- und Algenvegetation, nicht
+Phanerogamen):
+
+```sql
+SELECT COUNT(*) FROM syntaxon a
+  JOIN syntaxon o ON o.id=a.parent_id JOIN syntaxon c ON c.id=o.parent_id
+  WHERE a.rank='alliance' AND c.parent_id IN ('R','S','T','U','V','W','X','Y');
+-- 190
+```
+
+Vor der Quellenumkehr trug der Index hier **2** Verbände (die EEA-Zuordnung
+kennt die Kryptogamen-Sektionen praktisch nicht); die FloraVeg-Hierarchie
+liefert die vollen **190**.
+
+### Kanten vor und nach der Umkehrung: keine verlorene EUNIS-Zuordnung
+
+`habitat_type_syntaxon` trägt vor und nach der Umkehrung dieselbe Zeilenzahl:
+
+| Index | `habitat_type_syntaxon` | `code='U36'` |
+|---|---|---|
+| `situs.sqlite` (vor der Umkehrung) | **1282** | **15** |
+| `out/situs-neu.sqlite` (nach der Umkehrung) | **1282** | **15** |
+
+Keine EUNIS-Zuordnung ging verloren. Die eine dokumentierte Ausnahme der
+Zusage ist bereits in beiden Zahlen aufgegangen: `U36` verlinkte vor der
+Umkehrung sowohl auf `ASP-03` als auch (separat) auf `KC03`; nach der
+Umkehrung bildet der Altcode-Join `ASP-03` auf `KC03` ab, die beiden Kanten
+fallen auf eine zusammen — `U36` trägt in beiden Ständen 15 Kanten, nicht 16
+und nicht 14.
 
 ## Anhang-I-Abdeckung (offener Punkt 5)
 

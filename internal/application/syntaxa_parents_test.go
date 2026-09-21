@@ -60,6 +60,51 @@ func TestIngestSyntaxaLeitetElternteilAusGeschwisterkonsensAb(t *testing.T) {
 	}
 }
 
+// Regression for the real CRU-03 case measured against the full EEA/FloraVeg
+// artifacts (Task 9): the file lists two siblings that need sibling
+// consensus (NAR-01B, NAR-01C) BEFORE the sibling that resolves by name
+// match (NAR-01A) — exactly EEA's own name-sorted order, which does not
+// track the EEA id. A single combined pass would leave NAR-01B/C orphaned
+// because NAR-01A had not been resolved yet when they were tried; the
+// two-pass split (every name match first, then every sibling try) must
+// still find the unanimous parent regardless of row order.
+func TestIngestSyntaxaLeitetGeschwisterkonsensAbUnabhaengigVonDerDateireihenfolge(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		// ZZZ-01A's own alt code (not "NAR-01A") keeps it out of the
+		// alt-code join — NAR-01A must resolve purely via the name match,
+		// the path this test exercises.
+		hierarchy: minimalHierarchy +
+			"CA02,order,Nachbarordnung,A 0,CA,ZZZ-01\n" +
+			"CA02A,alliance,Nachbarverband eins,A 1,CA02,ZZZ-01A\n",
+		// NAR-01B and NAR-01C precede NAR-01A here — the order the real
+		// CRU-03 group's names sorted into in syntaxa.csv, which is not
+		// the EEA id order.
+		eunis: "id,rank,name,parent_id\n" +
+			"NAR-01B,alliance,Voellig anderer Name eins,\n" +
+			"NAR-01C,alliance,Voellig anderer Name zwei,\n" +
+			"NAR-01A,alliance,Nachbarverband eins A 1,\n",
+		links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if rep.ParentsByName != 1 || rep.ParentsDerived != 2 {
+		t.Errorf("ParentsByName/Derived = %d/%d, erwartet 1/2", rep.ParentsByName, rep.ParentsDerived)
+	}
+	if len(rep.Orphans) != 0 {
+		t.Errorf("Orphans = %v, erwartet leer", rep.Orphans)
+	}
+	for _, id := range []string{"NAR-01B", "NAR-01C"} {
+		got := repo.syntaxonByID(id)
+		if got.ParentID != "CA02" || got.ParentProvenance != domain.ParentProvenanceDerived {
+			t.Errorf("%s = %q/%q, erwartet CA02/derived", id, got.ParentID, got.ParentProvenance)
+		}
+	}
+}
+
 func TestIngestSyntaxaLeitetNichtsAusWiderspruechlicherGruppeAb(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
@@ -201,6 +246,30 @@ func TestAssignRemainingParentsBleibtWaiseBeiMehrdeutigemNamensabgleichOhneKonse
 	}
 }
 
+// The two-pass split (Task 9's order-independence fix) gives
+// setResolvedParent two distinct call sites in assignRemainingParents — the
+// name-match pass and the sibling-consensus pass. TestIngestSyntaxaMeldetFehlerBeimSetzenDesElternteils
+// below only reaches the first (AND-01A resolves by name); this pins the
+// second by giving the row no name match at all, only a unanimous sibling.
+func TestAssignRemainingParentsMeldetFehlerBeimSetzenDesElternteilsUeberGeschwisterkonsens(t *testing.T) {
+	repo := newFakeRepo()
+	repo.failOn = "SetSyntaxonParent"
+	repo.syntaxa = append(repo.syntaxa, domain.Syntaxon{ID: "NAR-01E", Rank: domain.SyntaxonRankAlliance})
+	rows := []hierarchyRow{
+		{code: "CA02A", rank: domain.SyntaxonRankAlliance, name: "Nachbarverband eins", parentCode: "CA02", altCode: "NAR-01A"},
+	}
+	rep := &SyntaxaReport{}
+	eunisOnly := []eunisOnlyRow{{id: "NAR-01E", name: "Voellig anderer Name ohne Treffer"}}
+
+	err := assignRemainingParents(repo, eunisOnly, rows, rep)
+	if err == nil {
+		t.Fatal("assignRemainingParents lief trotz fehlschlagendem SetSyntaxonParent durch")
+	}
+	if !strings.Contains(err.Error(), "setting parent of NAR-01E") {
+		t.Errorf("Fehler = %v, erwartet SetSyntaxonParent-Kontext", err)
+	}
+}
+
 // --- Coverage for the paths the six brief tests do not reach: error
 // wrapping from SetSyntaxonParent, the pre-Begin altcode read, and the
 // idempotent RelinkSyntaxon nachlauf. ---
@@ -334,9 +403,43 @@ func TestLongestPrefixMatchUeberspringtLeerenNamen(t *testing.T) {
 	}
 }
 
+// eunisName equal to c.name (no author suffix at all) is the boundary of the
+// word-boundary check: len(eunisName) > len(c.name) is false, so the index
+// into eunisName is never taken. Pins the `>` in that condition against a
+// `>=` mutant, which would try to index eunisName one past its end.
+func TestLongestPrefixMatchTrifftBeiExaktGleichLangenNamen(t *testing.T) {
+	candidates := []hierarchyRow{{name: "Testverband", parentCode: "CA01"}}
+	match, ambiguous := longestPrefixMatch("Testverband", candidates)
+	if ambiguous || match == nil || match.parentCode != "CA01" {
+		t.Errorf("match/ambiguous = %v/%v, erwartet CA01/false", match, ambiguous)
+	}
+}
+
+// A single candidate whose name is exactly one rune long pins bestLen's
+// initial value (-1): mutated to 0 or 1, the very first candidate would tie
+// against the starting value instead of beating it, wrongly reporting
+// ambiguity for the only candidate that exists.
+func TestLongestPrefixMatchTrifftBeiEinbuchstabigemNamenOhneAmbiguitaet(t *testing.T) {
+	candidates := []hierarchyRow{{name: "X", parentCode: "CA01"}}
+	match, ambiguous := longestPrefixMatch("X", candidates)
+	if ambiguous || match == nil || match.parentCode != "CA01" {
+		t.Errorf("match/ambiguous = %v/%v, erwartet CA01/false", match, ambiguous)
+	}
+}
+
 func TestEeaGroupErkenntKeineGruppeBeiZuKurzerID(t *testing.T) {
 	if _, ok := eeaGroup("A"); ok {
 		t.Error("eeaGroup(\"A\") = ok, erwartet keine Gruppe")
+	}
+}
+
+// The shortest id the letter/digit checks could still accept is length 2 —
+// pins the `<` in `len(id) < 2` against a `<=` mutant, which would reject
+// this id on length alone despite it otherwise being valid.
+func TestEeaGroupErkenntGruppeBeiMinimalerGueltigerLaenge(t *testing.T) {
+	got, ok := eeaGroup("9A")
+	if !ok || got != "9" {
+		t.Errorf("eeaGroup(\"9A\") = %q/%v, erwartet 9/true", got, ok)
 	}
 }
 
@@ -359,5 +462,17 @@ func TestEeaGroupLiefertGruppeFuerGueltigeID(t *testing.T) {
 	got, ok := eeaGroup("NAR-01E")
 	if !ok || got != "NAR-01" {
 		t.Errorf("eeaGroup(\"NAR-01E\") = %q/%v, erwartet NAR-01/true", got, ok)
+	}
+}
+
+// eeaGroup's letter/digit range checks pin all four boundary values: 'A' and
+// 'Z' are the smallest/largest valid alliance letters, '0' and '9' the
+// smallest/largest valid digit before it. A `<`/`>` mutated to `<=`/`>=`
+// changes behavior only exactly at these values.
+func TestEeaGroupErkenntGrenzwerteAlsGueltig(t *testing.T) {
+	for _, id := range []string{"XX-00A", "XX-99Z"} {
+		if _, ok := eeaGroup(id); !ok {
+			t.Errorf("eeaGroup(%q) = keine Gruppe, erwartet eine (Grenzwert gueltig)", id)
+		}
 	}
 }

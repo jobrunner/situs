@@ -41,11 +41,12 @@ Pipeline das für sie tut.
 Liest die von `pipelines/eunis/xlsx_to_csv.py` erzeugten CSVs
 (`typologies.csv`, `habitat_types.csv`, `crosswalks.csv`, `syntaxa.csv`,
 `habitat_type_syntaxa.csv`, `species_roles.csv`, optional
-`localizations.csv`) plus, ebenfalls optional, `wgsrpd_areas.csv` von
-`pipelines/wgsrpd`, `habitat_descriptions.csv` von
+`localizations.csv`), die zwei **Pflichtquellen** der Syntaxa-Hierarchie
+`syntaxa_formations.csv` (aus `data/`) und `syntaxa_hierarchy.csv` (von
+`pipelines/eurovegchecklist/xlsx_to_csv.py`) plus, optional,
+`wgsrpd_areas.csv` von `pipelines/wgsrpd`, `habitat_descriptions.csv` von
 `pipelines/floraveg-factsheets`, `localizations_descriptions.csv` (aus
-`data/`) und `syntaxa_hierarchy.csv` von
-`pipelines/eurovegchecklist/xlsx_to_csv.py` und die drei Zeigerwert-CSVs
+`data/`) und die drei Zeigerwert-CSVs
 (`eive_traits.csv`, `tichy_traits.csv`, `midolo_traits.csv` — erzeugt von
 `pipelines/{eive,tichy,midolo}`) — alle Pipelines schreiben in denselben
 `--csv-dir` — aus `--csv-dir` und schreibt in die SQLite-Datei `--db`. Die
@@ -124,12 +125,19 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
 `ingest` läuft in mehreren Schritten, jeder mit eigener Transaktion:
 
 1. `IngestCSV` — Typologien, Habitattypen, Crosswalks, Syntaxa.
-2. `IngestSyntaxaHierarchy` — liest optional `syntaxa_hierarchy.csv` (FloraVeg.EU
-   EuroVegChecklist, siehe `../reference/measured-index.md#syntaxa-tiefe-offener-punkt-1`)
-   und reichert die gerade ingestierten EUNIS-Verbände um Klasse/Ordnung/Autorschaft
-   an, soweit ein eindeutiger Namenstreffer existiert. Läuft direkt nach
-   `IngestCSV` und vor Artenrollen/Verbreitung/Zeigerwerten/Label-Overlay, von
-   denen keiner davon abhängt.
+2. `IngestSyntaxa` — liest **vier** Dateien: `syntaxa_formations.csv` (die 25
+   EuroVegChecklist-Sektionen A–Y, aus `data/`) und `syntaxa_hierarchy.csv`
+   (FloraVeg.EU EuroVegChecklist, aus `pipelines/eurovegchecklist`) sind seit
+   der Syntaxa-Quellenumkehr die **primären** Quellen der Hierarchie — beide
+   sind Pflichtdateien, ihr Fehlen bricht den Ingest ab, statt einen Index
+   ohne Vegetationshierarchie stillschweigend zu bauen. `syntaxa.csv` und
+   `habitat_type_syntaxa.csv` (aus `pipelines/eunis`) liefern noch die
+   Verbände, die FloraVeg nicht führt (`source: eunis`), und die
+   Habitattyp-Kanten, deren EEA-Code über den Altcode auf FloraVegs
+   Primärcode aufgelöst wird. Details und gemessene Zahlen:
+   `../reference/measured-index.md#syntaxa-tiefe-offener-punkt-1`. Läuft
+   direkt nach `IngestCSV` und vor Artenrollen/Verbreitung/Zeigerwerten/
+   Label-Overlay, von denen keiner davon abhängt.
 3. `IngestAreas` — liest optional `wgsrpd_areas.csv` (`pipelines/wgsrpd`, aus
    der gepinnten TDWG-Tabelle) und schreibt die Namen der Gebietscodes, die
    `GET /v1/areas` neben dem Code liefert. Rein lokal, kein Dienst wird

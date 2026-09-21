@@ -78,11 +78,30 @@ issue #36. See `docs/reference/measured-index.md` for every measured figure.
   toolchain into vendor mode and breaks every bare `go build`/`go test`.
 - The design documents (see below).
 
-**Next action:** none in either plan — `feature/autark-runtime` is ready to
-merge. Deliberately out of scope so far: scoring/ranking, the ESy rule engine,
-the EUNIS-2012 key, full plot classification, co-occurrence ranking, an
-Article-17 filter, syntaxa distribution, and any ISO↔WGSRPD mapping (the
-frontend derives the area code from GPS).
+**The syntaxa-quellenumkehr (Teilprojekt A) is done.** FloraVeg.EU (the
+EuroVegChecklist) is now the **primary** source of the syntaxa hierarchy, not
+an overlay on the EEA-EUNIS units. The join between the two sources runs over
+the EEA **alt code** (`syntaxon.alt_code`), never over a name comparison —
+the earlier name-only join silently mismatched real cases (measured: the
+`AMM-02B` successor is `JD02`, not the name-similar `JE01`). The formation
+level (25 EuroVegChecklist sections A–Y, `data/syntaxa_formations.csv`) and
+the life-form group (`phanerogam` / `bryophyte_lichen` / `algae`, set only on
+formation rows) are both derivable from the data, not invented. A full
+`situs ingest` against the real artifacts measures **25** formations, **150**
+classes, **381** orders, **1326** alliances, **0** orphans, **10** derived
+parents (sibling consensus), **16** EEA-only rows, and **190** cryptogam
+alliances (sections R–Y) where the pre-reversal index carried 2. The
+2026-08-30 spec (`2026-08-30-situs-syntaxa-hierarchie-design.md`) is revised
+by the 2026-09-21 one; see `docs/reference/measured-index.md` for every
+figure with its query. The association-level ceiling (see "Known ceiling"
+below) is unchanged by this reversal and still applies.
+
+**Next action:** Teilprojekt B (Syntaxa-Navigation, HTTP routes over the
+hierarchy) and Teilprojekt C (Syntaxa-Verbreitung, distribution) are specced
+but not implemented. Deliberately out of scope so far: scoring/ranking, the
+ESy rule engine, the EUNIS-2012 key, full plot classification, co-occurrence
+ranking, an Article-17 filter, and any ISO↔WGSRPD mapping (the frontend
+derives the area code from GPS).
 
 ## Design documents (read these before implementing)
 
@@ -94,6 +113,9 @@ frontend derives the area code from GPS).
 | `docs/superpowers/plans/2026-08-20-autarke-laufzeit-und-verbreitung.md` | Its 7-task TDD plan. |
 | `docs/research/situs-eea-eunis-2021-spike.md` | What the EEA data actually provides (measured, not assumed). |
 | `docs/research/sp9-esy-spike.md` | The ESy rule set: obtainable, parsable, and its hard scope limit. |
+| `docs/superpowers/specs/2026-09-21-syntaxa-quellenumkehr-design.md` | Teilprojekt A: FloraVeg.EU as the primary syntaxa source, full formation→class→order→alliance hierarchy. **Authoritative**, revises `2026-08-30-situs-syntaxa-hierarchie-design.md`. |
+| `docs/superpowers/specs/2026-09-21-syntaxa-navigation-design.md` | Teilprojekt B (not yet implemented): the HTTP navigation routes over the hierarchy A builds. |
+| `docs/superpowers/specs/2026-09-21-syntaxa-verbreitung-design.md` | Teilprojekt C (not yet implemented): syntaxa distribution, join over the EVC primary codes A introduces. |
 
 ## Ubiquitous Language (do not deviate)
 
@@ -129,10 +151,14 @@ internal/
   app/              # composition root
   config/           # SITUS_-prefixed config
 pipelines/eunis/    # XLSX -> normalized CSV (python3, stdlib only)
-pipelines/eurovegchecklist/ # FloraVeg.EU XLSX -> syntaxa_hierarchy.csv (python3, stdlib only)
+pipelines/eurovegchecklist/ # FloraVeg.EU XLSX -> syntaxa_hierarchy.csv, the
+                    # PRIMARY syntaxa source (python3, stdlib only)
 pipelines/wgsrpd/   # TDWG tblLevel3.txt -> wgsrpd_areas.csv (python3, stdlib only)
 pipelines/floraveg-factsheets/ # EUNIS-ESy factsheet PDF -> habitat_descriptions.csv
                     # (python3 stdlib + poppler's pdftohtml, an external CLI tool)
+data/               # curated, versioned (not pipeline-generated): localizations-de-situs.csv,
+                    # annex1_descriptions.csv, localizations_descriptions.csv, and
+                    # syntaxa_formations.csv (the formation-level primary source, 25 rows A-Y)
 ```
 
 Boundaries are enforced by depguard in the linter (`make arch`), not convention.
@@ -225,6 +251,17 @@ remain stdlib-only.
   collapse the third state into `false`, and `only_in_area` must keep the
   unknowables — a list that silently drops what it cannot judge is dishonestly
   clean.
+- **Every non-formation syntaxon row has a parent, or the ingest fails.** A
+  `syntaxon` row with `rank <> 'formation'` and an empty `parent_id` is a
+  broken hierarchy, not a partial one — the whole point of the syntaxa
+  hierarchy is a chain that reaches a formation, and a chain that breaks at
+  one point makes the orientation service worthless at exactly that point.
+  `IngestSyntaxa` tries a FloraVeg name match, then unanimous sibling
+  consensus within the EEA order group; a row neither resolves is reported
+  as an orphan and the whole ingest fails, not just a warning.
+  `internal/adapters/sqlite/hierarchy_integrity_test.go` pins both halves of
+  the promise against a fixture index: no orphans, and every row reaches a
+  formation in at most three steps.
 - **Measure, do not assume.** The pipeline emits a `report.json` (syntaxa depth,
   the qualifier symbols actually present, Annex I coverage). If the data
   contradicts the spec, stop and report — do not silently adapt.

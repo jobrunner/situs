@@ -26,8 +26,16 @@ type eunisOnlyRow struct {
 // name match against the FloraVeg alliance rows, then unanimous sibling
 // consensus within its EEA order group, then giving up and recording an
 // orphan. parents maps EEA id -> parent id, seeded from every hierarchy
-// row's alt code; a parent this function sets is folded back in
-// immediately so a later row in the same pass can use it as a sibling too.
+// row's alt code.
+//
+// Name matching runs as its OWN first pass, over every row, before any
+// sibling consensus is attempted. eunisOnly's order is the source CSV's
+// name-sorted order, not the EEA id order — a single combined pass would
+// make a row's sibling try depend on whether an earlier-in-the-file
+// sibling happened to resolve by name first (e.g. CRU-03C/CRU-03B sort
+// before CRU-03A, whose name match would have given them a unanimous
+// parent). Splitting into two passes makes the sibling try see every
+// name-matched parent regardless of file order.
 func assignRemainingParents(tx output.IngestTx, eunisOnly []eunisOnlyRow, rows []hierarchyRow, rep *SyntaxaReport) error {
 	var allianceRows []hierarchyRow
 	parents := map[string]string{}
@@ -40,50 +48,69 @@ func assignRemainingParents(tx output.IngestTx, eunisOnly []eunisOnlyRow, rows [
 		}
 	}
 
-	for _, row := range eunisOnly {
-		parentID, provenance, ambiguous := resolveParent(row, allianceRows, parents)
-		if ambiguous {
-			rep.AmbiguousMatches = append(rep.AmbiguousMatches, row.id)
-		}
-		if parentID == "" {
-			rep.Orphans = append(rep.Orphans, row.id)
-			continue
-		}
-		if err := tx.SetSyntaxonParent(row.id, parentID, provenance); err != nil {
-			return fmt.Errorf("setting parent of %s: %w", row.id, err)
-		}
-		parents[row.id] = parentID
-		if provenance == domain.ParentProvenanceOfficial {
-			rep.ParentsByName++
-		} else {
-			rep.ParentsDerived++
-		}
+	unresolved, err := matchByName(tx, eunisOnly, allianceRows, parents, rep)
+	if err != nil {
+		return err
+	}
+	if err := matchBySibling(tx, unresolved, parents, rep); err != nil {
+		return err
 	}
 	sort.Strings(rep.AmbiguousMatches)
 	return nil
 }
 
-// resolveParent tries the name match first, then sibling consensus.
-// ambiguous and a found parentID are NOT mutually exclusive: an ambiguous
-// name match is never guessed from, but it does not stop the sibling try
-// either, because the ambiguity is purely a property of the name path —
-// siblings find each other over the alt code, which does not care whether
-// two FloraVeg names happen to tie in length. Refusing the sibling's
-// unanimous answer just because the name path also (independently) saw two
-// equally-long candidates would trade a real answer for an avoidable
-// orphan, and a broken parent chain is the worse failure of the two. The
-// ambiguity is still reported in AmbiguousMatches either way — resolving
-// via sibling consensus does not hide it, it only stops it from being a
-// dead end on its own.
-func resolveParent(row eunisOnlyRow, allianceRows []hierarchyRow, parents map[string]string) (parentID, provenance string, ambiguous bool) {
-	match, amb := longestPrefixMatch(row.name, allianceRows)
-	if !amb && match != nil {
-		return match.parentCode, domain.ParentProvenanceOfficial, false
+// matchByName is pass 1: every eunisOnly row tried against the FloraVeg
+// alliance names. Rows that do not resolve here (no match, or an ambiguous
+// one) are returned for the sibling-consensus pass.
+func matchByName(tx output.IngestTx, eunisOnly []eunisOnlyRow, allianceRows []hierarchyRow,
+	parents map[string]string, rep *SyntaxaReport) ([]eunisOnlyRow, error) {
+	unresolved := make([]eunisOnlyRow, 0, len(eunisOnly))
+	for _, row := range eunisOnly {
+		match, ambiguous := longestPrefixMatch(row.name, allianceRows)
+		if ambiguous {
+			rep.AmbiguousMatches = append(rep.AmbiguousMatches, row.id)
+		}
+		if ambiguous || match == nil {
+			unresolved = append(unresolved, row)
+			continue
+		}
+		if err := setResolvedParent(tx, row.id, match.parentCode, domain.ParentProvenanceOfficial, parents, rep); err != nil {
+			return nil, err
+		}
 	}
-	if sibling := siblingConsensus(row.id, parents); sibling != "" {
-		return sibling, domain.ParentProvenanceDerived, amb
+	return unresolved, nil
+}
+
+// matchBySibling is pass 2: every row pass 1 left unresolved tried against
+// its EEA order group's unanimous consensus. A row still unresolved here is
+// an orphan.
+func matchBySibling(tx output.IngestTx, unresolved []eunisOnlyRow, parents map[string]string, rep *SyntaxaReport) error {
+	for _, row := range unresolved {
+		sibling := siblingConsensus(row.id, parents)
+		if sibling == "" {
+			rep.Orphans = append(rep.Orphans, row.id)
+			continue
+		}
+		if err := setResolvedParent(tx, row.id, sibling, domain.ParentProvenanceDerived, parents, rep); err != nil {
+			return err
+		}
 	}
-	return "", "", amb
+	return nil
+}
+
+// setResolvedParent writes a resolved parent, folds it back into parents so
+// a later row in the SAME pass can use it as a sibling too, and counts it.
+func setResolvedParent(tx output.IngestTx, id, parentID, provenance string, parents map[string]string, rep *SyntaxaReport) error {
+	if err := tx.SetSyntaxonParent(id, parentID, provenance); err != nil {
+		return fmt.Errorf("setting parent of %s: %w", id, err)
+	}
+	parents[id] = parentID
+	if provenance == domain.ParentProvenanceOfficial {
+		rep.ParentsByName++
+	} else {
+		rep.ParentsDerived++
+	}
+	return nil
 }
 
 // longestPrefixMatch finds the FloraVeg alliance whose name is the longest

@@ -318,6 +318,40 @@ absent heißt absent.
 Einen eigenen Endpunkt dafür gibt es bewusst nicht: wer den Habitattyp
 abfragt, will seine Beschreibung im selben Aufruf.
 
+## Pflanzengesellschaften (`SyntaxonRef`)
+
+Jede Syntaxon-Referenz — im `syntaxa`-Feld von `GET /v1/habitat-type/{typology}/{code}`
+ebenso wie in der Antwort von `GET /v1/syntaxon/{id}/habitat-types` — trägt seit
+der Syntaxa-Quellenumkehr (FloraVeg.EU als Primärquelle) vier zusätzliche
+Felder:
+
+```json
+{
+  "id": "CA01A",
+  "rank": "alliance",
+  "name": "Arrhenatherion",
+  "author": "Koch 1926",
+  "parent_id": "CA01",
+  "alt_code": "TST-01A",
+  "source": "evc",
+  "parent_provenance": "official",
+  "life_form_group": "phanerogam"
+}
+```
+
+| Feld | Bedeutung |
+|---|---|
+| `alt_code` | der EEA-EUNIS-Code desselben Syntaxons; fehlt bei Formationen und bei Einheiten, die nur eine der beiden Quellen kennt |
+| `source` | welche Quelle diese Zeile führt: `evc` (EuroVegChecklist) oder `eunis` (nur die EEA-EUNIS-Zuordnung kennt sie) |
+| `parent_provenance` | ob `parent_id` aus der Quelle selbst stammt (`official`) oder aus dem Geschwisterkonsens abgeleitet wurde (`derived`) |
+| `life_form_group` | die Lebensform-Gruppe (`phanerogam`, `bryophyte_lichen`, `algae`); nur auf Formationszeilen gesetzt |
+
+`rank` führt jetzt vier statt zwei Werte: `formation` (die Wurzel — die 25
+EuroVegChecklist-Sektionen A–Y) und `class` sind neu hinzugekommen, `order`
+und `alliance` gab es schon. Jede Nicht-Formations-Zeile hat einen `parent_id`,
+der in höchstens drei Schritten eine Formation erreicht — der Ingest bricht
+ab, wenn eine Zeile das nicht schafft (siehe `CLAUDE.md`, Invariants).
+
 ## Die zwei Arten-Pfade
 
 `GET /v1/species/{conceptId}/habitat-types` antwortet **404**, wenn der Index zu
