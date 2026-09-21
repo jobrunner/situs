@@ -31,7 +31,7 @@ Die Level-Menge ist **1 bis 3**, nicht nur 3: Level 1 und 2 tragen keinen
 `=`-Crosswalk nach `annex1` (gemessen: keiner der 49 Codes), die Ableitung
 erreicht sie also nie, und ohne verfasste Zeilen bliebe die Ebene englisch, die
 in der App als Gruppenknopf zuerst sichtbar ist. Gemessen am 2026-09-21: **290**
-verfasste Typen, **399** Zeilen, davon 109 `vernacular`.
+verfasste Typen, **394** Zeilen, davon 104 `vernacular`.
 
 `merge.py` schreibt **nichts**, wenn die verfasste Datei ihre Zusagen bricht:
 eine fehlende oder überzählige Code-Menge, ein doppelter Code, ein

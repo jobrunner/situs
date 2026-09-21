@@ -63,8 +63,8 @@ names in `data/localizations-de-situs.csv`; the 2026-09-16 reference run
 measured `Localizations: 567` and `DerivedLabels: 29`. That file covers EUNIS
 **levels 1 to 3**: levels 1 and 2 carry no `=`-crosswalk at all (measured: none
 of the 49 codes), so no derivation ever reaches them. Since 2026-09-21 it holds
-290 authored types / 399 rows — the next full ingest measures
-`Localizations: 632`.
+290 authored types / 394 rows — the next full ingest measures
+`Localizations: 627`.
 
 **The index really does carry mixed backbones.** That run measured
 `concept_backbones: ["cdm", "eurosl", "wcvp"]` — 8 of 3323 concepts are

@@ -102,8 +102,8 @@ Zwei Report-Felder betreffen genau das:
 Am Referenzlauf vom 2026-09-16 gemessen: `Localizations: 567`
 (233 amtlich + 334 von situs verfasst), `DerivedLabels: 29`. Seitdem sind die
 EUNIS-Level 1 und 2 dazugekommen (49 Typen, die nie einen `=`-Crosswalk
-tragen): `merge.py` erzeugt am 2026-09-21 **399** verfasste Zeilen, der nächste
-volle Lauf misst also `Localizations: 632`. Siehe
+tragen): `merge.py` erzeugt am 2026-09-21 **394** verfasste Zeilen, der nächste
+volle Lauf misst also `Localizations: 627`. Siehe
 `../reference/measured-index.md`.
 
 ## Getrennte Transaktionen, nicht eine

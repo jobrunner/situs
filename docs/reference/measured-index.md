@@ -408,20 +408,23 @@ Gemessen am 2026-09-21 mit `pipelines/eurlex/merge.py` gegen
 | Kennzahl | Wert |
 |---|---|
 | Verfasste Typen (EUNIS L1–L3 ohne `=`-Crosswalk) | **290** (241 L3 + 49 L1/L2) |
-| Erzeugte Localization-Zeilen | **399** |
-| davon `field = vernacular` | **109** (38 %) |
+| Erzeugte Localization-Zeilen | **394** |
+| davon `field = vernacular` | **104** (36 %) |
 | Überschneidung mit den 29 Ableitungen | **0** |
-| Localizations im Index gesamt | **632** (233 `official` + 399 `situs`) |
-| Zeilen in `localization` nach dem Ingest | **661** (632 + 29 `derived`) |
+| Localizations im Index gesamt | **627** (233 `official` + 394 `situs`) |
+| Zeilen in `localization` nach dem Ingest | **656** (627 + 29 `derived`) |
 
 Die beiden letzten Zeilen sind aus der gemessenen `merge.py`-Ausgabe
 **gerechnet**, nicht aus einem Index gezählt: der Referenzlauf vom 2026-09-16
 maß die alten Werte 567 und 596. Der nächste volle `situs ingest` hat sie zu
 bestätigen.
 
-Die 38 % Vernakular-Abdeckung ist keine Lücke, sondern das Ergebnis der Regel:
+Die 36 % Vernakular-Abdeckung ist keine Lücke, sondern das Ergebnis der Regel:
 ein etablierter deutscher Begriff existiert im Wesentlichen nur, wo der Typ in
-Deutschland vorkommt. Für mediterrane, makaronesische und Schwarzmeer-Varianten
+Deutschland vorkommt — und auf Level 1 und 2 zusätzlich nur dort, wo ein
+Sammeltyp überhaupt genau einen Begriff hat. 'Laubwald' ist weiter als `T1`
+(der immergrüne Laubwald `T2` steckt mit drin), 'Phrygana' enger als `S7`.
+Beide tragen deshalb nur `name`. Für mediterrane, makaronesische und Schwarzmeer-Varianten
 gibt es keinen — sie werden im Deutschen nie benannt, und ein konstruierter
 Begriff wäre eine Erfindung mit dem Anschein von Geläufigkeit.
 

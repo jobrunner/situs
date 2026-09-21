@@ -32,6 +32,13 @@
 # Volksname, der auf zwei Ebenen dasselbe meint, macht die Rückwärtssuche
 # mehrdeutig.
 #
+# Die Umfangsregel schlägt auf dieser Ebene oft zu, weil Sammeltypen selten
+# genau einen deutschen Begriff haben: 'Laubwald' ist WEITER als T1 (es schließt
+# den immergrünen Laubwald T2 ein), 'Phrygana' ist ENGER als S7 (dort stehen
+# auch Igelpolsterheiden), 'Acker' ist enger als V1 (mit Gartenbauflächen),
+# 'Alpiner Rasen' enger als R4 (mit der subalpinen Stufe), 'Felsflur' enger als
+# U3 (mit Karren und Felskuppen). Alle fünf tragen deshalb nur name_de.
+#
 # Gruppen in EUNIS-Reihenfolge: N Küste, Q Moore/Sümpfe, R Grasland,
 # S Gebüsch/Heide, T Wald, U Fels/Geröll, V Kulturland. Je Gruppe zuerst der
 # Level-1-Code, dann die Level-2-Codes, dann die Level-3-Codes.
@@ -94,7 +101,7 @@ R,"Grasslands and lands dominated by forbs, mosses or lichens","Grasland und von
 R1,"Dry grasslands","Trockenrasen",Trockenrasen
 R2,"Mesic grasslands","Frisches Grasland",Frischgrünland
 R3,"Seasonally wet and wet grasslands","Wechselfeuchtes und nasses Grasland",Feuchtgrünland
-R4,"Alpine and subalpine grasslands","Alpines und subalpines Grasland",Alpiner Rasen
+R4,"Alpine and subalpine grasslands","Alpines und subalpines Grasland",
 R5,"Forest fringes and clearings and tall forb stands","Waldsäume, Waldschläge und Hochstaudenfluren",
 R6,"Inland salt steppes and salt marshes","Binnenland-Salzsteppen und Salzwiesen",
 R7,"Sparsely wooded grasslands","Locker bewaldetes Grasland",
@@ -159,7 +166,7 @@ S3,"Temperate and mediterranean-montane scrub","Temperates und mediterran-montan
 S4,"Temperate shrub heathland","Temperate Zwergstrauchheide",Zwergstrauchheide
 S5,"Maquis, arborescent matorral and thermo-Mediterranean scrub","Macchie, baumförmiges Matorral und thermomediterranes Gebüsch",
 S6,"Garrigue","Garigue",Garigue
-S7,"Spiny Mediterranean heaths (phrygana, hedgehog-heaths and related coastal cliff vegetation)","Dornige mediterrane Heiden (Phrygana, Igelpolsterheiden und verwandte Küstenfelsvegetation)",Phrygana
+S7,"Spiny Mediterranean heaths (phrygana, hedgehog-heaths and related coastal cliff vegetation)","Dornige mediterrane Heiden (Phrygana, Igelpolsterheiden und verwandte Küstenfelsvegetation)",
 S8,"Thermo-Atlantic xerophytic scrub","Thermoatlantisches xerophytisches Gebüsch",
 S9,"Riverine and fen scrubs","Ufer- und Niedermoorgebüsche",
 S11,"Shrub tundra","Strauchtundra",
@@ -202,7 +209,7 @@ S92,"Salix fen scrub","Weiden-Moorgebüsch",Weidenbruch
 S94,"Semi-desert riparian scrub","Halbwüsten-Ufergebüsch",
 # --- T — Wald und Gehölzbestände (51) ---
 T,"Forest and other wooded land","Wald und sonstige Gehölzflächen",
-T1,"Deciduous broadleaved forest","Sommergrüner Laubwald",Laubwald
+T1,"Deciduous broadleaved forest","Sommergrüner Laubwald",
 T2,"Broadleaved evergreen forest","Immergrüner Laubwald",
 T3,"Coniferous forest","Nadelwald",Nadelwald
 T4,"Lines of trees, small anthropogenic forests, recently felled forest, early-stage forest and coppice","Baumreihen, kleine anthropogene Wälder, kürzlich geschlagener Wald, Wald früher Entwicklungsstadien und Niederwald",
@@ -256,7 +263,7 @@ T43,"Recently felled areas","Kürzlich geschlagene Flächen",Kahlschlag
 U,"Inland habitats with no or little soil and mostly with sparse vegetation","Binnenland-Lebensräume ohne oder mit wenig Boden und meist mit lückiger Vegetation",
 U1,"Terrestrial underground caves, cave systems, passages and waterbodies","Terrestrische unterirdische Höhlen, Höhlensysteme, Gänge und Gewässer",
 U2,"Screes","Schutthalden",Schutthalde
-U3,"Inland cliffs, rock pavements and outcrops","Felswände, Felsplatten und Felskuppen des Binnenlands",Felsflur
+U3,"Inland cliffs, rock pavements and outcrops","Felswände, Felsplatten und Felskuppen des Binnenlands",
 U4,"Snow or ice-dominated habitats","Von Schnee oder Eis beherrschte Lebensräume",
 U5,"Miscellaneous inland habitats usually with very sparse or no vegetation","Sonstige Binnenland-Lebensräume, meist mit sehr lückiger oder fehlender Vegetation",
 U6,"Recent volcanic features","Junge Vulkanbildungen",
@@ -296,7 +303,7 @@ U71,"Unvegetated or sparsely vegetated gravel bars in montane and alpine regions
 U72,"Unvegetated or sparsely vegetated gravel bars in the Mediterranean region","Vegetationsfreie oder lückig bewachsene Kiesbänke des Mittelmeerraums",
 # --- V — Kulturland, Gärten, Hecken, Pflanzungen (38) ---
 V,"Vegetated man-made habitats","Bewachsene anthropogene Lebensräume",
-V1,"Arable land and market gardens","Acker- und Gartenbauflächen",Acker
+V1,"Arable land and market gardens","Acker- und Gartenbauflächen",
 V2,"Cultivated areas of gardens and parks","Bewirtschaftete Garten- und Parkflächen",
 V3,"Artificial grasslands and herb dominated habitats","Künstliche Rasen und von Kräutern beherrschte Lebensräume",
 V4,"Hedgerows","Hecken",Hecke
