@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -386,6 +387,23 @@ func TestSyntaxaByRankLaeuftBeiEinemZykelNichtEndlos(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Errorf("Ergebnis = %v, erwartet leer — keine Zeile erreicht eine Formation", syntaxonIDs(got))
+	}
+}
+
+// TestSyntaxaByRankStepBoundMatchesMaxSyntaxonAncestors guards the seam a
+// comment alone cannot: the recursive CTE's step bound is a literal, not a
+// bound parameter (mandatory per the task brief — building it from Go input
+// is exactly the SQL assembly gosec G201 forbids), so nothing at compile time
+// ties it to maxSyntaxonAncestors. Without this test, raising
+// maxSyntaxonAncestors for a fifth rank would silently leave the CTE cutting
+// off one step early — SyntaxaByRank would then report the new deepest rank
+// as always empty under any group filter, and every other test here (built
+// on a three-step hierarchy) would stay green.
+func TestSyntaxaByRankStepBoundMatchesMaxSyntaxonAncestors(t *testing.T) {
+	want := fmt.Sprintf("u.steps < %d", maxSyntaxonAncestors)
+	if !strings.Contains(syntaxaByRankRowsWithGroupSQL, want) {
+		t.Errorf("syntaxaByRankRowsWithGroupSQL does not contain %q — the CTE step bound has drifted from maxSyntaxonAncestors (%d)",
+			want, maxSyntaxonAncestors)
 	}
 }
 

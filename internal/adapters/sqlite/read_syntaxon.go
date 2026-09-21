@@ -167,12 +167,18 @@ func (d *DB) SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string) ([]d
 	return out, nil
 }
 
-// syntaxaByRankRows picks between TWO static statements — never one assembled
-// from the rank value.
+// syntaxaByRankRowsWithGroupSQL is the recursive-CTE statement
+// syntaxaByRankRows issues when lifeFormGroup is non-empty. It is a package
+// constant — not inlined at the call site — so a test can read the same
+// string the query runs and check its step bound against maxSyntaxonAncestors
+// (see TestSyntaxaByRankStepBoundMatchesMaxSyntaxonAncestors): a %d built with
+// fmt.Sprintf from a Go int and compared against a fixed string is not the SQL
+// concatenation gosec G201 forbids, since nothing here is assembled INTO the
+// query that QueryContext runs — the query stays this exact literal.
 //
-// life_form_group is stored on formation rows alone, so the filtered variant
-// has to join upwards, and the depth differs per rank (an alliance three steps,
-// a class one). Building that depth from the rank string would be exactly the
+// life_form_group is stored on formation rows alone, so this variant has to
+// join upwards, and the depth differs per rank (an alliance three steps, a
+// class one). Building that depth from the rank string would be exactly the
 // SQL string assembly gosec G201 forbids, and a statement per rank would be
 // four near-identical literals that go stale the moment a further rank becomes
 // a data row. One recursive CTE covers every depth instead.
@@ -180,10 +186,27 @@ func (d *DB) SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string) ([]d
 // The step bound is not decoration: without it a cycle in parent_id would make
 // this statement recurse until memory runs out — a hang rather than an error
 // (see TestSyntaxaByRankLaeuftBeiEinemZykelNichtEndlos). It is a static literal
-// in the statement, matching maxSyntaxonAncestors, not a bound parameter: a
-// value built from Go input is exactly what gosec G201 forbids, and this
-// number is never input — it is the same constant SyntaxonAncestors uses to
-// detect the same defect. The remaining placeholders bind in the order they
+// in the statement, not a bound parameter: a value built from Go input at
+// query time is what gosec G201 forbids, and this number is never runtime
+// input — it is the same constant SyntaxonAncestors uses to detect the same
+// defect, guarded to match by the test named above.
+const syntaxaByRankRowsWithGroupSQL = `WITH RECURSIVE up(id, root, steps) AS (
+	   SELECT id, id, 0 FROM syntaxon
+	   UNION ALL
+	   SELECT u.id, s.parent_id, u.steps + 1
+	   FROM up u JOIN syntaxon s ON s.id = u.root
+	   WHERE s.parent_id <> '' AND u.steps < 3
+	 )
+	 SELECT s.id, s.rank, s.name, s.author, s.parent_id, s.alt_code, s.source,
+	        s.parent_provenance, s.life_form_group
+	 FROM syntaxon s
+	 JOIN up ON up.id = s.id
+	 JOIN syntaxon f ON f.id = up.root AND f.rank = 'formation'
+	 WHERE s.rank = ? AND f.life_form_group = ?
+	 ORDER BY s.id`
+
+// syntaxaByRankRows picks between TWO static statements — never one assembled
+// from the rank value. The remaining placeholders bind in the order they
 // appear (rank, group).
 func (d *DB) syntaxaByRankRows(ctx context.Context, rank, lifeFormGroup string) (*sql.Rows, error) {
 	if lifeFormGroup == "" {
@@ -192,22 +215,7 @@ func (d *DB) syntaxaByRankRows(ctx context.Context, rank, lifeFormGroup string) 
 			        life_form_group
 			 FROM syntaxon WHERE rank = ? ORDER BY id`, rank)
 	}
-	return d.QueryContext(ctx,
-		`WITH RECURSIVE up(id, root, steps) AS (
-		   SELECT id, id, 0 FROM syntaxon
-		   UNION ALL
-		   SELECT u.id, s.parent_id, u.steps + 1
-		   FROM up u JOIN syntaxon s ON s.id = u.root
-		   WHERE s.parent_id <> '' AND u.steps < 3
-		 )
-		 SELECT s.id, s.rank, s.name, s.author, s.parent_id, s.alt_code, s.source,
-		        s.parent_provenance, s.life_form_group
-		 FROM syntaxon s
-		 JOIN up ON up.id = s.id
-		 JOIN syntaxon f ON f.id = up.root AND f.rank = 'formation'
-		 WHERE s.rank = ? AND f.life_form_group = ?
-		 ORDER BY s.id`,
-		rank, lifeFormGroup)
+	return d.QueryContext(ctx, syntaxaByRankRowsWithGroupSQL, rank, lifeFormGroup)
 }
 
 // SyntaxonRanks lists the distinct ranks the index carries, sorted. The read
