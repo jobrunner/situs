@@ -427,6 +427,12 @@ func TestReads_QueryErrorsAreReturned(t *testing.T) {
 		"KnownAreaCodes":       func() error { _, err := db.KnownAreaCodes(ctx, domain.SchemeWGSRPDL3); return err },
 		"AllSyntaxa":           func() error { _, err := db.AllSyntaxa(ctx); return err },
 		"SyntaxonIDsByAltCode": func() error { _, err := db.SyntaxonIDsByAltCode(ctx); return err },
+		"SyntaxaByRank":        func() error { _, err := db.SyntaxaByRank(ctx, "alliance", ""); return err },
+		"SyntaxaByRankWithGroup": func() error {
+			_, err := db.SyntaxaByRank(ctx, "alliance", domain.LifeFormPhanerogam)
+			return err
+		},
+		"SyntaxonRanks": func() error { _, err := db.SyntaxonRanks(ctx); return err },
 	}
 	for name, call := range cases {
 		if err := call(); err == nil {
@@ -492,6 +498,21 @@ func TestReads_RowsIterationAndScanErrorsAreReturned(t *testing.T) {
 		"SyntaxonIDsByAltCode": {
 			call: func(db *DB) error { _, err := db.SyntaxonIDsByAltCode(ctx); return err },
 			rows: "reading syntaxon alt codes", scan: "scanning syntaxon alt code",
+		},
+		"SyntaxaByRank": {
+			call: func(db *DB) error { _, err := db.SyntaxaByRank(ctx, "alliance", ""); return err },
+			rows: "reading syntaxa of rank", scan: "reading syntaxa of rank",
+		},
+		"SyntaxaByRankWithGroup": {
+			call: func(db *DB) error {
+				_, err := db.SyntaxaByRank(ctx, "alliance", domain.LifeFormPhanerogam)
+				return err
+			},
+			rows: "reading syntaxa of rank", scan: "reading syntaxa of rank",
+		},
+		"SyntaxonRanks": {
+			call: func(db *DB) error { _, err := db.SyntaxonRanks(ctx); return err },
+			rows: "reading syntaxon ranks", scan: "scanning syntaxon rank",
 		},
 	}
 	for name, tc := range cases {

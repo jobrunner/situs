@@ -748,6 +748,61 @@ func (r *fakeRepo) HabitatTypeCountForSyntaxon(_ context.Context, syntaxonID str
 	return n, nil
 }
 
+// SyntaxaByRank mirrors the adapter's contract: rank filter, then — if a group
+// was asked for — the group of the formation the parent_id chain reaches. It
+// walks the chain itself rather than reading a seeded answer, so a test cannot
+// pass by seeding a group onto a non-formation row.
+func (r *fakeRepo) SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string) ([]domain.Syntaxon, error) {
+	if r.syntaxaByRankErr != nil {
+		return nil, r.syntaxaByRankErr
+	}
+	out := []domain.Syntaxon{}
+	for _, s := range r.syntaxa {
+		if s.Rank != rank {
+			continue
+		}
+		if lifeFormGroup != "" && r.formationGroupOf(ctx, s) != lifeFormGroup {
+			continue
+		}
+		out = append(out, s)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
+
+// formationGroupOf walks parent_id to the root and returns its group, or "" if
+// the chain breaks or exceeds the measured depth.
+func (r *fakeRepo) formationGroupOf(ctx context.Context, s domain.Syntaxon) string {
+	current := s
+	for steps := 0; current.ParentID != ""; steps++ {
+		if steps == 3 {
+			return ""
+		}
+		parent, err := r.Syntaxon(ctx, current.ParentID)
+		if err != nil {
+			return ""
+		}
+		current = parent
+	}
+	return current.LifeFormGroup
+}
+
+func (r *fakeRepo) SyntaxonRanks(_ context.Context) ([]string, error) {
+	if r.syntaxonRanksErr != nil {
+		return nil, r.syntaxonRanksErr
+	}
+	seen := map[string]bool{}
+	out := []string{}
+	for _, s := range r.syntaxa {
+		if !seen[s.Rank] {
+			seen[s.Rank] = true
+			out = append(out, s.Rank)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
 func (r *fakeRepo) HabitatTypeKeysForSyntaxon(_ context.Context, syntaxonID string) ([]domain.HabitatTypeKey, error) {
 	if r.syntaxonKeysErr != nil {
 		return nil, r.syntaxonKeysErr

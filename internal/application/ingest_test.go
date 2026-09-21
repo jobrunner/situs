@@ -501,6 +501,8 @@ type fakeRepo struct {
 	syntaxonChildrenErr  error
 	syntaxonAncestorsErr error
 	habitatTypeCountErr  error
+	syntaxaByRankErr     error
+	syntaxonRanksErr     error
 }
 
 // fakeDistribution is one recorded UpsertDistribution call.

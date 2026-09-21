@@ -151,6 +151,91 @@ func (d *DB) HabitatTypeCountForSyntaxon(ctx context.Context, syntaxonID string)
 	return n, nil
 }
 
+// SyntaxaByRank returns every syntaxon of rank, ordered by id. A non-empty
+// lifeFormGroup keeps only those whose reachable formation carries that group.
+func (d *DB) SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string) ([]domain.Syntaxon, error) {
+	rows, err := d.syntaxaByRankRows(ctx, rank, lifeFormGroup)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: querying syntaxa of rank %q: %w", rank, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out, err := scanSyntaxa(rows)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: reading syntaxa of rank %q: %w", rank, err)
+	}
+	return out, nil
+}
+
+// syntaxaByRankRows picks between TWO static statements — never one assembled
+// from the rank value.
+//
+// life_form_group is stored on formation rows alone, so the filtered variant
+// has to join upwards, and the depth differs per rank (an alliance three steps,
+// a class one). Building that depth from the rank string would be exactly the
+// SQL string assembly gosec G201 forbids, and a statement per rank would be
+// four near-identical literals that go stale the moment a further rank becomes
+// a data row. One recursive CTE covers every depth instead.
+//
+// The step bound is not decoration: without it a cycle in parent_id would make
+// this statement recurse until memory runs out — a hang rather than an error
+// (see TestSyntaxaByRankLaeuftBeiEinemZykelNichtEndlos). It is a static literal
+// in the statement, matching maxSyntaxonAncestors, not a bound parameter: a
+// value built from Go input is exactly what gosec G201 forbids, and this
+// number is never input — it is the same constant SyntaxonAncestors uses to
+// detect the same defect. The remaining placeholders bind in the order they
+// appear (rank, group).
+func (d *DB) syntaxaByRankRows(ctx context.Context, rank, lifeFormGroup string) (*sql.Rows, error) {
+	if lifeFormGroup == "" {
+		return d.QueryContext(ctx,
+			`SELECT id, rank, name, author, parent_id, alt_code, source, parent_provenance,
+			        life_form_group
+			 FROM syntaxon WHERE rank = ? ORDER BY id`, rank)
+	}
+	return d.QueryContext(ctx,
+		`WITH RECURSIVE up(id, root, steps) AS (
+		   SELECT id, id, 0 FROM syntaxon
+		   UNION ALL
+		   SELECT u.id, s.parent_id, u.steps + 1
+		   FROM up u JOIN syntaxon s ON s.id = u.root
+		   WHERE s.parent_id <> '' AND u.steps < 3
+		 )
+		 SELECT s.id, s.rank, s.name, s.author, s.parent_id, s.alt_code, s.source,
+		        s.parent_provenance, s.life_form_group
+		 FROM syntaxon s
+		 JOIN up ON up.id = s.id
+		 JOIN syntaxon f ON f.id = up.root AND f.rank = 'formation'
+		 WHERE s.rank = ? AND f.life_form_group = ?
+		 ORDER BY s.id`,
+		rank, lifeFormGroup)
+}
+
+// SyntaxonRanks lists the distinct ranks the index carries, sorted. The read
+// side validates ?rank= against THIS and not against a wired list: the schema
+// deliberately has no CHECK on rank so a further rank can be a data row, and a
+// fixed enum one layer up would have taken that freedom back and made a new
+// rank unfindable.
+func (d *DB) SyntaxonRanks(ctx context.Context) ([]string, error) {
+	rows, err := d.QueryContext(ctx, `SELECT DISTINCT rank FROM syntaxon ORDER BY rank`)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: listing syntaxon ranks: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := []string{}
+	for rows.Next() {
+		var rank string
+		if err := rows.Scan(&rank); err != nil {
+			return nil, fmt.Errorf("sqlite: scanning syntaxon rank: %w", err)
+		}
+		out = append(out, rank)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite: reading syntaxon ranks: %w", err)
+	}
+	return out, nil
+}
+
 // SyntaxonAncestors walks parent_id to the root, OUTERMOST first (formation,
 // then class, then order). Empty for a formation.
 //

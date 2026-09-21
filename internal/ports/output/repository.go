@@ -121,6 +121,14 @@ type Repository interface {
 	// HabitatTypeCountForSyntaxon counts the edges of exactly this syntaxon,
 	// not its descendants', and without loading them.
 	HabitatTypeCountForSyntaxon(ctx context.Context, syntaxonID string) (int, error)
+	// SyntaxaByRank returns every syntaxon of rank, ordered by id. A non-empty
+	// lifeFormGroup keeps only those whose reachable formation carries that
+	// group — the value is stored on formation rows alone. A rank the index
+	// does not carry yields an empty list here; turning that into an
+	// INVALID_QUERY is the read side's job, which needs SyntaxonRanks for it.
+	SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string) ([]domain.Syntaxon, error)
+	// SyntaxonRanks lists the distinct ranks the index carries, sorted.
+	SyntaxonRanks(ctx context.Context) ([]string, error)
 	// HabitatTypeKeysForSyntaxon returns the habitat types a syntaxon is linked
 	// to — the m:n direction.
 	HabitatTypeKeysForSyntaxon(ctx context.Context, syntaxonID string) ([]domain.HabitatTypeKey, error)

@@ -104,6 +104,13 @@ var stubColumnRules = []stubQueryRule{
 	{"WHERE parent_id = ?", []string{
 		"id", "rank", "name", "author", "parent_id", "alt_code", "source", "parent_provenance", "life_form_group",
 	}},
+	// "WHERE rank = ?" is SyntaxaByRank's unfiltered statement; the group-filtered
+	// recursive CTE already matches the "JOIN syntaxon" rule above, and its final
+	// SELECT reads "WHERE s.rank = ?" — a different string, no collision.
+	{"WHERE rank = ?", []string{
+		"id", "rank", "name", "author", "parent_id", "alt_code", "source", "parent_provenance", "life_form_group",
+	}},
+	{"DISTINCT rank FROM syntaxon", []string{"rank"}},
 	{"FROM syntaxon ORDER BY id", []string{"id", "rank", "name", "author", "parent_id"}},
 	{"alt_code, id FROM syntaxon", []string{"alt_code", "id"}},
 	{"FROM habitat_type_syntaxon", []string{"typology_id", "code"}},
