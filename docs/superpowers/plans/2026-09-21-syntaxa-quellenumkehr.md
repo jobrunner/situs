@@ -85,8 +85,8 @@ In `pipelines/eurovegchecklist/test_xlsx_to_csv.py` ergänzen (die Datei nutzt `
         self.assertEqual(xlsx_to_csv.col_index("EF12"), 135)
 
     def test_read_sheet_haelt_luecken_offen(self):
-        # Eine Zeile, in der Excel die zweite Zelle weglaesst: B fehlt, C ist
-        # belegt. Positionelles Lesen wuerde "x" nach B schieben.
+        # A row where Excel omits the second cell: B is missing, C is
+        # present. Positional reading would shift "x" into B's place.
         sheet = (
             '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
             '<sheetData>'
@@ -113,7 +113,7 @@ Die Datei hat bereits Hilfsfunktionen zum Bauen einer XLSX aus Zeilen-Dicts. Fal
 
 ```python
     def _write_xlsx_with_sheet(self, sheet_xml):
-        """Schreibt eine minimale XLSX mit genau diesem sheet1.xml."""
+        """Writes a minimal XLSX with exactly this sheet1.xml."""
         path = os.path.join(self.tmp, "sheet.xlsx")
         with zipfile.ZipFile(path, "w") as zf:
             zf.writestr(
@@ -149,17 +149,17 @@ CSV_HEADERS = {
 `primary_code` durch `split_code` ersetzen (Docstring anpassen, `_CODE_CELL_RE` bekommt eine zweite Gruppe):
 
 ```python
-# Die Code-Zelle der echten FloraVeg-Ausgabe traegt neben dem primaeren
-# EVC-Code den historischen EEA-Code in Klammern, z. B. "AA01A (PAP-01A)".
-# Dieser Klammerteil IST das Codeschema der EEA-EUNIS-Quelle und damit der
-# exakte Join-Schluessel zwischen beiden Quellen — deshalb wird er
-# ausgegeben statt verworfen.
+# The code cell of the real FloraVeg output carries the historical EEA
+# code in parentheses alongside the primary EVC code, e.g. "AA01A
+# (PAP-01A)". That parenthesized part IS the code scheme of the EEA-EUNIS
+# source and therefore the exact join key between the two sources — that
+# is why it is emitted instead of discarded.
 _CODE_CELL_RE = re.compile(r"^(\S+)\s*\(([^)]*)\)\s*$")
 
 
 def split_code(cell):
-    """Zerlegt eine Code-Zelle in (Primaercode, Altcode). Eine Zelle ohne
-    Klammerteil liefert einen leeren Altcode — kein Fehler."""
+    """Splits a code cell into (primary_code, alt_code). A cell without a
+    parenthesized part yields an empty alt_code — not an error."""
     cell = cell.strip()
     m = _CODE_CELL_RE.match(cell)
     if m:
@@ -171,9 +171,9 @@ Zellbezug auswerten:
 
 ```python
 def col_index(ref):
-    """Rechnet den Spaltenteil eines Zellbezugs ("AB7") in einen
-    0-basierten Spaltenindex um. Excel laesst leere Zellen in der XML weg;
-    ohne diese Umrechnung verschiebt eine Luecke alle folgenden Spalten."""
+    """Converts the column part of a cell reference ("AB7") into a
+    0-based column index. Excel omits empty cells from the XML; without
+    this conversion, a gap would shift every following column."""
     n = 0
     for ch in ref:
         if not ch.isalpha():
@@ -396,7 +396,8 @@ func TestMigrateFuegtSyntaxonSpaltenHinzu(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	// Ein Index, der die vier Spalten noch nicht hat: neu anlegen ohne sie.
+	// An index that does not yet have the four columns: create it fresh
+	// without them.
 	if _, err := db.ExecContext(context.Background(), `DROP TABLE syntaxon`); err != nil {
 		t.Fatalf("DROP: %v", err)
 	}
@@ -454,17 +455,17 @@ CREATE TABLE IF NOT EXISTS syntaxon (
   name              TEXT NOT NULL,
   author            TEXT NOT NULL DEFAULT '',
   parent_id         TEXT NOT NULL DEFAULT '',
-  -- Der EEA-EUNIS-Code desselben Syntaxons, aus der Klammer der
-  -- FloraVeg-Code-Zelle. Er ist der Join-Schluessel zwischen beiden Quellen
-  -- und bleibt im Index, damit ein Client einen alten Code aufloesen kann.
+  -- The EEA-EUNIS code of the same syntaxon, from the parenthesized part
+  -- of the FloraVeg code cell. It is the join key between the two sources
+  -- and stays in the index so a client can resolve an old code.
   alt_code          TEXT NOT NULL DEFAULT '',
   source            TEXT NOT NULL DEFAULT 'evc'
                     CHECK (source IN ('evc', 'eunis')),
   parent_provenance TEXT NOT NULL DEFAULT 'official'
                     CHECK (parent_provenance IN ('official', 'derived')),
-  -- Nur auf Formationszeilen gesetzt: die Gruppe ist eine Eigenschaft der
-  -- Formation, und eine Korrektur muesste sonst ueber 1882 Zeilen nachgezogen
-  -- werden. Ein Filter joint ueber hoechstens drei Ebenen nach oben.
+  -- Only set on formation rows: the group is a property of the formation,
+  -- and a correction would otherwise have to be propagated across 1882
+  -- rows. A filter joins at most three levels upward.
   life_form_group   TEXT NOT NULL DEFAULT ''
                     CHECK (life_form_group IN ('', 'phanerogam', 'bryophyte_lichen', 'algae'))
 );
@@ -485,16 +486,16 @@ In `internal/adapters/sqlite/db.go`, in `addMissingColumns`, nach dem `habitat_d
 	if err != nil {
 		return fmt.Errorf("checking syntaxon columns: %w", err)
 	}
-	// Jede ALTER-Anweisung traegt ihren CHECK mit: ein migrierter Index soll
-	// keine Werte annehmen, die schema.sql einem neuen verbietet — der
-	// Unterschied wuerde erst auf der Leitung auffallen.
-	// Die Vorgabewerte sind LEER, nicht 'evc'/'official'. Ein bestehender
-	// Index traegt 1049 Zeilen aus der EEA-Quelle und 1005 per
-	// Namensabgleich gesetzte Elternteile; eine Vorgabe 'evc'/'official'
-	// wuerde genau die als EVC-gefuehrt und quellenbelegt ausweisen, und die
-	// Zusage "abgeleitete Elternteile sind an derived erkennbar" waere fuer
-	// jeden migrierten, aber nicht neu ingestierten Index gebrochen. Der
-	// CHECK laesst '' deshalb ausdruecklich zu; der Ingest setzt die Werte.
+	// Each ALTER statement carries its CHECK along: a migrated index must
+	// not accept values that schema.sql forbids a new one — the mismatch
+	// would only surface in production.
+	// The migration defaults are EMPTY, not 'evc'/'official'. An existing
+	// index carries 1049 rows from the EEA source and 1005 parents set by
+	// name matching; defaulting to 'evc'/'official' would label exactly
+	// those as EVC-sourced and source-backed, and the promise "a derived
+	// parent is recognizable by derived" would be broken for every
+	// migrated-but-not-freshly-ingested index. The CHECK therefore
+	// explicitly allows ''; the ingest sets the real values.
 	for _, c := range []struct{ name, ddl string }{
 		{"alt_code", `ALTER TABLE syntaxon ADD COLUMN alt_code TEXT NOT NULL DEFAULT ''`},
 		{"source", `ALTER TABLE syntaxon ADD COLUMN source TEXT NOT NULL DEFAULT ''
@@ -511,8 +512,9 @@ In `internal/adapters/sqlite/db.go`, in `addMissingColumns`, nach dem `habitat_d
 			return fmt.Errorf("adding syntaxon.%s: %w", c.name, err)
 		}
 	}
-	// Erst hier, nicht in schema.sql: das Schema wird VOR dieser Migration
-	// angewendet, und dort gibt es alt_code auf einem Altindex noch nicht.
+	// Only here, not in schema.sql: the schema is applied BEFORE this
+	// migration, and alt_code does not exist yet on an old index at that
+	// point.
 	if _, err := db.ExecContext(ctx,
 		`CREATE INDEX IF NOT EXISTS idx_syntaxon_alt_code ON syntaxon(alt_code)`); err != nil {
 		return fmt.Errorf("creating idx_syntaxon_alt_code: %w", err)
@@ -578,8 +580,8 @@ Der Kommentar über `migratedColumns` erklärt bereits, warum: ein Index aus ein
 In `internal/domain/habitat.go`:
 
 ```go
-// Die Raenge der Syntaxa-Hierarchie. "formation" ist die Wurzel (die
-// Sektionen A-Y der EuroVegChecklist) und der einzige Rang mit leerem
+// The ranks of the syntaxa hierarchy. "formation" is the root (the
+// sections A-Y of the EuroVegChecklist) and the only rank with an empty
 // ParentID.
 const (
 	SyntaxonRankFormation = "formation"
@@ -588,7 +590,7 @@ const (
 	SyntaxonRankAlliance  = "alliance"
 )
 
-// Die Quelle einer Syntaxon-ZEILE, nicht die ihrer Fachdaten.
+// The source of a syntaxon ROW, not of its factual data.
 const (
 	SyntaxonSourceEVC   = "evc"
 	SyntaxonSourceEUNIS = "eunis"
@@ -612,20 +614,20 @@ type Syntaxon struct {
 	Author   string
 	ParentID string
 
-	// AltCode ist der EEA-EUNIS-Code desselben Syntaxons. Leer fuer
-	// Formationen und fuer Einheiten, die nur eine der beiden Quellen kennt.
+	// AltCode is the EEA-EUNIS code of the same syntaxon. Empty for
+	// formations and for units known to only one of the two sources.
 	AltCode string
 
-	// Source benennt die Quelle der Zeile: SyntaxonSourceEVC oder
+	// Source names the source of the row: SyntaxonSourceEVC or
 	// SyntaxonSourceEUNIS.
 	Source string
 
-	// ParentProvenance unterscheidet ein Elternteil aus der Quelle
-	// (ParentProvenanceOfficial) von einem abgeleiteten
-	// (ParentProvenanceDerived). Bei leerem ParentID immer official.
+	// ParentProvenance distinguishes a parent taken from the source
+	// (ParentProvenanceOfficial) from a derived one
+	// (ParentProvenanceDerived). Always official when ParentID is empty.
 	ParentProvenance string
 
-	// LifeFormGroup ist nur auf Formationszeilen gesetzt.
+	// LifeFormGroup is only set on formation rows.
 	LifeFormGroup string
 }
 ```
@@ -687,7 +689,7 @@ In `internal/adapters/sqlite/ingest_tx_test.go`:
 
 ```go
 func TestUpsertSyntaxonSchreibtAlleFelder(t *testing.T) {
-	db := newTestDB(t) // bestehender Helfer des Pakets
+	db := newTestDB(t) // existing helper of the package
 	tx, err := db.Begin(context.Background())
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
@@ -757,9 +759,9 @@ func TestRelinkSyntaxonSchreibtKanteUm(t *testing.T) {
 }
 
 func TestRelinkSyntaxonIstIdempotentBeiBestehenderZielkante(t *testing.T) {
-	// Beide Kanten existieren schon: U36 -> ASP-03 UND U36 -> KC03. Das
-	// Umschreiben darf nicht am Primaerschluessel scheitern, sondern muss die
-	// Quellkante schlicht entfernen.
+	// Both edges already exist: U36 -> ASP-03 AND U36 -> KC03. The
+	// rewrite must not fail on the primary key — it must simply remove
+	// the source edge.
 	db := newTestDB(t)
 	tx, _ := db.Begin(context.Background())
 	key := domain.HabitatTypeKey{Typology: domain.TypologyEUNIS2021, Code: "U36"}
@@ -815,24 +817,25 @@ Expected: FAIL — die Methoden `SetSyntaxonParent`, `RelinkSyntaxon`, `Syntaxon
 In `internal/ports/output/repository.go`, in `IngestTx`, `UpsertSyntaxonAuthor` ersetzen durch:
 
 ```go
-	// SetSyntaxonParent setzt Elternteil und dessen Provenienz auf einer
-	// bereits geschriebenen Zeile. Getrennt von UpsertSyntaxon, weil das
-	// Elternteil der 16 EEA-eigenen Einheiten erst feststeht, nachdem die
-	// FloraVeg-Zeilen und die Geschwister im Index sind.
+	// SetSyntaxonParent sets the parent and its provenance on an already
+	// written row. Separate from UpsertSyntaxon because the parent of the
+	// 16 EEA-only units is only known once the FloraVeg rows and their
+	// siblings are in the index.
 	SetSyntaxonParent(id, parentID, provenance string) error
-	// RelinkSyntaxon schreibt jede habitat_type_syntaxon-Kante von der
-	// Syntaxon-ID from auf to um. Traegt ein Habitattyp beide Kanten schon,
-	// wird die from-Kante entfernt statt die Zielkante doppelt anzulegen.
+	// RelinkSyntaxon rewrites every habitat_type_syntaxon edge from
+	// syntaxon id from to to. If a habitat type already carries both
+	// edges, the from edge is removed instead of duplicating the target
+	// edge.
 	RelinkSyntaxon(from, to string) error
 ```
 
 und in `Repository`:
 
 ```go
-	// SyntaxonIDsByAltCode bildet den EEA-Altcode auf die Syntaxon-ID ab.
-	// Der Syntaxa-Ingest loest damit die Habitattyp-Kanten der EEA-Quelle
-	// auf die FloraVeg-Primaercodes auf. Altcode-freie Zeilen fehlen in der
-	// Karte.
+	// SyntaxonIDsByAltCode maps the EEA alt code to the syntaxon id. The
+	// syntaxa ingest uses it to resolve the habitat-type edges of the EEA
+	// source onto the FloraVeg primary codes. Rows without an alt code are
+	// absent from the map.
 	SyntaxonIDsByAltCode(ctx context.Context) (map[string]string, error)
 ```
 
@@ -863,10 +866,10 @@ func (t *tx) SetSyntaxonParent(id, parentID, provenance string) error {
 	return err
 }
 
-// Zwei Anweisungen, nicht eine: ein UPDATE wuerde am Primaerschluessel
-// scheitern, wenn der Habitattyp beide Kanten schon traegt (bei ASP-03/KC03
-// ist genau das der Fall). Erst die Zielkanten anlegen, wo sie fehlen, dann
-// die Quellkanten entfernen.
+// Two statements, not one: an UPDATE would fail on the primary key if the
+// habitat type already carries both edges (exactly the case for
+// ASP-03/KC03). First add the target edges where they are missing, then
+// remove the source edges.
 func (t *tx) RelinkSyntaxon(from, to string) error {
 	if _, err := t.tx.ExecContext(t.ctx,
 		`INSERT OR IGNORE INTO habitat_type_syntaxon (typology_id, code, syntaxon_id)
@@ -1138,15 +1141,15 @@ Expected: FAIL — `undefined: application.IngestSyntaxa`.
 `internal/application/syntaxa_ingest.go` anlegen. Die Datei ersetzt `syntaxa_hierarchy_ingest.go`; `longestPrefixMatch` wird aus ihr übernommen (Task 7 braucht es weiter), `ingestHierarchyRows` und `IngestSyntaxaHierarchy` entfallen.
 
 ```go
-// syntaxa_ingest.go ist der einzige Ort, an dem Syntaxa in den Index kommen.
-// Vorher lagen die Schritte in zwei Funktionen und zwei Transaktionen, weil
-// der Namensabgleich die EUNIS-Zeilen vorfinden musste; seit FloraVeg die
-// Primaerquelle ist, ist die Abhaengigkeit umgekehrt und die Aufteilung war
-// nur noch eine Gelegenheit, die Reihenfolge falsch zu bekommen.
+// syntaxa_ingest.go is the only place syntaxa enter the index. The steps
+// used to live in two functions and two transactions, because name
+// matching had to find the EUNIS rows first; now that FloraVeg is the
+// primary source, the dependency is reversed, and the split was only an
+// opportunity to get the ordering wrong.
 package application
 
-// SyntaxaReport zaehlt, was ein Syntaxa-Ingest geschrieben und was er nicht
-// entscheiden konnte. Jede Zahl ist gemessen, keine ist geschaetzt.
+// SyntaxaReport counts what a syntaxa ingest wrote and what it could not
+// decide. Every number is measured, none is estimated.
 type SyntaxaReport struct {
 	FormationsWritten int
 	ClassesWritten    int
@@ -1160,10 +1163,10 @@ type SyntaxaReport struct {
 	ParentsByName  int
 	ParentsDerived int
 
-	// Orphans sind Zeilen, die nach allen Schritten ohne Elternteil blieben
-	// und keine Formation sind. Ein nichtleerer Wert laesst den Ingest
-	// scheitern: eine Kette, die an einer Stelle reisst, macht den
-	// Orientierungsdienst an dieser Stelle wertlos.
+	// Orphans are rows that, after every step, remained without a parent
+	// and are not a formation. A non-empty value fails the ingest: a
+	// chain that breaks at one point makes the orientation service
+	// worthless at exactly that point.
 	Orphans []string
 
 	AltCodeCollisions  []string
@@ -1179,9 +1182,9 @@ const (
 	fileSyntaxonLinks = "habitat_type_syntaxa.csv"
 )
 
-// formationOf liefert die Formations-ID einer Klasse: den ersten Buchstaben
-// ihres Codes. Die Ebene steckt im Code selbst (Klasse "CA" gehoert zu
-// Sektion "C"), genau wie Rang und Elternteil — nie aus dem Namen geraten.
+// formationOf returns a class's formation id: the first letter of its
+// code. The level lives in the code itself (class "CA" belongs to
+// section "C"), just like rank and parent — never guessed from the name.
 func formationOf(classCode string) string {
 	if classCode == "" {
 		return ""
@@ -1259,7 +1262,7 @@ func TestIngestSyntaxaSchreibtNurEeaEinheitenOhneFloraVegGegenstueck(t *testing.
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations, hierarchy: minimalHierarchy,
-		// TST-01A hat ein FloraVeg-Gegenstueck (CA01A), EIG-01A nicht.
+		// TST-01A has a FloraVeg counterpart (CA01A), EIG-01A does not.
 		eunis: "id,rank,name,parent_id\n" +
 			"TST-01A,alliance,Testverband Autor 1970,\n" +
 			"EIG-01A,alliance,Eigenverband Autor 1990,\n",
@@ -1343,9 +1346,9 @@ func TestIngestSyntaxaMeldetKanteAufUnbekanntesSyntaxon(t *testing.T) {
 }
 
 func TestIngestSyntaxaFuehrtEeaOrdnungMitFloraVegGegenstueckZusammen(t *testing.T) {
-	// Der ASP-03/KC03-Fall: eine EEA-Ordnung, die FloraVeg identisch fuehrt.
-	// Die Kante des Habitattyps muss erhalten bleiben, nur auf den
-	// Primaercode zeigen.
+	// The ASP-03/KC03 case: an EEA order that FloraVeg carries
+	// identically. The habitat type's edge must survive, just pointing
+	// at the primary code.
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations, hierarchy: minimalHierarchy,
@@ -1380,9 +1383,10 @@ Expected: FAIL — `EunisOnly = 0, erwartet 1`, `LinksWritten = 0`, und die Kant
 In `writeSyntaxa` nach dem Hierarchieschritt:
 
 ```go
-	// Schritt 3: die EEA-Einheiten, die FloraVeg nicht fuehrt. Alle anderen
-	// vertritt bereits ihre FloraVeg-Zeile — sie doppelt zu schreiben wuerde
-	// dasselbe Syntaxon unter zwei IDs in den Index legen.
+	// Step 3: the EEA units that FloraVeg does not carry. Every other
+	// unit is already represented by its FloraVeg row — writing it a
+	// second time would put the same syntaxon into the index under two
+	// ids.
 	byAlt := map[string]string{}
 	for _, r := range rows {
 		if r.altCode != "" {
@@ -1392,8 +1396,8 @@ In `writeSyntaxa` nach dem Hierarchieschritt:
 	if err := writeEunisOnly(ctx, tx, dir, byAlt, rep); err != nil {
 		return err
 	}
-	// Schritt 4: die Kanten. Eine EEA-Syntaxon-ID mit FloraVeg-Gegenstueck
-	// wird auf den Primaercode aufgeloest; eine ohne bleibt, wie sie ist.
+	// Step 4: the edges. An EEA syntaxon id with a FloraVeg counterpart
+	// gets resolved to the primary code; one without stays as it is.
 	return writeLinks(ctx, tx, dir, byAlt, rep)
 ```
 
@@ -1439,7 +1443,7 @@ func TestIngestSyntaxaFindetElternteilPerNamensabgleich(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations, hierarchy: minimalHierarchy,
-		// Name deckt sich mit FloraVegs "Testverband", Altcode nicht.
+		// Name matches FloraVeg's "Testverband", alt code does not.
 		eunis: "id,rank,name,parent_id\nAND-01A,alliance,Testverband Morariu 1957,\n",
 		links: "typology_id,code,syntaxon_id\n",
 	})
@@ -1465,8 +1469,8 @@ func TestIngestSyntaxaLeitetElternteilAusGeschwisterkonsensAb(t *testing.T) {
 			"CA02A,alliance,Nachbarverband eins,A 1,CA02,NAR-01A\n" +
 			"CA02B,alliance,Nachbarverband zwei,A 2,CA02,NAR-01B\n" +
 			"CA02,order,Nachbarordnung,A 0,CA,NAR-01\n",
-		// NAR-01E hat keinen Altcode-Partner und keinen Namenstreffer, aber
-		// die Geschwister NAR-01A/B zeigen einhellig auf CA02.
+		// NAR-01E has no alt-code partner and no name match, but siblings
+		// NAR-01A/B unanimously point at CA02.
 		eunis: "id,rank,name,parent_id\n" +
 			"NAR-01A,alliance,Nachbarverband eins A 1,\n" +
 			"NAR-01B,alliance,Nachbarverband zwei A 2,\n" +
@@ -1495,8 +1499,8 @@ func TestIngestSyntaxaLeitetNichtsAusWiderspruechlicherGruppeAb(t *testing.T) {
 			"CA02A,alliance,Erster,A 1,CA02,QUI-01A\n" +
 			"RA02,order,Andere Ordnung,A 9,RA,QUI-02\n" +
 			"RA02A,alliance,Zweiter,A 2,RA02,QUI-01B\n",
-		// QUI-01A -> CA02, QUI-01B -> RA02: die Gruppe QUI-01 ist
-		// widerspruechlich, QUI-01F darf nichts erben.
+		// QUI-01A -> CA02, QUI-01B -> RA02: group QUI-01 is
+		// contradictory, QUI-01F must not inherit anything.
 		eunis: "id,rank,name,parent_id\n" +
 			"QUI-01A,alliance,Erster A 1,\n" +
 			"QUI-01B,alliance,Zweiter A 2,\n" +
@@ -1516,7 +1520,7 @@ func TestIngestSyntaxaScheitertAnVerbleibenderWaise(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations, hierarchy: minimalHierarchy,
-		// Kein Altcode-Partner, kein Namenstreffer, kein Geschwister.
+		// No alt-code partner, no name match, no sibling.
 		eunis: "id,rank,name,parent_id\nEIN-09Z,alliance,Voellig Unbekanntes 1900,\n",
 		links: "typology_id,code,syntaxon_id\n",
 	})
@@ -1551,7 +1555,7 @@ func TestIngestSyntaxaMeldetMehrdeutigenNamensabgleich(t *testing.T) {
 		hierarchy: minimalHierarchy +
 			"CA02,order,Zweite Ordnung,A 0,CA,ZWE-01\n" +
 			"CA02A,alliance,Testverband,Anderer Autor 1975,CA02,ZWE-01A\n",
-		// "Testverband" kommt in FloraVeg zweimal vor, gleich lang: kein Raten.
+		// "Testverband" occurs twice in FloraVeg, same length: no guessing.
 		eunis: "id,rank,name,parent_id\nMEH-01A,alliance,Testverband Dritter 1980,\n",
 		links: "typology_id,code,syntaxon_id\n",
 	})
@@ -1575,15 +1579,16 @@ Expected: FAIL — `ParentsByName = 0`, `ParentsDerived = 0`, und die Waisen-Tes
 `longestPrefixMatch` unverändert aus der gelöschten `syntaxa_hierarchy_ingest.go` übernehmen (Wortgrenzen-Prüfung und Mehrdeutigkeits-Erkennung bleiben, wie sie sind).
 
 ```go
-// siblingConsensus liefert das Elternteil, auf das ALLE Geschwister der
-// EEA-Ordnungsgruppe von id einhellig zeigen — oder "", wenn die Gruppe
-// widerspruechlich oder leer ist. Die Gruppe ist die ID ohne den letzten
-// Buchstaben ("NAR-01E" -> "NAR-01").
+// siblingConsensus returns the parent that ALL siblings of id's EEA order
+// group unanimously point to — or "", if the group is contradictory or
+// empty. The group is the id without its last letter ("NAR-01E" ->
+// "NAR-01").
 //
-// Gemessen ueber alle 287 EEA-Ordnungsgruppen: 285 einheitlich, eine
-// widerspruechlich (QUI-01, ohne Waise), eine ganz ohne gesetztes Elternteil
-// (THE-01, deren Waise der Altcode-Join loest). Die Ableitung ist damit die
-// engste Regel, die die zehn offenen Faelle schliesst, ohne zu raten.
+// Measured over all 287 EEA order groups: 285 consistent, one
+// contradictory (QUI-01, without an orphan), one with no parent set at
+// all (THE-01, whose orphan the alt-code join resolves). The derivation
+// is thus the tightest rule that closes the ten open cases without
+// guessing.
 func siblingConsensus(id string, parents map[string]string) string {
 	group, ok := eeaGroup(id)
 	if !ok {
@@ -1608,9 +1613,9 @@ func siblingConsensus(id string, parents map[string]string) string {
 	return found
 }
 
-// eeaGroup schneidet den Verbandsbuchstaben einer EEA-ID ab. Nur eine ID der
-// Form XXX-NNL hat eine Gruppe; alles andere hat keine, und dann wird nichts
-// abgeleitet.
+// eeaGroup strips the alliance letter off an EEA id. Only an id of the
+// form XXX-NNL has a group; anything else has none, and then nothing
+// gets derived.
 func eeaGroup(id string) (string, bool) {
 	if len(id) < 2 {
 		return "", false
@@ -1631,10 +1636,10 @@ func eeaGroup(id string) (string, bool) {
 Die Karte, die `siblingConsensus` bekommt, bildet **EEA-ID → Elternteil** und entsteht aus den Hierarchiezeilen mit Altcode (`altCode` → `parentCode`), ergänzt um die bereits in diesem Schritt gesetzten. Danach:
 
 ```go
-	// Jede Nicht-Formations-Zeile ohne Elternteil laesst den Ingest
-	// scheitern. Ein Informationsdienst, dessen Navigationskette an einer
-	// Stelle reisst, ist an dieser Stelle wertlos — das darf keine Warnung
-	// sein, die man ueberliest.
+	// Any non-formation row without a parent fails the ingest. An
+	// information service whose navigation chain breaks at one point is
+	// worthless at exactly that point — that must not be a warning one
+	// skims past.
 	if len(rep.Orphans) > 0 {
 		sort.Strings(rep.Orphans)
 		return fmt.Errorf("%d syntaxa have no parent after every step: %s",
@@ -1715,7 +1720,7 @@ func TestIngestCSVSchreibtKeineSyntaxaMehr(t *testing.T) {
 		"typology_id,code,level,name_en,parent_code,priority\neunis@2021,T1,1,Wald,,\n")
 	writeCSV(t, dir, "crosswalks.csv",
 		"from_typology,from_code,to_typology,to_code,qualifier\n")
-	// Die Dateien liegen da, duerfen aber von IngestCSV nicht mehr gelesen werden.
+	// The files are present but must no longer be read by IngestCSV.
 	writeCSV(t, dir, "syntaxa.csv", "id,rank,name,parent_id\nX-01A,alliance,Darf nicht rein,\n")
 	writeCSV(t, dir, "habitat_type_syntaxa.csv", "typology_id,code,syntaxon_id\neunis@2021,T1,X-01A\n")
 
@@ -1735,7 +1740,7 @@ In `internal/adapters/http/habitat_test.go` (Muster: der bestehende Test für `a
 
 ```go
 func TestHabitatTypeJSONTraegtSyntaxonHerkunftsfelder(t *testing.T) {
-	// Fixture-Syntaxon mit Altcode, Quelle und abgeleitetem Elternteil.
+	// Fixture syntaxon with alt code, source, and a derived parent.
 	body := getJSON(t, srv, "/v1/habitat-type/eunis@2021/T11")
 	syn := body["syntaxa"].([]any)[0].(map[string]any)
 	for field, want := range map[string]any{
@@ -1770,11 +1775,11 @@ In `internal/application/ingest.go`: aus `ingestAll` die Aufrufe von `ingestSynt
 In `cmd/situs/ingest.go` den Aufruf von `IngestSyntaxaHierarchy` ersetzen:
 
 ```go
-	// Laeuft nach IngestCSV (die Habitattypen muessen fuer die Kanten-
-	// Pruefung im Index sein) und vor den Localization-Schritten. Anders als
-	// bisher ist die Hierarchie keine Ergaenzung, die fehlen darf: ohne sie
-	// entsteht ein Index ohne jede Syntaxa-Hierarchie, und der Ingest
-	// scheitert statt ihn auszuliefern.
+	// Runs after IngestCSV (the habitat types must be in the index for
+	// the edge check) and before the localization steps. Unlike before,
+	// the hierarchy is not an optional addition: without it the index
+	// ends up with no syntaxa hierarchy at all, so the ingest fails
+	// instead of shipping it.
 	syntaxa, err := application.IngestSyntaxa(ctx, db, csvDir)
 	if err != nil {
 		return fmt.Errorf("ingesting syntaxa from %q: %w", csvDir, err)
@@ -1793,18 +1798,18 @@ type SyntaxonRef struct {
 	Author   string `json:"author,omitempty"`
 	ParentID string `json:"parent_id,omitempty"`
 
-	// AltCode ist der EEA-EUNIS-Code desselben Syntaxons — ein Client mit
-	// einem alten Code kann damit umstellen, ohne ihn zu erraten.
+	// AltCode is the EEA-EUNIS code of the same syntaxon — a client
+	// holding an old code can switch over with it, without guessing.
 	AltCode string `json:"alt_code,omitempty"`
-	// Source ist "evc" oder "eunis": welche Quelle diese Zeile fuehrt.
+	// Source is "evc" or "eunis": which source this row carries.
 	Source string `json:"source,omitempty"`
-	// ParentProvenance ist "official" oder "derived". Ein abgeleitetes
-	// Elternteil wird nie als Quellaussage ausgegeben.
+	// ParentProvenance is "official" or "derived". A derived parent is
+	// never presented as a source-backed statement.
 	ParentProvenance string `json:"parent_provenance,omitempty"`
-	// LifeFormGroup ist nur auf Formationszeilen gefuellt, in jeder heute
-	// existierenden Antwort also leer. Das Feld steht hier schon, weil
-	// Teilprojekt B die Formationen als []SyntaxonRef ausliefert und darauf
-	// filtert.
+	// LifeFormGroup is only filled on formation rows, so empty in every
+	// response that exists today. The field is here already because
+	// sub-project B delivers the formations as []SyntaxonRef and filters
+	// on it.
 	LifeFormGroup string `json:"life_form_group,omitempty"`
 }
 ```
@@ -1910,12 +1915,13 @@ git commit -m "feat(ingest,api): IngestSyntaxa verdrahten, Herkunftsfelder ausli
 `internal/adapters/sqlite/hierarchy_integrity_test.go` — er baut einen Index aus Fixtures (kein Verlass auf ein Artefakt im Arbeitsverzeichnis, sonst ist der Test in CI wertlos) und prüft die zentrale Zusage:
 
 ```go
-// Die Zusage aus dem Spec als Test: keine Zeile ausser den Formationen ohne
-// Elternteil, und jede erreicht eine Formation in hoechstens drei Schritten.
+// The promise from the spec as a test: no row except the formations is
+// without a parent, and every one reaches a formation in at most three
+// steps.
 func TestHierarchieHatKeineWaisen(t *testing.T) {
 	db := newTestDB(t)
-	seedHierarchy(t, db) // Formation C, Klasse CA, Ordnung CA01, Verband CA01A,
-	                     // plus eine EEA-eigene Zeile mit abgeleitetem Elternteil
+	seedHierarchy(t, db) // Formation C, class CA, order CA01, alliance CA01A,
+	                     // plus one EEA-only row with a derived parent
 
 	rows, err := db.QueryContext(context.Background(),
 		`SELECT id FROM syntaxon WHERE rank <> 'formation' AND parent_id = ''`)

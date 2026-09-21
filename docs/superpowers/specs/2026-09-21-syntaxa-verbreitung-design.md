@@ -134,8 +134,8 @@ verhindern.
 Deshalb zwei Tabellen:
 
 ```sql
--- Eine Zeile je belegter Zelle. Absence ist die Abwesenheit einer Zeile,
--- genau wie bei species_distribution.
+-- One row per populated cell. Absence is the absence of a row, exactly
+-- as with species_distribution.
 CREATE TABLE IF NOT EXISTS syntaxon_distribution (
   syntaxon_id TEXT NOT NULL,
   area_scheme TEXT NOT NULL,
@@ -146,10 +146,10 @@ CREATE TABLE IF NOT EXISTS syntaxon_distribution (
 CREATE INDEX IF NOT EXISTS idx_syntaxon_distribution_area
   ON syntaxon_distribution(area_scheme, area_code);
 
--- Für welche Syntaxa die Quelle überhaupt eine Aussage macht. OHNE diese
--- Tabelle ist "kommt nicht vor" nicht von "niemand hat nachgesehen" zu
--- unterscheiden — und ein Verband mit 136 leeren Zellen sieht genauso aus
--- wie einer, der in der Quelle fehlt.
+-- Which syntaxa the source makes any statement about at all. WITHOUT
+-- this table, "does not occur" cannot be distinguished from "nobody
+-- checked" — and an alliance with 136 empty cells would look exactly
+-- like one missing from the source.
 CREATE TABLE IF NOT EXISTS syntaxon_distribution_coverage (
   syntaxon_id TEXT NOT NULL,
   area_scheme TEXT NOT NULL,
@@ -210,12 +210,12 @@ einzeln — `pipelines/evc-distribution/` kommt dort dazu.
 // internal/application/syntaxon_distribution_ingest.go (neu)
 
 type SyntaxonDistributionReport struct {
-	Written        int // Zeilen in syntaxon_distribution
+	Written        int // rows in syntaxon_distribution
 	Verified       int
 	Uncertain      int
-	Covered        int      // Syntaxa mit Aussage (Coverage-Zeilen)
+	Covered        int      // syntaxa with a statement (coverage rows)
 	Territories    int
-	UnknownSyntaxa []string // Codes der Quelle, die der Index nicht kennt
+	UnknownSyntaxa []string // source codes the index does not know
 }
 
 func IngestSyntaxonDistribution(ctx context.Context, repo output.Repository, csvPath, areaCSVPath string) (SyntaxonDistributionReport, error)
@@ -251,9 +251,10 @@ es nicht.
 `SyntaxonDetail` (Teilprojekt B) wächst um ein Feld:
 
 ```go
-// Distribution ist die Verbreitungsaussage der Quelle. Nil, wenn für dieses
-// Syntaxon keine Aussage vorliegt (Coverage fehlt) — dann ist NICHTS über
-// sein Vorkommen bekannt, was von "kommt nirgends vor" streng zu trennen ist.
+// Distribution is the source's distribution statement. Nil when no
+// statement exists for this syntaxon (coverage is missing) — then
+// NOTHING is known about its occurrence, which is strictly distinct
+// from "occurs nowhere".
 Distribution *SyntaxonDistribution `json:"distribution,omitempty"`
 
 type SyntaxonDistribution struct {

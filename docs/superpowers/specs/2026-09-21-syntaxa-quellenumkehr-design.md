@@ -141,27 +141,27 @@ type Syntaxon struct {
 	Author   string
 	ParentID string
 
-	// AltCode ist der EEA-EUNIS-Code desselben Syntaxons, aus der
-	// Klammerangabe der FloraVeg-Code-Zelle. Leer für Formationen und für
-	// Einheiten, die nur eine der beiden Quellen kennt.
+	// AltCode is the EEA-EUNIS code of the same syntaxon, from the
+	// parenthesized part of the FloraVeg code cell. Empty for formations
+	// and for units known to only one of the two sources.
 	AltCode string
 
-	// Source benennt die Quelle der ZEILE: "evc" (FloraVeg/
-	// EuroVegChecklist) oder "eunis" (nur von der EEA geführt).
+	// Source names the source of the ROW: "evc" (FloraVeg/
+	// EuroVegChecklist) or "eunis" (carried only by the EEA).
 	Source string
 
-	// ParentProvenance ist "official", wenn ParentID aus dem Codemuster oder
-	// dem Namensabgleich stammt, und "derived", wenn er aus dem
-	// Geschwisterkonsens abgeleitet wurde. Bei leerem ParentID bedeutungslos
-	// und dann "official".
+	// ParentProvenance is "official" when ParentID comes from the code
+	// pattern or from name matching, and "derived" when it was derived
+	// from sibling consensus. Meaningless when ParentID is empty, and
+	// then "official".
 	ParentProvenance string
 
-	// LifeFormGroup ist "phanerogam" | "bryophyte_lichen" | "algae" und wird
-	// AUSSCHLIESSLICH auf Formationszeilen gesetzt. Bewusst nicht auf jede
-	// Zeile denormalisiert: die Gruppe ist eine Eigenschaft der Formation,
-	// und eine Korrektur müsste sonst über alle 1882 Zeilen nachgezogen
-	// werden.
-	// Ein Filter joint über höchstens drei Ebenen nach oben.
+	// LifeFormGroup is "phanerogam" | "bryophyte_lichen" | "algae" and is
+	// set EXCLUSIVELY on formation rows. Deliberately not denormalized
+	// onto every row: the group is a property of the formation, and a
+	// correction would otherwise have to be propagated across all 1882
+	// rows.
+	// A filter joins at most three levels upward.
 	LifeFormGroup string
 }
 ```
@@ -173,7 +173,7 @@ zentrale prüfbare Zusage (Abschnitt 8).
 ## 5. Schema
 
 ```sql
--- syntaxon, erweitert (Migrate, nicht schema.sql-Neuanlage)
+-- syntaxon, extended (Migrate, not a fresh schema.sql creation)
 ALTER TABLE syntaxon ADD COLUMN alt_code          TEXT NOT NULL DEFAULT '';
 ALTER TABLE syntaxon ADD COLUMN source            TEXT NOT NULL DEFAULT 'evc';
 ALTER TABLE syntaxon ADD COLUMN parent_provenance TEXT NOT NULL DEFAULT 'official';
@@ -285,27 +285,27 @@ type SyntaxaHierarchyReport struct {
 	OrdersWritten     int
 	AlliancesWritten  int
 
-	// EunisOnly sind die EEA-Einheiten ohne FloraVeg-Gegenstück, die als
-	// eigene Zeilen erhalten bleiben (gemessen: 16).
+	// EunisOnly are the EEA units without a FloraVeg counterpart, kept
+	// as their own rows (measured: 16).
 	EunisOnly int
-	// LinksRemapped sind Habitattyp-Kanten, deren EEA-Syntaxon-ID über
-	// alt_code auf einen FloraVeg-Primärcode umgeschrieben wurde.
+	// LinksRemapped are habitat-type edges whose EEA syntaxon id was
+	// rewritten to a FloraVeg primary code via alt_code.
 	LinksRemapped int
-	// ParentsByName sind EEA-Waisen, deren Elternteil der Namensabgleich
-	// fand (gemessen: 6).
+	// ParentsByName are EEA orphans whose parent name matching found
+	// (measured: 6).
 	ParentsByName int
-	// ParentsDerived sind EEA-Waisen, deren Elternteil aus dem
-	// Geschwisterkonsens stammt (gemessen: 10).
+	// ParentsDerived are EEA orphans whose parent came from sibling
+	// consensus (measured: 10).
 	ParentsDerived int
-	// Orphans sind Zeilen, die nach allen Schritten ohne Elternteil blieben
-	// und keine Formation sind. Muss 0 sein — siehe Abschnitt 8.
+	// Orphans are rows that, after every step, remained without a
+	// parent and are not a formation. Must be 0 — see section 8.
 	Orphans []string
 
-	// SkippedUnknownSection zaehlt Klassenzeilen, deren Anfangsbuchstabe
-	// keine bekannte Formation ist: uebersprungen, nie erfunden.
+	// SkippedUnknownSection counts class rows whose first letter is not
+	// a known formation: skipped, never invented.
 	SkippedUnknownSection int
-	// SkippedPattern zaehlt Zeilen, deren Code in kein Rang-Muster passt
-	// (gemessen 0 von 1841 - trotzdem kein Automatismus, der das voraussetzt).
+	// SkippedPattern counts rows whose code fits no rank pattern
+	// (measured 0 of 1841 — still no automatism that assumes it).
 	SkippedPattern int
 
 	AltCodeCollisions  []string
@@ -385,13 +385,13 @@ type SyntaxonRef struct {
 	Source           string `json:"source,omitempty"`
 	ParentProvenance string `json:"parent_provenance,omitempty"`
 
-	// LifeFormGroup ist nur auf Formationszeilen gefuellt und deshalb in
-	// jeder heute existierenden Antwort leer: habitat_type_syntaxon verlinkt
-	// Verbaende und in einem Fall eine Ordnung, nie eine Formation. Das Feld
-	// steht hier trotzdem schon, weil Teilprojekt B die Formationen als
-	// []SyntaxonRef ausliefert und darauf filtert — eine Liste, die einen
-	// Filter anbietet, deren Eintraege den gefilterten Wert aber nicht
-	// nennen, waere nicht nachvollziehbar.
+	// LifeFormGroup is only filled on formation rows and therefore empty
+	// in every response that exists today: habitat_type_syntaxon links
+	// alliances, and in one case an order, never a formation. The field
+	// is here already anyway, because sub-project B delivers the
+	// formations as []SyntaxonRef and filters on it — a list that offers
+	// a filter whose entries do not name the filtered value would not be
+	// intelligible.
 	LifeFormGroup string `json:"life_form_group,omitempty"`
 }
 ```

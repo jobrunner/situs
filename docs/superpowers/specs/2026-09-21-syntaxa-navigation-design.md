@@ -43,29 +43,28 @@ für die Brotkrumenzeile drei Anfragen braucht, orientiert schlecht.
 ```go
 // internal/ports/input/services.go
 
-// SyntaxonDetail ist ein Syntaxon mit seiner Umgebung: der Weg nach oben und
-// die direkten Kinder. Beides ist Teil derselben Frage ("wo bin ich und wohin
-// kann ich?") und deshalb Teil derselben Antwort.
+// SyntaxonDetail is a syntaxon with its surroundings: the path upward and
+// the direct children. Both are part of the same question ("where am I
+// and where can I go?") and therefore part of the same answer.
 type SyntaxonDetail struct {
 	SyntaxonRef
 
-	// Ancestors ist der Weg zur Wurzel, ÄUSSERSTE zuerst (Formation, dann
-	// Klasse, dann Ordnung). Für eine Formation leer. Die Reihenfolge ist
-	// festgelegt, damit ein Client sie unverändert als Brotkrumenzeile
-	// ausgeben kann.
+	// Ancestors is the path to the root, OUTERMOST first (formation,
+	// then class, then order). Empty for a formation. The order is
+	// fixed so a client can output it unchanged as a breadcrumb line.
 	Ancestors []SyntaxonRef `json:"ancestors"`
 
-	// Children sind die direkten Kinder, nach ID sortiert. Für einen Verband
-	// leer — das ist die untere Grenze der Daten, nicht ein Fehler.
+	// Children are the direct children, sorted by id. Empty for an
+	// alliance — that is the lower bound of the data, not an error.
 	Children []SyntaxonRef `json:"children"`
 
-	// DirectHabitatTypeCount ist die Anzahl der Habitattypen, die GENAU
-	// dieses Syntaxon verlinken — nicht die seiner Nachkommen. Fuer eine
-	// Klasse oder Formation ist der Wert deshalb praktisch immer 0, weil
-	// habitat_type_syntaxon Verbaende verlinkt (und in einem Fall eine
-	// Ordnung). Der Name sagt das, damit ein Client die 0 nicht als
-	// "diese Klasse beruehrt keinen EUNIS-Typ" liest; die Aggregation ueber
-	// die Nachkommen ist eine eigene Frage (Abschnitt 10).
+	// DirectHabitatTypeCount is the number of habitat types that link
+	// EXACTLY this syntaxon — not those of its descendants. For a class
+	// or formation the value is therefore practically always 0, because
+	// habitat_type_syntaxon links alliances (and in one case an order).
+	// The name says so, so a client does not read the 0 as "this class
+	// touches no EUNIS type"; aggregating over the descendants is a
+	// separate question (section 10).
 	DirectHabitatTypeCount int `json:"direct_habitat_type_count"`
 }
 ```
@@ -169,16 +168,16 @@ Syntaxon(ctx context.Context, id, lang string) (input.SyntaxonDetail, error)
 SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string) ([]input.SyntaxonRef, error)
 
 // internal/ports/output/repository.go
-// SyntaxonChildren liefert die direkten Kinder, nach ID sortiert.
+// SyntaxonChildren returns the direct children, sorted by id.
 SyntaxonChildren(ctx context.Context, parentID string) ([]domain.Syntaxon, error)
-// SyntaxonAncestors läuft parent_id bis zur Wurzel, ÄUSSERSTE zuerst. Bricht
-// nach maxSyntaxonDepth Schritten mit einem Fehler ab: eine Zykel im
-// parent_id-Graphen ist ein Indexdefekt, kein Grund für eine Endlosschleife.
+// SyntaxonAncestors walks parent_id to the root, OUTERMOST first. Fails
+// after maxSyntaxonDepth steps: a cycle in the parent_id graph is an
+// index defect, not a reason for an infinite loop.
 SyntaxonAncestors(ctx context.Context, id string) ([]domain.Syntaxon, error)
-// SyntaxaByRank filtert nach Rang und, wenn nichtleer, nach der
-// Lebensform-Gruppe der erreichbaren Formation.
+// SyntaxaByRank filters by rank and, when non-empty, by the life-form
+// group of the reachable formation.
 SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string) ([]domain.Syntaxon, error)
-// HabitatTypeCountForSyntaxon zählt die Kanten, ohne sie zu laden.
+// HabitatTypeCountForSyntaxon counts the edges without loading them.
 HabitatTypeCountForSyntaxon(ctx context.Context, syntaxonID string) (int, error)
 ```
 
