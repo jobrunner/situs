@@ -407,6 +407,42 @@ func TestSyntaxaByRankStepBoundMatchesMaxSyntaxonAncestors(t *testing.T) {
 	}
 }
 
+// TestJedeZeileErreichtUeberDenAhnenpfadEineFormation is the design's central
+// promise, checked at the read rather than at the table: every row reaches a
+// formation through SyntaxonAncestors, and the path is outermost-first.
+// Subproject A checks the same thing at ingest time; here it is checked where
+// a user experiences it.
+func TestJedeZeileErreichtUeberDenAhnenpfadEineFormation(t *testing.T) {
+	db := openHierarchyDB(t)
+
+	all, err := db.AllSyntaxa(t.Context())
+	if err != nil {
+		t.Fatalf("AllSyntaxa: %v", err)
+	}
+	if len(all) == 0 {
+		t.Fatal("die Fixture ist leer; der Test wuerde nichts pruefen")
+	}
+	for _, s := range all {
+		ancestors, err := db.SyntaxonAncestors(t.Context(), s.ID)
+		if err != nil {
+			t.Fatalf("SyntaxonAncestors(%s): %v", s.ID, err)
+		}
+		if s.Rank == domain.SyntaxonRankFormation {
+			if len(ancestors) != 0 {
+				t.Errorf("%s ist eine Formation, hat aber Ahnen %v", s.ID, syntaxonIDs(ancestors))
+			}
+			continue
+		}
+		if len(ancestors) == 0 || ancestors[0].Rank != domain.SyntaxonRankFormation {
+			t.Errorf("%s: Ahnenpfad %v beginnt nicht bei einer Formation", s.ID, syntaxonIDs(ancestors))
+		}
+		if len(ancestors) > maxSyntaxonAncestors {
+			t.Errorf("%s: Ahnenpfad hat %d Schritte, erlaubt sind %d",
+				s.ID, len(ancestors), maxSyntaxonAncestors)
+		}
+	}
+}
+
 func TestSyntaxonRanksLiefertDieVorhandenenRaengeSortiert(t *testing.T) {
 	db := openHierarchyDB(t)
 

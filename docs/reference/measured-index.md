@@ -216,6 +216,30 @@ Umkehrung bildet der Altcode-Join `ASP-03` auf `KC03` ab, die beiden Kanten
 fallen auf eine zusammen — `U36` trägt in beiden Ständen 15 Kanten, nicht 16
 und nicht 14.
 
+### Navigation über `GET /v1/syntaxa` und `GET /v1/syntaxon/{id}`
+
+Gemessen am Referenzindex (`out/situs-neu.sqlite`, 2026-09-21), rein über die
+HTTP-Routen der Syntaxa-Navigation — beginnend bei `GET /v1/syntaxa` (ohne
+Parameter) und ausschließlich `children` aus `GET /v1/syntaxon/{id}`
+verfolgend, ohne eine einzige ID im Voraus zu kennen:
+
+| Größe | Route/Filter | Gemessen |
+|---|---|---|
+| Formationen | `GET /v1/syntaxa` | **25** |
+| Klassen | `GET /v1/syntaxa?rank=class` | **150** |
+| Ordnungen | `GET /v1/syntaxa?rank=order` | **381** |
+| Verbände | `GET /v1/syntaxa?rank=alliance` | **1326** |
+| Moos-/Flechtenverbände | `GET /v1/syntaxa?rank=alliance&life_form_group=bryophyte_lichen` | **137** |
+| Algenverbände | `GET /v1/syntaxa?rank=alliance&life_form_group=algae` | **53** |
+| über `children` erreichbare Zeilen (davon Verbände) | reines Verfolgen von `children` ab den 25 Formationen | **1882** (davon **1326** Verbände) |
+
+Jeder Verband erreicht seine Formation in genau drei Schritten (`ancestors`
+hat für jeden Verband die Länge 3, für jede andere Zeile höchstens 3); keine
+Assertion des Messskripts schlägt an. Die Summe der über `children`
+erreichbaren Zeilen (1882) deckt sich mit der SQL-gemessenen Gesamtzahl aus
+der Tabelle „Umfang des Index" oben — die HTTP-Navigation lässt keine Zeile
+aus.
+
 ## Anhang-I-Abdeckung (offener Punkt 5)
 
 | Größe | Gemessen |

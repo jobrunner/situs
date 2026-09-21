@@ -96,8 +96,17 @@ by the 2026-09-21 one; see `docs/reference/measured-index.md` for every
 figure with its query. The association-level ceiling (see "Known ceiling"
 below) is unchanged by this reversal and still applies.
 
-**Next action:** Teilprojekt B (Syntaxa-Navigation, HTTP routes over the
-hierarchy) and Teilprojekt C (Syntaxa-Verbreitung, distribution) are specced
+**Teilprojekt B (Syntaxa-Navigation) is done.** `GET /v1/syntaxa` and
+`GET /v1/syntaxon/{id}` are the two new routes over the hierarchy A builds:
+the first lists syntaxa by rank/life-form-group filter (defaulting to the 25
+formations), the second returns one syntaxon with its ancestor path
+(outermost-first) and direct children. From the 25 formations, every one of
+the **1326** alliances is reachable by following `children` alone, with no id
+known in advance — measured end to end, see
+`docs/reference/measured-index.md`. The explorer at `GET /` has its first
+rendered panel for the hierarchy alongside the existing raw-JSON view.
+
+**Next action:** Teilprojekt C (Syntaxa-Verbreitung, distribution) is specced
 but not implemented. Deliberately out of scope so far: scoring/ranking, the
 ESy rule engine, the EUNIS-2012 key, full plot classification, co-occurrence
 ranking, an Article-17 filter, and any ISO↔WGSRPD mapping (the frontend
@@ -114,7 +123,8 @@ derives the area code from GPS).
 | `docs/research/situs-eea-eunis-2021-spike.md` | What the EEA data actually provides (measured, not assumed). |
 | `docs/research/sp9-esy-spike.md` | The ESy rule set: obtainable, parsable, and its hard scope limit. |
 | `docs/superpowers/specs/2026-09-21-syntaxa-quellenumkehr-design.md` | Teilprojekt A: FloraVeg.EU as the primary syntaxa source, full formation→class→order→alliance hierarchy. **Authoritative**, revises `2026-08-30-situs-syntaxa-hierarchie-design.md`. |
-| `docs/superpowers/specs/2026-09-21-syntaxa-navigation-design.md` | Teilprojekt B (not yet implemented): the HTTP navigation routes over the hierarchy A builds. |
+| `docs/superpowers/specs/2026-09-21-syntaxa-navigation-design.md` | Teilprojekt B: the HTTP navigation routes over the hierarchy A builds. **Authoritative.** |
+| `docs/superpowers/plans/2026-09-21-syntaxa-navigation.md` | Its TDD implementation plan (6 tasks). |
 | `docs/superpowers/specs/2026-09-21-syntaxa-verbreitung-design.md` | Teilprojekt C (not yet implemented): syntaxa distribution, join over the EVC primary codes A introduces. |
 
 ## Ubiquitous Language (do not deviate)
@@ -251,6 +261,10 @@ remain stdlib-only.
   collapse the third state into `false`, and `only_in_area` must keep the
   unknowables — a list that silently drops what it cannot judge is dishonestly
   clean.
+- **`children` and `ancestors` are always in the JSON, even empty — never
+  `omitempty`, never `nil`.** A formation with no ancestors and an alliance
+  with no children are the normal case for `GET /v1/syntaxon/{id}`, not an
+  error; the field's absence would read as "unknown" where it means "none".
 - **Every non-formation syntaxon row has a parent, or the ingest fails.** A
   `syntaxon` row with `rank <> 'formation'` and an empty `parent_id` is a
   broken hierarchy, not a partial one — the whole point of the syntaxa

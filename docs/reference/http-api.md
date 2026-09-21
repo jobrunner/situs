@@ -373,8 +373,10 @@ Habitattypen, die genau dieses Syntaxon verlinken, nicht seine Nachkommen).
 `ancestors` und `children` stehen immer im JSON, auch leer — eine Formation
 ohne Ahnen und ein Verband ohne Kinder sind der Normalfall, kein Fehler. Eine
 unbekannte oder leere `{id}` ist `NOT_FOUND`, nie `INVALID_QUERY`: ein
-Pfadsegment ist keine Query. `?lang=` wird angenommen, aber deutsche
-Syntaxa-Namen sind eine eigene Runde — bis dahin antworten die Namen
+Pfadsegment ist keine Query. Eine baumelnde `parent_id` — der Index verweist
+auf eine Zeile, die es nicht gibt — ist `INTERNAL_ERROR`, kein `404`: das ist
+ein Indexdefekt, nicht eine unbekannte Anfrage. `?lang=` wird angenommen, aber
+deutsche Syntaxa-Namen sind eine eigene Runde — bis dahin antworten die Namen
 englisch.
 
 ## Die zwei Arten-Pfade
@@ -584,3 +586,8 @@ die Zahlen zu cachen. Für eine Route, die ein Client einmal beim Start ruft, is
 das richtig — ein Cache würde aus einer gemessenen Zahl eine behauptete machen,
 und ein Index kann sich unter dem laufenden Prozess ändern. Wer die Route in
 eine Schleife legt, sollte wissen, was sie kostet.
+
+`GET /v1/syntaxon/{id}` braucht bis zu vier Primärschlüsselabfragen für den
+Ahnenpfad (eine je Ebene, maximal `maxSyntaxonAncestors` plus die Zeile selbst)
+und liest die Kinder über `idx_syntaxon_parent` — kein Full-Table-Scan in
+keinem der beiden Fälle.
