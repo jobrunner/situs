@@ -90,7 +90,7 @@ class ReadSheetTest(unittest.TestCase):
         self.addCleanup(self._tmpdir.cleanup)
 
     def _write_xlsx_with_sheet(self, sheet_xml):
-        """Schreibt eine minimale XLSX mit genau diesem sheet1.xml."""
+        """Write a minimal XLSX with exactly this sheet1.xml."""
         path = os.path.join(self.tmp, "sheet.xlsx")
         with zipfile.ZipFile(path, "w") as zf:
             zf.writestr(
@@ -108,8 +108,8 @@ class ReadSheetTest(unittest.TestCase):
         return path
 
     def test_read_sheet_haelt_luecken_offen(self):
-        # Eine Zeile, in der Excel die zweite Zelle weglaesst: B fehlt, C ist
-        # belegt. Positionelles Lesen wuerde "x" nach B schieben.
+        # A row where Excel omits the second cell: B is missing, C is
+        # present. Positional reading would shift "x" into B's place.
         sheet = (
             '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
             '<sheetData>'
@@ -211,8 +211,8 @@ class ConvertTest(unittest.TestCase):
                 convert(xlsx, out_dir)
 
     def _convert_rows(self, rows):
-        """Baut eine XLSX aus Zeilen-Dicts (Schluessel Code/Name/Author) und
-        liefert das Report-Dict von convert()."""
+        """Build an XLSX from row dicts (keys Code/Name/Author) and return
+        the report dict from convert()."""
         with tempfile.TemporaryDirectory() as tmp:
             xlsx = os.path.join(tmp, "floraveg.xlsx")
             header = ["Code", "Name", "Author"]

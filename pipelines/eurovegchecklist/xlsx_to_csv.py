@@ -59,17 +59,16 @@ _CLASS_RE = re.compile(r"^[A-Z]{2}$")
 _ORDER_RE = re.compile(r"^[A-Z]{2}[0-9]{2}$")
 _ALLIANCE_RE = re.compile(r"^[A-Z]{2}[0-9]{2}[A-Z]$")
 
-# Die Code-Zelle der echten FloraVeg-Ausgabe traegt neben dem primaeren
-# EVC-Code den historischen EEA-Code in Klammern, z. B. "AA01A (PAP-01A)".
-# Dieser Klammerteil IST das Codeschema der EEA-EUNIS-Quelle und damit der
-# exakte Join-Schluessel zwischen beiden Quellen — deshalb wird er
-# ausgegeben statt verworfen.
+# The real FloraVeg export's Code cell carries the primary EVC code plus the
+# historical EEA code in parentheses, e.g. "AA01A (PAP-01A)". That
+# parenthesized part IS the EEA-EUNIS source's own code scheme and therefore
+# the exact join key between both sources — hence it is output, not dropped.
 _CODE_CELL_RE = re.compile(r"^(\S+)\s*\(([^)]*)\)\s*$")
 
 
 def split_code(cell):
-    """Zerlegt eine Code-Zelle in (Primaercode, Altcode). Eine Zelle ohne
-    Klammerteil liefert einen leeren Altcode — kein Fehler."""
+    """Split a Code cell into (primary code, alt code). A cell with no
+    parenthesized part yields an empty alt code — not an error."""
     cell = cell.strip()
     m = _CODE_CELL_RE.match(cell)
     if m:
@@ -103,9 +102,9 @@ def _cell_text(c, shared):
 
 
 def col_index(ref):
-    """Rechnet den Spaltenteil eines Zellbezugs ("AB7") in einen
-    0-basierten Spaltenindex um. Excel laesst leere Zellen in der XML weg;
-    ohne diese Umrechnung verschiebt eine Luecke alle folgenden Spalten."""
+    """Convert a cell reference's column part ("AB7") into a 0-based column
+    index. Excel omits empty cells from the XML; without this conversion, a
+    gap would shift every following column."""
     n = 0
     for ch in ref:
         if not ch.isalpha():
