@@ -14,13 +14,28 @@ import (
 // name: an area nobody occurs in would be a filter that can only ever answer
 // empty, and a code with data but no name row stays in the list with an empty
 // name instead of being dropped.
+//
+// WHICH distribution table is the scheme's decision. wgsrpd_l3 codes come
+// from species_distribution, evc_territory codes from syntaxon_distribution —
+// and there is never a row of one in the other, so deriving the coverage from
+// species_distribution alone made all 136 territories invisible under every
+// scheme argument. Two literals, not one built from the scheme: a table name
+// interpolated into SQL is gosec G201, and rightly so.
 func (d *DB) AreasWithData(ctx context.Context, scheme string) ([]domain.NamedArea, error) {
-	rows, err := d.QueryContext(ctx,
-		`SELECT d.area_code, COALESCE(a.name_en, '')
+	query := `SELECT d.area_code, COALESCE(a.name_en, '')
 		 FROM (SELECT DISTINCT area_scheme, area_code FROM species_distribution
 		       WHERE area_scheme = ?) d
 		 LEFT JOIN area a ON a.area_scheme = d.area_scheme AND a.area_code = d.area_code
-		 ORDER BY d.area_code`, scheme)
+		 ORDER BY d.area_code`
+	if scheme == domain.SchemeEVCTerritory {
+		query = `SELECT d.area_code, COALESCE(a.name_en, '')
+		 FROM (SELECT DISTINCT area_scheme, area_code FROM syntaxon_distribution
+		       WHERE area_scheme = ?) d
+		 LEFT JOIN area a ON a.area_scheme = d.area_scheme AND a.area_code = d.area_code
+		 ORDER BY d.area_code`
+	}
+
+	rows, err := d.QueryContext(ctx, query, scheme)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: reading areas with data: %w", err)
 	}

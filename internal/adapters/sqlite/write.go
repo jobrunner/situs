@@ -189,6 +189,36 @@ func (t *ingestTx) UpsertDistribution(conceptID string, a domain.Area) error {
 	return nil
 }
 
+// UpsertSyntaxonDistribution records one occurrence cell. Idempotent, and a
+// repeated ingest overwrites the occurrence: the source is allowed to upgrade
+// an uncertain record to a verified one.
+func (t *ingestTx) UpsertSyntaxonDistribution(syntaxonID, scheme, code, occurrence string) error {
+	_, err := t.tx.ExecContext(t.ctx,
+		`INSERT INTO syntaxon_distribution (syntaxon_id, area_scheme, area_code, occurrence)
+		 VALUES (?, ?, ?, ?)
+		 ON CONFLICT(syntaxon_id, area_scheme, area_code) DO UPDATE SET
+		   occurrence = excluded.occurrence`,
+		syntaxonID, scheme, code, occurrence)
+	if err != nil {
+		return fmt.Errorf("sqlite: upserting syntaxon distribution %s/%s/%s: %w", syntaxonID, scheme, code, err)
+	}
+	return nil
+}
+
+// UpsertSyntaxonDistributionCoverage records that the source makes a
+// statement about this syntaxon at all. Without it "occurs in no territory"
+// is indistinguishable from "nobody looked".
+func (t *ingestTx) UpsertSyntaxonDistributionCoverage(syntaxonID, scheme string) error {
+	_, err := t.tx.ExecContext(t.ctx,
+		`INSERT OR IGNORE INTO syntaxon_distribution_coverage (syntaxon_id, area_scheme)
+		 VALUES (?, ?)`,
+		syntaxonID, scheme)
+	if err != nil {
+		return fmt.Errorf("sqlite: upserting syntaxon distribution coverage %s/%s: %w", syntaxonID, scheme, err)
+	}
+	return nil
+}
+
 // UpsertArea writes one area name. Idempotent like every other Upsert here,
 // and a repinned artifact whose name changed replaces the old one.
 func (t *ingestTx) UpsertArea(a domain.NamedArea) error {

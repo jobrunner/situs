@@ -424,7 +424,23 @@ func TestReads_QueryErrorsAreReturned(t *testing.T) {
 			_, err := db.AreasForConcepts(ctx, []string{"wcvp:concept:1"}, domain.SchemeWGSRPDL3)
 			return err
 		},
-		"KnownAreaCodes":       func() error { _, err := db.KnownAreaCodes(ctx, domain.SchemeWGSRPDL3); return err },
+		"KnownAreaCodes": func() error { _, err := db.KnownAreaCodes(ctx, domain.SchemeWGSRPDL3); return err },
+		"KnownAreaCodesEVCTerritory": func() error {
+			_, err := db.KnownAreaCodes(ctx, domain.SchemeEVCTerritory)
+			return err
+		},
+		"SyntaxonDistribution": func() error {
+			_, err := db.SyntaxonDistribution(ctx, "CA01A", domain.SchemeEVCTerritory)
+			return err
+		},
+		"SyntaxonOccurrencesInArea": func() error {
+			_, err := db.SyntaxonOccurrencesInArea(ctx, domain.SchemeEVCTerritory, "albania")
+			return err
+		},
+		"SyntaxaWithCoverage": func() error {
+			_, err := db.SyntaxaWithCoverage(ctx, domain.SchemeEVCTerritory)
+			return err
+		},
 		"AllSyntaxa":           func() error { _, err := db.AllSyntaxa(ctx); return err },
 		"SyntaxonIDsByAltCode": func() error { _, err := db.SyntaxonIDsByAltCode(ctx); return err },
 		"SyntaxaByRank":        func() error { _, err := db.SyntaxaByRank(ctx, "alliance", ""); return err },
@@ -474,6 +490,37 @@ func TestReads_RowsIterationAndScanErrorsAreReturned(t *testing.T) {
 		"KnownAreaCodes": {
 			call: func(db *DB) error { _, err := db.KnownAreaCodes(ctx, domain.SchemeWGSRPDL3); return err },
 			rows: "iterating area codes", scan: "scanning area code",
+		},
+		// The evc_territory branch issues its own statement (over
+		// syntaxon_distribution, not species_distribution), so it needs its
+		// own error-path entry: the wgsrpd_l3 case above does not exercise it.
+		"KnownAreaCodesEVCTerritory": {
+			call: func(db *DB) error { _, err := db.KnownAreaCodes(ctx, domain.SchemeEVCTerritory); return err },
+			rows: "iterating syntaxon area codes", scan: "scanning syntaxon area code",
+		},
+		"SyntaxonOccurrencesInArea": {
+			call: func(db *DB) error {
+				_, err := db.SyntaxonOccurrencesInArea(ctx, domain.SchemeEVCTerritory, "albania")
+				return err
+			},
+			rows: "iterating occurrences in area", scan: "scanning occurrence",
+		},
+		"SyntaxaWithCoverage": {
+			call: func(db *DB) error { _, err := db.SyntaxaWithCoverage(ctx, domain.SchemeEVCTerritory); return err },
+			rows: "iterating syntaxa with distribution coverage", scan: "scanning syntaxa with distribution coverage",
+		},
+		// SyntaxonDistribution's coverage check is a single QueryRowContext,
+		// answered first — under the plain rows/scan modes it is what fails,
+		// before the distribution-rows query is ever reached. The distinct
+		// second-query error path is exercised separately below with its own
+		// stub modes, since the two queries are not distinguishable by
+		// query text alone under a mode that fails every query.
+		"SyntaxonDistribution_Coverage": {
+			call: func(db *DB) error {
+				_, err := db.SyntaxonDistribution(ctx, "CA01A", domain.SchemeEVCTerritory)
+				return err
+			},
+			rows: "reading syntaxon coverage", scan: "reading syntaxon coverage",
 		},
 		"Syntaxa": {
 			call: func(db *DB) error { _, err := db.Syntaxa(ctx, r22); return err },
@@ -527,6 +574,30 @@ func TestReads_RowsIterationAndScanErrorsAreReturned(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// SyntaxonDistribution's second query (the occurrence rows) is unreachable
+// through the plain stubModeRowsErr/stubModeScanErr modes: those fail every
+// query, so the coverage check above it always fails first. The two custom
+// modes below let the coverage query answer cleanly (no row -> ErrNoRows,
+// Covered stays false) and fail only the distribution-rows query that
+// follows — the stubModeFirstSyntaxonLookupThenFails pattern, applied here
+// because the two queries are not distinguishable by query text alone under
+// a mode that fails indiscriminately.
+func TestSyntaxonDistribution_DistributionRowsIterationAndScanErrorsAreReturned(t *testing.T) {
+	ctx := context.Background()
+	for mode, want := range map[stubMode]string{
+		stubModeSyntaxonDistributionRowsErr: "iterating syntaxon distribution",
+		stubModeSyntaxonDistributionScanErr: "scanning syntaxon distribution",
+	} {
+		_, err := (&DB{DB: newStubDB(t, mode)}).SyntaxonDistribution(ctx, "CA01A", domain.SchemeEVCTerritory)
+		if err == nil {
+			t.Fatalf("SyntaxonDistribution in mode %v = nil error, want an error", mode)
+		}
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to name %q", err, want)
+		}
 	}
 }
 

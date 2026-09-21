@@ -44,6 +44,17 @@ type IngestTx interface {
 	// codes species_distribution carries: writing one neither creates nor
 	// requires distribution data.
 	UpsertArea(a domain.NamedArea) error
+	// UpsertSyntaxonDistribution records that a syntaxon occurs in one area,
+	// with occurrence being domain.OccurrenceVerified or
+	// domain.OccurrenceUncertain. Idempotent, and a repeated ingest overwrites
+	// the occurrence: the source is allowed to upgrade an uncertain record to
+	// a verified one, and an index that kept the old value would answer from a
+	// fassung nobody published.
+	UpsertSyntaxonDistribution(syntaxonID, scheme, code, occurrence string) error
+	// UpsertSyntaxonDistributionCoverage records that the source makes a
+	// statement about this syntaxon at all. Without it "occurs in no
+	// territory" is indistinguishable from "nobody looked".
+	UpsertSyntaxonDistributionCoverage(syntaxonID, scheme string) error
 	// UpsertDescription writes one habitat type's prose description.
 	UpsertDescription(d domain.HabitatDescription) error
 	// UpsertTraitValue writes one trait_value row for conceptID. Idempotent
@@ -150,13 +161,32 @@ type Repository interface {
 	AreasForConcepts(ctx context.Context, conceptIDs []string, scheme string) (map[string][]string, error)
 	// KnownAreaCodes lists the area codes the index has data for. An area
 	// filter must be validated against this: an unknown code has to be an
-	// error, not a list of "does not occur".
+	// error, not a list of "does not occur". Read per scheme from its own
+	// table: wgsrpd_l3 codes live in species_distribution, evc_territory
+	// codes in syntaxon_distribution, and there is never a row of one in
+	// the other.
 	KnownAreaCodes(ctx context.Context, scheme string) ([]string, error)
 	// AreasWithData lists the areas the index has distribution data for,
 	// each with its ingested name — what a client needs to offer an area
 	// filter that can actually answer. An area with a name but no data is
-	// not in it; an area with data but no name keeps an empty name.
+	// not in it; an area with data but no name keeps an empty name. Per
+	// scheme from its own distribution table, for the same reason
+	// KnownAreaCodes branches.
 	AreasWithData(ctx context.Context, scheme string) ([]domain.NamedArea, error)
+	// SyntaxonDistribution returns what the source says about one syntaxon in
+	// one area scheme: the verified and uncertain codes, sorted, plus whether
+	// there is any statement at all (Covered). A syntaxon with no coverage row
+	// comes back Covered false and both lists empty — which the read side must
+	// serve as "no distribution field", never as "occurs nowhere".
+	SyntaxonDistribution(ctx context.Context, syntaxonID, scheme string) (domain.SyntaxonDistribution, error)
+	// SyntaxonOccurrencesInArea maps syntaxon id -> occurrence for one area.
+	// A syntaxon absent from the map has no row for that area, which is NOT
+	// the same as one absent from SyntaxaWithCoverage.
+	SyntaxonOccurrencesInArea(ctx context.Context, scheme, code string) (map[string]string, error)
+	// SyntaxaWithCoverage is the set of syntaxa the source makes a statement
+	// about. The read side needs it to keep the unjudgeable rows in an
+	// ?area=-filtered list instead of dropping them.
+	SyntaxaWithCoverage(ctx context.Context, scheme string) (map[string]bool, error)
 	// ConceptIDs lists the distinct concept ids the index holds, so the
 	// distribution step knows what to ask for.
 	ConceptIDs(ctx context.Context) ([]string, error)

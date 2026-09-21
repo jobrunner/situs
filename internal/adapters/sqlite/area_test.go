@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -165,5 +166,79 @@ func TestAreasWithData_RowsIterationAndScanErrorsAreReturned(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error = %q, want it to name %q", err, want)
 		}
+	}
+}
+
+// The evc_territory branch of AreasWithData issues its own statement (over
+// syntaxon_distribution, not species_distribution), so it needs its own
+// error-path coverage — the wgsrpd_l3 case above does not exercise it.
+func TestAreasWithData_EVCTerritory_RowsIterationAndScanErrorsAreReturned(t *testing.T) {
+	ctx := context.Background()
+	for mode, want := range map[stubMode]string{
+		stubModeRowsErr: "iterating areas",
+		stubModeScanErr: "scanning area",
+	} {
+		_, err := (&DB{DB: newStubDB(t, mode)}).AreasWithData(ctx, domain.SchemeEVCTerritory)
+		if err == nil {
+			t.Fatalf("AreasWithData(evc_territory) in mode %v = nil error, want an error", mode)
+		}
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to name %q", err, want)
+		}
+	}
+}
+
+func TestAreasWithDataListetTerritorienAusDerSyntaxonverbreitung(t *testing.T) {
+	db := openTestDB(t)
+	seedDistribution(t, db)
+	tx, err := db.Begin(context.Background())
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertArea(domain.NamedArea{
+		Area:   domain.Area{Scheme: domain.SchemeEVCTerritory, Code: "austria-alps"},
+		NameEN: "Austria Alps",
+	}); err != nil {
+		t.Fatalf("UpsertArea: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.AreasWithData(context.Background(), domain.SchemeEVCTerritory)
+	if err != nil {
+		t.Fatalf("AreasWithData: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("Gebiete = %+v, erwartet 3 (albania, austria-alps, czech-republic)", got)
+	}
+	if got[0].Code != "albania" || got[0].NameEN != "" {
+		t.Errorf("erstes Gebiet = %+v, erwartet albania mit leerem Namen", got[0])
+	}
+	if got[1].Code != "austria-alps" || got[1].NameEN != "Austria Alps" {
+		t.Errorf("zweites Gebiet = %+v", got[1])
+	}
+}
+
+func TestKnownAreaCodesLiestJeSchemaDieRichtigeTabelle(t *testing.T) {
+	db := openTestDB(t)
+	seedDistribution(t, db)
+
+	terr, err := db.KnownAreaCodes(context.Background(), domain.SchemeEVCTerritory)
+	if err != nil {
+		t.Fatalf("KnownAreaCodes(evc_territory): %v", err)
+	}
+	if !slices.Equal(terr, []string{"albania", "austria-alps", "czech-republic"}) {
+		t.Errorf("Territorien = %v", terr)
+	}
+
+	// The species table is untouched by the seed above, so wgsrpd_l3 must stay
+	// empty — proof the branch reads the OTHER table, not just a filter.
+	wg, err := db.KnownAreaCodes(context.Background(), domain.SchemeWGSRPDL3)
+	if err != nil {
+		t.Fatalf("KnownAreaCodes(wgsrpd_l3): %v", err)
+	}
+	if len(wg) != 0 {
+		t.Errorf("wgsrpd_l3 = %v, erwartet leer", wg)
 	}
 }

@@ -41,7 +41,24 @@ const (
 	// succeed and a later one must fail, without racing a context
 	// cancellation against real row timing (see the file comment above).
 	stubModeFirstSyntaxonLookupThenFails
+	// stubModeSyntaxonDistributionRowsErr answers SyntaxonDistribution's
+	// coverage check with zero rows (a clean "not covered") and then fails
+	// the distribution-rows query's row iteration — the two queries are not
+	// distinguishable by text alone under a mode that fails every query, so
+	// this follows the stubModeFirstSyntaxonLookupThenFails pattern instead.
+	stubModeSyntaxonDistributionRowsErr
+	// stubModeSyntaxonDistributionScanErr is the same, but the
+	// distribution-rows query yields one row a string destination cannot
+	// scan.
+	stubModeSyntaxonDistributionScanErr
 )
+
+// isSyntaxonDistributionMode reports whether mode is one of the two above,
+// which both need the coverage query answered cleanly before failing the
+// distribution-rows query that follows it.
+func isSyntaxonDistributionMode(mode stubMode) bool {
+	return mode == stubModeSyntaxonDistributionRowsErr || mode == stubModeSyntaxonDistributionScanErr
+}
 
 // newStubDB builds a *sql.DB backed by the stub driver — no schema, no file,
 // just enough of the driver.Conn/driver.Rows contract for one QueryContext
@@ -116,6 +133,11 @@ var stubColumnRules = []stubQueryRule{
 	{"FROM habitat_type_syntaxon", []string{"typology_id", "code"}},
 	{"concept_id, area_code FROM species_distribution", []string{"concept_id", "area_code"}},
 	{"DISTINCT area_code FROM species_distribution", []string{"area_code"}},
+	{"1 FROM syntaxon_distribution_coverage", []string{"1"}},
+	{"syntaxon_id FROM syntaxon_distribution_coverage", []string{"syntaxon_id"}},
+	{"syntaxon_id, occurrence FROM syntaxon_distribution", []string{"syntaxon_id", "occurrence"}},
+	{"area_code, occurrence FROM syntaxon_distribution", []string{"area_code", "occurrence"}},
+	{"DISTINCT area_code FROM syntaxon_distribution", []string{"area_code"}},
 	{"FROM trait_value", []string{"vocab", "vocab_version", "dim", "value", "niche_width", "n_systems"}},
 	{"DISTINCT vocab FROM trait_vocabulary", []string{"vocab"}},
 }
@@ -134,6 +156,11 @@ func (c *stubConn) QueryContext(_ context.Context, query string, _ []driver.Name
 		}
 		return nil, errStubSyntaxonWalk
 	}
+	if isSyntaxonDistributionMode(c.mode) {
+		if rows, ok := c.syntaxonDistributionRows(query); ok {
+			return rows, nil
+		}
+	}
 	for _, rule := range stubColumnRules {
 		if strings.Contains(query, rule.contains) {
 			return &stubRows{cols: rule.cols, mode: c.mode}, nil
@@ -141,6 +168,34 @@ func (c *stubConn) QueryContext(_ context.Context, query string, _ []driver.Name
 	}
 	return nil, fmt.Errorf("stub: unexpected query %q", query)
 }
+
+// syntaxonDistributionRows answers the two queries SyntaxonDistribution
+// issues, under the two modes built for exercising its second query's error
+// paths: the coverage check gets a clean "no row" answer (so Covered stays
+// false and the code proceeds to the distribution-rows query), and only that
+// second query then fails. ok is false for any other query, letting the
+// generic dispatch above handle it.
+func (c *stubConn) syntaxonDistributionRows(query string) (driver.Rows, bool) {
+	if strings.Contains(query, "syntaxon_distribution_coverage") {
+		return &stubZeroRows{cols: []string{"1"}}, true
+	}
+	if strings.Contains(query, "area_code, occurrence FROM syntaxon_distribution") {
+		inner := stubModeRowsErr
+		if c.mode == stubModeSyntaxonDistributionScanErr {
+			inner = stubModeScanErr
+		}
+		return &stubRows{cols: []string{"area_code", "occurrence"}, mode: inner}, true
+	}
+	return nil, false
+}
+
+// stubZeroRows answers a query with zero rows: Next() reports io.EOF on the
+// very first call, which is how QueryRowContext's Scan surfaces sql.ErrNoRows.
+type stubZeroRows struct{ cols []string }
+
+func (r *stubZeroRows) Columns() []string           { return r.cols }
+func (r *stubZeroRows) Close() error                { return nil }
+func (r *stubZeroRows) Next(_ []driver.Value) error { return io.EOF }
 
 type stubRows struct {
 	cols []string
