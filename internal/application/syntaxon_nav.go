@@ -83,8 +83,12 @@ func (q *QueryService) syntaxonByIDOrEEACode(ctx context.Context, id string) (do
 	if !errors.Is(err, output.ErrNotFound) {
 		return domain.Syntaxon{}, "", translateNotFound(err, fmt.Sprintf("syntaxon %q", id))
 	}
-	if self, eeaErr := q.repo.SyntaxonByEEACode(ctx, id); eeaErr == nil {
+	self, eeaErr := q.repo.SyntaxonByEEACode(ctx, id)
+	if eeaErr == nil {
 		return self, self.ID, nil
+	}
+	if !errors.Is(eeaErr, output.ErrNotFound) {
+		return domain.Syntaxon{}, "", translateNotFound(eeaErr, fmt.Sprintf("syntaxon %q (eea_code fallback)", id))
 	}
 	return domain.Syntaxon{}, "", translateNotFound(err, fmt.Sprintf("syntaxon %q", id))
 }

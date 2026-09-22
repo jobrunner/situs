@@ -694,6 +694,9 @@ func (r *fakeRepo) Syntaxon(_ context.Context, id string) (domain.Syntaxon, erro
 }
 
 func (r *fakeRepo) SyntaxonByEEACode(_ context.Context, code string) (domain.Syntaxon, error) {
+	if r.syntaxonByEEACodeErr != nil {
+		return domain.Syntaxon{}, r.syntaxonByEEACodeErr
+	}
 	if r.syntaxonErr != nil {
 		return domain.Syntaxon{}, r.syntaxonErr
 	}

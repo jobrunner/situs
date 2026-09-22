@@ -470,8 +470,12 @@ type fakeRepo struct {
 	crosswalksErr   error
 	speciesRolesErr error
 	syntaxonErr     error
-	syntaxaErr      error
-	syntaxonKeysErr error
+	// syntaxonByEEACodeErr fails only SyntaxonByEEACode, exercising
+	// syntaxonByIDOrEEACode's fallback-lookup error path independently of
+	// syntaxonErr, which fails the primary Syntaxon lookup instead.
+	syntaxonByEEACodeErr error
+	syntaxaErr           error
+	syntaxonKeysErr      error
 	// localizationErr fails every Localization call; localizationErrOnCall,
 	// if non-zero, instead fails only the n-th call (1-indexed) — needed to
 	// exercise DeriveGermanLabels' second Localization lookup (the Annex I

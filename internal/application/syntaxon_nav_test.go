@@ -168,6 +168,29 @@ func TestSyntaxon_UnbekannteIDIstNotFound(t *testing.T) {
 	}
 }
 
+// TestSyntaxon_FallbackFehlerBleibtInternalErrorStattNotFound covers the
+// case Copilot flagged in PR #51: the primary lookup genuinely misses (a
+// plain output.ErrNotFound, e.g. an id that no longer exists), and the
+// eea_code fallback THEN fails for an unrelated reason — a broken index
+// read, not "also not found". That must not collapse into NOT_FOUND: the
+// route would answer 404 while the index itself is unreadable, exactly the
+// dangling-parent_id confusion this file's comment above rejects a few
+// lines up.
+func TestSyntaxon_FallbackFehlerBleibtInternalErrorStattNotFound(t *testing.T) {
+	repo := seedNavRepo(t)
+	boom := errors.New("index unreadable")
+	repo.syntaxonByEEACodeErr = boom
+	q := NewQueryService(repo)
+
+	_, err := q.Syntaxon(t.Context(), "GIBTSNICHT", "en")
+	if err == nil {
+		t.Fatal("Syntaxon: erwartet einen Fehler")
+	}
+	if errors.Is(err, input.ErrNotFound) {
+		t.Errorf("Fehler = %v, erwartet KEIN input.ErrNotFound (der Fallback-Fehler ist kein Nicht-gefunden)", err)
+	}
+}
+
 // TestSyntaxon_MeldetEchtenRepositoryFehlerOhneEEACodeFallback covers the
 // third branch of syntaxonByIDOrEEACode: a plain repository failure (not
 // output.ErrNotFound) must surface as-is and must NOT trigger the eea_code
