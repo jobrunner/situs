@@ -167,9 +167,9 @@ zählen.
 `AlliancesWritten` (1310) zählt nur die FloraVeg-Hierarchiezeilen; zusammen mit
 `EunisOnly` (16) ergibt das die 1326 Verbandszeilen der `syntaxon`-Tabelle.
 `LinksWritten` (1283) zählt Schreibversuche, nicht die am Ende distinkten
-Zeilen — die idempotente Umschreibung einer EEA-Kante auf den FloraVeg-Primärcode
-(`RelinkSyntaxon`) kann zwei Schreibversuche auf dieselbe Zielkante
-zusammenfallen lassen (siehe die `U36`/`ASP-03`/`KC03`-Sonderfall unten); die
+Zeilen — der EEA-Code-Join löst eine EEA-Kante auf FloraVegs Primärcode auf und
+kann sie damit auf dieselbe Zielkante schreiben wie eine bereits vorhandene
+FloraVeg-Kante (siehe den `U36`/`ASP-03`/`KC03`-Sonderfall unten); die
 `habitat_type_syntaxon`-Tabelle selbst trägt danach **1282** Zeilen.
 
 ### Der stille Namensabgleichsfehler: `AMM-02B` → `JD02`, nicht `JE01`
