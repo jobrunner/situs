@@ -91,6 +91,15 @@ class CellValueError(RuntimeError):
     must stop the run rather than pass through as a silent mismapping."""
 
 
+class EmptyResultError(RuntimeError):
+    """Not one alliance came out of the data sheet. build.sh clears out/
+    before the run and the Go ingest treats the files it finds as a
+    REPLACEMENT, so header-only CSVs do not mean "nothing new" — they delete
+    the whole syntaxon distribution and coverage and commit an empty one. The
+    skip path for a MISSING file stays as it is; only a present source that
+    yields nothing is this defect."""
+
+
 class SlugCollisionError(RuntimeError):
     """Two columns derive the same area_code. Picking a winner would silently
     merge two territories. Two columns spelled EXACTLY alike count too: they
@@ -272,6 +281,16 @@ def convert(xlsx_path, out_dir):
         print(f"skipped: {xlsx_path} [{DATA_SHEET}]: code {code!r} matches no "
               "alliance pattern", file=sys.stderr)
 
+    # Before the first _write, so a failed conversion leaves out/ empty: the
+    # ingest goes by file presence, and a written-then-abandoned CSV would be
+    # collected as this run's result.
+    if not coverage:
+        raise EmptyResultError(
+            f"{xlsx_path} [{DATA_SHEET}]: not one row carries an alliance code "
+            f"({len(skipped)} skipped, {summary_rows} summary rows); writing "
+            "the empty result would replace the whole syntaxon distribution "
+            "with nothing")
+
     _write(out_dir, "syntaxon_distribution.csv", dist)
     _write(out_dir, "syntaxon_distribution_coverage.csv", coverage)
     _write(out_dir, "evc_territories.csv",
@@ -311,7 +330,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         report = convert(args.xlsx, args.out_dir)
-    except (SheetError, HeaderError, CellValueError, SlugCollisionError) as exc:
+    except (SheetError, HeaderError, CellValueError, SlugCollisionError,
+            EmptyResultError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)
     print(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True))

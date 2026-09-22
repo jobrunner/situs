@@ -7,6 +7,7 @@ import zipfile
 
 from xlsx_to_csv import (
     CellValueError,
+    EmptyResultError,
     HeaderError,
     SheetError,
     SlugCollisionError,
@@ -289,6 +290,31 @@ class ConvertTest(unittest.TestCase):
                 territories=("Austria Alps", "Austria Alps"),
             )
         self.assertIn("Austria Alps", str(ctx.exception))
+
+    def test_a_sheet_without_a_single_alliance_aborts_before_any_csv(self):
+        # build.sh clears out/ before the run and IngestSyntaxonDistribution
+        # treats present files as a REPLACEMENT: header-only CSVs would clear
+        # the whole syntaxon distribution and commit an empty one. The run must
+        # fail, and fail before writing anything the ingest could collect.
+        tmp = tempfile.mkdtemp()
+        xlsx = os.path.join(tmp, "dist.xlsx")
+        make_workbook(xlsx, [header("Albania"), row((0, "not an alliance"))])
+        out_dir = os.path.join(tmp, "out")
+        os.makedirs(out_dir)
+        with self.assertRaises(EmptyResultError) as ctx:
+            convert(xlsx, out_dir)
+        self.assertIn("alliance", str(ctx.exception))
+        self.assertEqual(sorted(os.listdir(out_dir)), [])
+
+    def test_a_data_sheet_with_only_a_header_aborts_too(self):
+        tmp = tempfile.mkdtemp()
+        xlsx = os.path.join(tmp, "dist.xlsx")
+        make_workbook(xlsx, [header("Albania")])
+        out_dir = os.path.join(tmp, "out")
+        os.makedirs(out_dir)
+        with self.assertRaises(EmptyResultError):
+            convert(xlsx, out_dir)
+        self.assertEqual(sorted(os.listdir(out_dir)), [])
 
     def test_a_missing_meta_column_raises_header_error(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -71,6 +71,21 @@ Gemessen gegen die gepinnte Datei: **1115** Verbände, **136** Territorien,
   stillschweigend, ebenso aus dem Join gegen die FloraVeg-Hierarchie (1111
   statt 1114 Treffer). Eine Eigenschaft der Quelldatei, kein Programmierstil.
 
+## Wann die Konvertierung abbricht
+
+`xlsx_to_csv.py` scheitert, statt zu warnen, bei einem fehlenden Datenblatt
+(`SheetError`), einer fehlenden Meta-Spalte oder einer unbekannten
+Spaltenstruktur an der Summengrenze (`HeaderError`), einer Zelle, die weder
+`1` noch `U` noch leer ist (`CellValueError`), zwei Spalten auf demselben
+`area_code` (`SlugCollisionError`) — und **bei null gültigen Verbänden**
+(`EmptyResultError`). Der letzte Fall ist kein Sonderfall der Sorgfalt:
+`build.sh` räumt `out/` vor dem Lauf, und `IngestSyntaxonDistribution`
+behandelt vorhandene Dateien als **Ersetzung**. Nur-Kopfzeilen-CSVs würden
+also den gesamten Verbreitungs- und Coverage-Bestand des Index löschen und
+leer committen. Die Prüfung läuft **vor** dem ersten Schreiben, `out/` bleibt
+nach einem gescheiterten Lauf also leer — und der Skip-Pfad des Ingests
+(Datei *fehlt* = „noch nichts gepinnt") greift wie bisher.
+
 ## Vier Zustände, nicht drei
 
 | Zustand | In der Quelle | Im Index |
