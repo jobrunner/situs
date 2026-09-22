@@ -323,6 +323,30 @@ func TestSetSyntaxonParentSetztNurElternteilUndProvenienz(t *testing.T) {
 	}
 }
 
+// An UPDATE that matches no row is not an error to SQLite, so the adapter
+// used to report success for an id the index does not carry: the application
+// then recorded the parent in its in-memory graph, passed the orphan, cycle
+// and rank checks on it, and committed a parentless syntaxon. The fake
+// repository in internal/application has always failed on an unknown id —
+// the real one must too, or the tests measure the fake.
+func TestSetSyntaxonParentMeldetUnbekannteID(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback() })
+
+	err = tx.SetSyntaxonParent("GIBT-ES-NICHT", "CI01", domain.ParentProvenanceDerived)
+	if err == nil {
+		t.Fatal("SetSyntaxonParent meldete Erfolg fuer eine ID, die der Index nicht traegt")
+	}
+	if !strings.Contains(err.Error(), "GIBT-ES-NICHT") {
+		t.Errorf("Fehler = %v, erwartet die ID im Text", err)
+	}
+}
+
 // ClearSyntaxa empties both tables, in the order the edges reference the
 // rows: habitat_type_syntaxon first, then syntaxon.
 func TestClearSyntaxaLeertBeideTabellen(t *testing.T) {

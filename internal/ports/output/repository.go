@@ -21,7 +21,10 @@ type IngestTx interface {
 	// SetSyntaxonParent sets the parent and its provenance on an already
 	// written row. Separate from UpsertSyntaxon because the parent of the
 	// 16 EEA-only units is only known once the FloraVeg rows and their
-	// siblings are in the index.
+	// siblings are in the index. An id no row carries is an error, part of
+	// the port's contract and not an implementation detail: a silent no-op
+	// leaves the index with a parentless syntaxon while every integrity
+	// check, running on the caller's in-memory graph, sees the parent set.
 	SetSyntaxonParent(id, parentID, provenance string) error
 	// ClearSyntaxa empties habitat_type_syntaxon and syntaxon, in that
 	// order, before IngestSyntaxa writes the current run's rows. The

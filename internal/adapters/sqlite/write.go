@@ -77,12 +77,26 @@ func (t *ingestTx) UpsertSyntaxon(s domain.Syntaxon) error {
 // SetSyntaxonParent sets the parent and its provenance on an already-written
 // row. Separate from UpsertSyntaxon: the parent of the 16 EEA-only units is
 // only known once the FloraVeg rows and their siblings are in the index.
+//
+// An id no row carries is an error, not a silent no-op: SQLite reports an
+// UPDATE matching nothing as success, and the application would then record
+// the parent in its in-memory graph and pass the orphan, cycle and rank checks
+// on it while the index still held a parentless syntaxon. RowsAffected is what
+// tells the two apart — the row is guaranteed to change, since a caller only
+// sets a parent it just derived.
 func (t *ingestTx) SetSyntaxonParent(id, parentID, provenance string) error {
-	_, err := t.tx.ExecContext(t.ctx,
+	res, err := t.tx.ExecContext(t.ctx,
 		`UPDATE syntaxon SET parent_id = ?, parent_provenance = ? WHERE id = ?`,
 		parentID, provenance, id)
 	if err != nil {
 		return fmt.Errorf("sqlite: setting parent of syntaxon %s: %w", id, err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("sqlite: reading rows affected for parent of syntaxon %s: %w", id, err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("sqlite: setting parent of syntaxon %s: no such row", id)
 	}
 	return nil
 }
