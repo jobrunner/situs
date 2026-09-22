@@ -1,8 +1,10 @@
 package application
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -104,6 +106,31 @@ func TestIngestSyntaxonDistributionFuelltBeideTabellen(t *testing.T) {
 	}
 }
 
+// A symmetric mix (one verified, one uncertain, as minimalDistribution has)
+// cannot catch a mutant that swaps which counter a row increments: with
+// exactly one of each, Verified/Uncertain end up 1/1 either way. This test
+// uses two verified and one uncertain row instead, so a swapped comparison
+// at `occurrence == domain.OccurrenceUncertain` changes the aggregate counts,
+// not just which row contributed to which.
+func TestIngestSyntaxonDistributionZaehltVerifiedUndUncertainGetrennt(t *testing.T) {
+	repo := newFakeRepo()
+	seedSyntaxa(repo, "CA01A")
+	dist, cov := writeDistFiles(t,
+		"syntaxon_id,area_scheme,area_code,occurrence\n"+
+			"CA01A,evc_territory,austria-alps,verified\n"+
+			"CA01A,evc_territory,albania,verified\n"+
+			"CA01A,evc_territory,czech-republic,uncertain\n",
+		"syntaxon_id,area_scheme\nCA01A,evc_territory\n")
+
+	rep, err := IngestSyntaxonDistribution(context.Background(), repo, dist, cov)
+	if err != nil {
+		t.Fatalf("IngestSyntaxonDistribution: %v", err)
+	}
+	if rep.Written != 3 || rep.Verified != 2 || rep.Uncertain != 1 {
+		t.Errorf("Report = %+v, erwartet Written 3 / Verified 2 / Uncertain 1", rep)
+	}
+}
+
 func TestIngestSyntaxonDistributionBehaeltCoverageOhneVorkommen(t *testing.T) {
 	// CA01B has a coverage row and no occurrence row. That is a STATEMENT
 	// ("checked, occurs in no territory") and the row must survive — it is the
@@ -173,6 +200,53 @@ func TestIngestSyntaxonDistributionMeldetJedenUnbekanntenCodeGenauEinmal(t *test
 	}
 	if len(rep.UnknownSyntaxa) != 1 {
 		t.Errorf("UnknownSyntaxa = %v, erwartet genau einen Eintrag", rep.UnknownSyntaxa)
+	}
+}
+
+// The two warning branches in IngestSyntaxonDistribution (unknown syntaxa,
+// skipped rows) have no side effect a report field can catch — only the log
+// line does. Both directions matter: a boundary or negation mutant on either
+// `> 0` would fire the warning on the clean run below, or stay silent on the
+// dirty one.
+func TestIngestSyntaxonDistributionWarntNurBeiTatsaechlichenBefunden(t *testing.T) {
+	repo := newFakeRepo()
+	seedSyntaxa(repo, "CA01A", "CA01B")
+
+	var clean bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&clean, nil)))
+	dist, cov := writeDistFiles(t, minimalDistribution, minimalCoverage)
+	if _, err := IngestSyntaxonDistribution(context.Background(), repo, dist, cov); err != nil {
+		slog.SetDefault(prev)
+		t.Fatalf("IngestSyntaxonDistribution (clean): %v", err)
+	}
+	slog.SetDefault(prev)
+	if got := clean.String(); strings.Contains(got, "does not carry") || strings.Contains(got, "skipped malformed rows") {
+		t.Errorf("clean run logged a warning it should not have: %q", got)
+	}
+
+	repo2 := newFakeRepo()
+	seedSyntaxa(repo2, "CA01A")
+	var dirty bytes.Buffer
+	slog.SetDefault(slog.New(slog.NewTextHandler(&dirty, nil)))
+	dist2, cov2 := writeDistFiles(t,
+		minimalDistribution+
+			"CI01E,evc_territory,spain-atlantic,verified\n"+
+			"CA01A,evc_territory,romania,1\n",
+		minimalCoverage)
+	rep, err := IngestSyntaxonDistribution(context.Background(), repo2, dist2, cov2)
+	slog.SetDefault(prev)
+	if err != nil {
+		t.Fatalf("IngestSyntaxonDistribution (dirty): %v", err)
+	}
+	if len(rep.UnknownSyntaxa) == 0 || rep.SkippedRows == 0 {
+		t.Fatalf("Report = %+v, wollte sowohl UnknownSyntaxa als auch SkippedRows > 0", rep)
+	}
+	if got := dirty.String(); !strings.Contains(got, "does not carry") {
+		t.Errorf("dirty run log = %q, want it to warn about the unknown syntaxon", got)
+	}
+	if got := dirty.String(); !strings.Contains(got, "skipped malformed rows") {
+		t.Errorf("dirty run log = %q, want it to warn about the skipped row", got)
 	}
 }
 

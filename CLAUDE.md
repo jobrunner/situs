@@ -106,8 +106,8 @@ known in advance — measured end to end, see
 `docs/reference/measured-index.md`. The explorer at `GET /` has its first
 rendered panel for the hierarchy alongside the existing raw-JSON view.
 
-**Teilprojekt C (Syntaxa-Verbreitung) is implemented through Task 11.** The
-second area scheme (`evc_territory`, 136 EVC territories, domain
+**Teilprojekt C (Syntaxa-Verbreitung) is done — all 12 tasks.** The second
+area scheme (`evc_territory`, 136 EVC territories, domain
 `SchemeEVCTerritory`) sits alongside `wgsrpd_l3` with no mapping between the
 two. `SyntaxonDetail.distribution` is present with data when the source has a
 coverage row and absent when it does not — the fourth-valued distinction from
@@ -119,12 +119,18 @@ filters by occurrence while keeping the unjudgeable syntaxa unmarked, and
 wired into `situs ingest` as local overlays, after `IngestSyntaxa` (the
 syntaxon ids must exist first) and after the area-name overlay (which now
 loads both `wgsrpd_areas.csv` and `evc_territories.csv` through one loader).
-**Next action:** Task 12 of the plan — measuring the whole pipeline against
-the real pinned artifact and updating the reference docs — has not run yet.
-Deliberately out of scope so far: scoring/ranking, the ESy rule engine, the
-EUNIS-2012 key, full plot classification, co-occurrence ranking, an Article-17
-filter, and any ISO↔WGSRPD mapping (the frontend derives the area code from
-GPS).
+Task 12 measured the whole pipeline against the real pinned artifact: **1114**
+of 1326 alliances carry a distribution statement, **none** of the 190
+bryophyte/lichen/algae alliances (sections R–Y) does — held by
+`internal/adapters/sqlite/distribution_integrity_test.go` — and the one
+alliance the distribution source names but the hierarchy does not,
+`CI01E`, is reported by id in `UnknownSyntaxa` rather than silently dropped or
+silently swallowed. See `docs/reference/measured-index.md` for every figure
+and the query it came from. Deliberately out of scope: scoring/ranking, the
+ESy rule engine, the EUNIS-2012 key, full plot classification, co-occurrence
+ranking, an Article-17 filter, syntaxa distribution's inheritance upward
+(class/order/formation), and any ISO↔WGSRPD mapping (the frontend derives the
+area code from GPS).
 
 ## Design documents (read these before implementing)
 
@@ -140,7 +146,7 @@ GPS).
 | `docs/superpowers/specs/2026-09-21-syntaxa-navigation-design.md` | Teilprojekt B: the HTTP navigation routes over the hierarchy A builds. **Authoritative.** |
 | `docs/superpowers/plans/2026-09-21-syntaxa-navigation.md` | Its TDD implementation plan (6 tasks). |
 | `docs/superpowers/specs/2026-09-21-syntaxa-verbreitung-design.md` | Teilprojekt C: syntaxa distribution, the second area scheme (`evc_territory`), join over the EVC primary codes A introduces. **Authoritative.** |
-| `docs/superpowers/plans/2026-09-21-syntaxa-verbreitung.md` | Its TDD implementation plan (12 tasks); implemented through Task 11, Task 12 (real-artifact measurement) still open. |
+| `docs/superpowers/plans/2026-09-21-syntaxa-verbreitung.md` | Its TDD implementation plan (12 tasks); all 12 done. |
 
 ## Ubiquitous Language (do not deviate)
 

@@ -240,6 +240,179 @@ erreichbaren Zeilen (1882) deckt sich mit der SQL-gemessenen Gesamtzahl aus
 der Tabelle „Umfang des Index" oben — die HTTP-Navigation lässt keine Zeile
 aus.
 
+## Verbreitung der Syntaxa (`syntaxon_distribution`)
+
+!!! info "Referenzlauf: 2026-09-22, Syntaxa-Verbreitung (Task 12)"
+
+    Die Zahlen dieses Abschnitts stammen aus einem vollständigen
+    `situs ingest`-Lauf gegen `out/situs-neu.sqlite`, gebaut mit
+    `bash pipelines/evc-distribution/build.sh` gefolgt von
+    `go run ./cmd/situs ingest --csv-dir out/ingest-input --db out/situs-neu.sqlite`.
+    Die Artenrollen- und Zeigerwert-Zahlen dieses Laufs sind **nicht**
+    vergleichbar mit dem Referenzlauf oben: hostus war in dieser Umgebung nicht
+    erreichbar, entsprechend blieben Artenauflösung und Zeigerwerte auf 0 —
+    unerheblich für diesen Abschnitt, der ausschließlich die Syntaxa-Seite misst.
+
+Preislerová et al. bilden 1115 europäische Vegetationsverbände über 136
+Territorien ab (Zenodo Record
+[11580949](https://zenodo.org/records/11580949), CC-BY 4.0). Zitiert werden
+**beide** Veröffentlichungen, wie es die Lizenz verlangt:
+
+- Preislerová Z. et al. (2022) Distribution maps of vegetation alliances in
+  Europe. *Applied Vegetation Science* 25: e12642.
+  <https://doi.org/10.1111/avsc.12642>
+- Preislerová Z. et al. (2024) Structural, ecological and biogeographical
+  attributes of European vegetation alliances. *Applied Vegetation Science*
+  27: e12766. <https://doi.org/10.1111/avsc.12766>
+
+### Die Pipeline, gemessen gegen das gepinnte Artefakt
+
+```bash
+bash pipelines/evc-distribution/build.sh
+```
+
+```json
+{
+  "alliances": 1115,
+  "covered": 1115,
+  "skipped_rows": 0,
+  "slug_collisions": [],
+  "summary_rows": 4,
+  "territories": 136,
+  "uncertain": 1920,
+  "value_histogram": {"": 140112, "1": 9608, "U": 1920},
+  "verified": 9608,
+  "written": 11528
+}
+```
+
+Die Wertemenge der Quellzellen ist bei diesem Lauf **erneut gemessen**, nicht
+angenommen: genau drei Werte kommen vor (leer = Abwesenheit, `1` = `verified`,
+`U` = `uncertain`) — die Zusage aus Abschnitt 9 der Design-Spec.
+
+### Der Ingest-Report, wörtlich
+
+```json
+"Territories": {"Areas": 136, "SkippedRows": 0},
+"SyntaxonDistribution": {
+  "Written": 11525,
+  "Verified": 9605,
+  "Uncertain": 1920,
+  "Covered": 1114,
+  "SkippedRows": 0,
+  "UnknownSyntaxa": ["CI01E"]
+}
+```
+
+`Written` (11525) und `Verified` (9605) liegen **3 unter** den Pipeline-Zahlen
+(11528, 9608): genau die drei Zeilen, die der Ingest für `CI01E` (die Pipeline
+liest 3 Vorkommenszeilen für diesen Code) verwirft, weil die Hierarchie diesen
+Code nicht führt — siehe `TestIngestSyntaxonDistributionVerwirftUnbekanntenCodeUndMeldetIhn`.
+`SkippedRows` bleibt `0`: eine verworfene Zeile wegen unbekannten Syntaxons ist
+kein *malformed row*, sondern eine benannte Fassungsdrift, und zählt deshalb in
+`UnknownSyntaxa`, nicht in `SkippedRows`.
+
+### Der Index, abgefragt
+
+```sql
+SELECT COUNT(*) FROM syntaxon_distribution;
+-- 11525
+SELECT occurrence, COUNT(*) FROM syntaxon_distribution GROUP BY 1 ORDER BY 1;
+-- uncertain|1920
+-- verified|9605
+SELECT COUNT(*) FROM syntaxon_distribution_coverage;
+-- 1114
+SELECT COUNT(DISTINCT area_code) FROM syntaxon_distribution;
+-- 136
+SELECT COUNT(*) FROM area WHERE area_scheme='evc_territory';
+-- 136
+SELECT COUNT(*) FROM area WHERE area_scheme='wgsrpd_l3';
+-- 369
+SELECT COUNT(*) FROM syntaxon s WHERE s.rank='alliance' AND NOT EXISTS (
+  SELECT 1 FROM syntaxon_distribution_coverage v WHERE v.syntaxon_id=s.id);
+-- 212
+SELECT COUNT(*) FROM syntaxon a
+  JOIN syntaxon o ON o.id=a.parent_id JOIN syntaxon c ON c.id=o.parent_id
+  JOIN syntaxon_distribution_coverage v ON v.syntaxon_id=a.id
+  WHERE a.rank='alliance' AND c.parent_id IN ('R','S','T','U','V','W','X','Y');
+-- 0
+SELECT COUNT(*) FROM syntaxon_distribution d
+  LEFT JOIN syntaxon s ON s.id=d.syntaxon_id WHERE s.id IS NULL;
+-- 0
+SELECT COUNT(DISTINCT d.syntaxon_id) FROM syntaxon_distribution d
+  LEFT JOIN syntaxon_distribution_coverage v
+    ON v.syntaxon_id=d.syntaxon_id AND v.area_scheme=d.area_scheme
+  WHERE v.syntaxon_id IS NULL;
+-- 0
+```
+
+Die beiden letzten Nullen sind die eigentlichen Zusagen dieses Teilprojekts:
+kein Verweis der Verbreitungstabelle zeigt ins Leere, und keine
+Verbreitungszeile existiert ohne ihre Coverage-Zeile — sonst wäre `absence` für
+dieses Syntaxon wieder nicht von `unknown` zu unterscheiden.
+
+### 212 Verbände ohne jede Aussage — 190 davon Kryptogamen
+
+```sql
+SELECT f.life_form_group, COUNT(*) FROM syntaxon a
+  JOIN syntaxon o ON o.id=a.parent_id JOIN syntaxon c ON c.id=o.parent_id
+  JOIN syntaxon f ON f.id=c.parent_id
+  WHERE a.rank='alliance' AND NOT EXISTS (
+    SELECT 1 FROM syntaxon_distribution_coverage v WHERE v.syntaxon_id=a.id)
+  AND f.id IN ('R','S','T','U','V','W','X','Y')
+  GROUP BY 1;
+-- algae|53
+-- bryophyte_lichen|137
+```
+
+**137** Moos-/Flechtenverbände und **53** Algenverbände tragen keine Aussage —
+zusammen die **190** Kryptogamen-Verbände, für die die Quelle prinzipbedingt
+nichts sagt (sie deckt nur Gefäßpflanzen-Vegetation ab). Die verbleibenden
+**22** sind vaskuläre Verbände ohne Aussage:
+
+```sql
+SELECT s.id FROM syntaxon a
+  JOIN syntaxon o ON o.id=a.parent_id JOIN syntaxon c ON c.id=o.parent_id
+  JOIN syntaxon s ON s.id=a.id
+  WHERE a.rank='alliance' AND NOT EXISTS (
+    SELECT 1 FROM syntaxon_distribution_coverage v WHERE v.syntaxon_id=a.id)
+  AND c.parent_id NOT IN ('R','S','T','U','V','W','X','Y')
+  ORDER BY s.id;
+-- AMM-01B, AMM-01C, CRU-01A, CRU-01B, CRU-01C, CRU-01D, CRU-02A, CRU-02B,
+-- CRU-02C, CRU-03A, CRU-03B, CRU-03C, CT06A, DA12A, DA13A, DD01A, DD01B,
+-- DD01C, GER-02E, NAR-01E, QUI-01F, TUB-03D
+```
+
+**Abweichung von der Aufgabenstellung:** die Vorgabe für diesen Task nannte
+hier namentlich nur sechs Verbände (`CT06A`, `DA12A`, `DA13A`, `DD01A`,
+`DD01B`, `DD01C`). Das reale, gemessene Bild ist größer: **22**, nicht 6. Die
+16 zusätzlichen (`AMM-*`, `CRU-*`, `GER-02E`, `NAR-01E`, `QUI-01F`, `TUB-03D`)
+tragen durchweg einen EEA-eigenen Altcode-Stil statt eines FloraVeg-Primärcodes
+und sind plausibel Verbände, die die EVC-Verbreitungsquelle strukturell nicht
+führen kann (kein FloraVeg-Primärcode, an dem die Pipeline andocken könnte),
+nicht bloß zufällig ohne Daten geblieben. Die 6 genannten bleiben Teil der 22
+und sind namentlich unverändert dieselben. Die Summe 190 + 22 = 212 ist
+gemessen und schließt.
+
+### Der Fassungsunterschied: EVC 3 gegen EVC 4, und `CI01E`
+
+Die Verbreitungsdatei nennt sich selbst, laut ihrem "Read me"-Blatt, Version 2
+(2024-06-12) und referenziert damit **EuroVegChecklist-Fassung 3**
+(2024-06-12). Die Hierarchie-Datei dagegen heißt
+`List_of_European_vegetation_units_version_4.xlsx` und trägt in ihren
+Spaltenköpfen selbst den Stand `EVC, version 2025-06-12` — zwei gemessene
+Angaben, die **Verschiedenes** meinen (Dateifassung gegen internen EVC-Stand)
+und deshalb nebeneinander stehen, nicht zu einer Zahl verrechnet werden.
+
+Die belastbare Aussage über die Überdeckung ist nicht die Differenz der
+Versionsnummern, sondern die gemessene **1114 / 1115**: von den 1115
+Verbänden, die die Verbreitungsquelle führt, kennt die (neuere) Hierarchie
+1114 unter demselben Primärcode. Der eine fehlende ist `CI01E`
+(`Campanulo-Nardion`, Altcode `NAR-01E`) — der Ingest verwirft seine drei
+Vorkommenszeilen und meldet ihn namentlich in `UnknownSyntaxa`, statt ihn
+stillschweigend zu verwerfen oder eine leere Liste zu melden, die die
+Fassungsdrift verschwiegen hätte.
+
 ## Anhang-I-Abdeckung (offener Punkt 5)
 
 | Größe | Gemessen |

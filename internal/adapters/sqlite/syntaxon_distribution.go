@@ -25,13 +25,13 @@ func (d *DB) SyntaxonDistribution(ctx context.Context, syntaxonID, scheme string
 	row := d.QueryRowContext(ctx,
 		`SELECT 1 FROM syntaxon_distribution_coverage
 		 WHERE syntaxon_id = ? AND area_scheme = ?`, syntaxonID, scheme)
-	switch err := row.Scan(&one); {
-	case err == nil:
-		out.Covered = true
-	case errors.Is(err, sql.ErrNoRows):
+	if err := row.Scan(&one); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			return domain.SyntaxonDistribution{}, fmt.Errorf("sqlite: reading syntaxon coverage: %w", err)
+		}
 		out.Covered = false
-	default:
-		return domain.SyntaxonDistribution{}, fmt.Errorf("sqlite: reading syntaxon coverage: %w", err)
+	} else {
+		out.Covered = true
 	}
 
 	rows, err := d.QueryContext(ctx,

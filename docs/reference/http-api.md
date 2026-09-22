@@ -187,7 +187,9 @@ Build):
     "concept_backbones": ["cdm", "eurosl", "wcvp"],
     "species_with_concept": 3323,
     "area_scheme": "wgsrpd_l3",
-    "areas_with_data": 366
+    "areas_with_data": 366,
+    "syntaxon_area_scheme": "evc_territory",
+    "syntaxa_with_distribution": 1114
   }
 }
 ```
@@ -197,6 +199,15 @@ Build):
 Gebietscodes in `species_distribution` — solange kein Verbreitungs-Ingest
 gelaufen ist, steht dort `0`, und dann ist ein `?area=` mit **jedem** Code
 `INVALID_QUERY`.
+
+`area_scheme` meint weiterhin **ausschließlich** die Artverbreitung
+(`wgsrpd_l3`, fest verdrahtet — der Index kennt kein zweites Artenschema).
+Das zweite Schemapaar, `syntaxon_area_scheme` (immer `evc_territory`) und
+`syntaxa_with_distribution` (die Zahl der Verbände mit mindestens einer
+Coverage-Zeile, am Referenzlauf 2026-09-21 **1114** von 1326), gehört zur
+Syntaxa-Verbreitung und wird **nicht** in `area_scheme`/`areas_with_data`
+mitgezählt — beide Schemata bleiben getrennt gemessen, weil zwischen ihnen
+keine Abbildung existiert (siehe unten, `GET /v1/areas`).
 
 Wozu die Selbstauskunft taugt und wozu nicht: sie sagt, worauf dieser Index
 gebaut ist — auf der **Batch**-Route beantwortbar sind aber nur `wcvp:`-IDs,
@@ -248,6 +259,14 @@ Filter und keine Parameter: wer eine einzelne Typologie will, kennt danach
 ihre ID und fragt `GET /v1/habitat-type/{typology}/{code}`.
 
 ## Gebiete auflisten: `GET /v1/areas`
+
+`?scheme=` wählt zwischen den **zwei** Gebietsschemata dieses Index — Vorgabe
+`wgsrpd_l3` (die Artverbreitung, WGSRPD Level 3), daneben `evc_territory` (die
+136 Territorien der Syntaxa-Verbreitung). Ein unbekannter Wert ist
+`INVALID_QUERY`. Es gibt **keine Abbildung zwischen den Schemata**: ein
+WGSRPD-Code lässt sich nicht in einen `evc_territory`-Code übersetzen und
+umgekehrt — beide sind eigene, unverbundene Vokabulare, und die Route
+beantwortet nur das eine, das gerade angefragt wurde.
 
 Der Einstiegspunkt für `?area=`: die Gebiete, zu denen **dieser** Index
 Verbreitungsdaten hat, jedes mit seinem englischen WGSRPD-Namen, **nach
