@@ -483,6 +483,11 @@ type fakeRepo struct {
 	// failOn names an Upsert*/LinkSyntaxon method that should fail once
 	// called, to exercise the rollback path.
 	failOn string
+	// failOnSyntaxonID narrows failOn = "UpsertSyntaxon" to a single id, so a
+	// test can reach a later write step: the formations are written first and
+	// are no longer allowed to be empty, so an unscoped failure would always
+	// land on the first formation.
+	failOnSyntaxonID string
 	// areasErr fails AreasForConcepts and KnownAreaCodes.
 	areasErr error
 	// conceptIDsErr fails ConceptIDs, exercising IngestDistribution's error path.
@@ -657,8 +662,10 @@ func (r *fakeRepo) UpsertCrosswalk(c domain.Crosswalk) error {
 }
 
 func (r *fakeRepo) UpsertSyntaxon(s domain.Syntaxon) error {
-	if err := r.failIfNamed("UpsertSyntaxon"); err != nil {
-		return err
+	if r.failOnSyntaxonID == "" || r.failOnSyntaxonID == s.ID {
+		if err := r.failIfNamed("UpsertSyntaxon"); err != nil {
+			return err
+		}
 	}
 	r.syntaxa = append(r.syntaxa, s)
 	return nil

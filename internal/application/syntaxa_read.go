@@ -59,6 +59,16 @@ func readFormations(ctx context.Context, dir string, rep *SyntaxaReport) (map[st
 	if err != nil {
 		return nil, err
 	}
+	// A header-only file passes every check above and the required-file check
+	// too — it exists and carries all three columns. Since writeSyntaxa
+	// REPLACES the hierarchy (ClearSyntaxa), such a run would commit without a
+	// single root: a truncated curated source silently deleting the whole
+	// syntaxa part of the index. An empty syntaxa_hierarchy.csv stays allowed —
+	// the formations alone are a bare but valid hierarchy; only the empty
+	// formation set is the defect.
+	if len(formations) == 0 {
+		return nil, fmt.Errorf("%s carries no formation at all; that would replace the whole hierarchy with nothing", fileFormations)
+	}
 	return formations, nil
 }
 

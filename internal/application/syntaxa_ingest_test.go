@@ -214,6 +214,58 @@ func TestIngestSyntaxaBrichtBeiLeeremFormationsbuchstabenAb(t *testing.T) {
 	}
 }
 
+func TestIngestSyntaxaBrichtBeiLeererFormationsdateiAb(t *testing.T) {
+	// The required-file check passes on a header-only file: it exists and
+	// carries every column. Since writeSyntaxa replaces the hierarchy instead
+	// of extending it, such a run would ClearSyntaxa and commit without a
+	// single root — a truncated curated source deleting the whole hierarchy.
+	repo := newFakeRepo()
+	repo.syntaxa = []domain.Syntaxon{
+		{ID: "C", Rank: domain.SyntaxonRankFormation},
+		{ID: "CA", Rank: domain.SyntaxonRankClass, ParentID: "C"},
+	}
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: "letter,name_en,life_form_group\n",
+		hierarchy:  "code,rank,name,author,parent_code,eea_code\n",
+		eunis:      "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	// The damage first, the diagnosis second: without the check the run
+	// succeeds and the index is empty afterwards.
+	if len(repo.syntaxa) != 2 {
+		t.Errorf("Hierarchie im Index = %v, erwartet unveraendert", repo.syntaxa)
+	}
+	if repo.committed || repo.rolledBack {
+		t.Errorf("erwartet keine Transaktion, committed=%v rolledBack=%v", repo.committed, repo.rolledBack)
+	}
+	if err == nil {
+		t.Fatal("IngestSyntaxa akzeptierte eine Formationsdatei ohne eine einzige Zeile")
+	}
+	if !strings.Contains(err.Error(), fileFormations) {
+		t.Errorf("Fehler benennt die Datei nicht: %v", err)
+	}
+}
+
+func TestIngestSyntaxaAkzeptiertLeereHierarchiedatei(t *testing.T) {
+	// The counterpart of the test above: an empty syntaxa_hierarchy.csv is
+	// deliberately allowed — the formations alone are a valid, if bare,
+	// hierarchy. Only the empty formation set is the defect.
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy:  "code,rank,name,author,parent_code,eea_code\n",
+		eunis:      "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if rep.FormationsWritten != 2 || rep.ClassesWritten != 0 {
+		t.Errorf("Zaehler = %d Formationen / %d Klassen, erwartet 2/0",
+			rep.FormationsWritten, rep.ClassesWritten)
+	}
+}
+
 func TestIngestSyntaxaBrichtBeiFehlenderEEACodeSpalteAb(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
@@ -380,8 +432,9 @@ func TestIngestSyntaxaRollbackBeiFehlerhaftemUpsertFormation(t *testing.T) {
 func TestIngestSyntaxaRollbackBeiFehlerhaftemUpsertHierarchie(t *testing.T) {
 	repo := newFakeRepo()
 	repo.failOn = "UpsertSyntaxon"
+	repo.failOnSyntaxonID = "CA01A"
 	dir := writeSyntaxaDir(t, syntaxaFiles{
-		formations: "letter,name_en,life_form_group\n",
+		formations: minimalFormations,
 		hierarchy: "code,rank,name,author,parent_code,eea_code\n" +
 			"CA01A,alliance,Testverband,Moor 1970,CA01,TST-01A\n",
 		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
@@ -599,8 +652,9 @@ func TestIngestSyntaxaNenntJedenKollidierendenEEACodeGenauEinmal(t *testing.T) {
 func TestIngestSyntaxaRollbackBeiFehlerhaftemUpsertEunisOnly(t *testing.T) {
 	repo := newFakeRepo()
 	repo.failOn = "UpsertSyntaxon"
+	repo.failOnSyntaxonID = "EIG-01A"
 	dir := writeSyntaxaDir(t, syntaxaFiles{
-		formations: "letter,name_en,life_form_group\n",
+		formations: minimalFormations,
 		hierarchy:  "code,rank,name,author,parent_code,eea_code\n",
 		eunis:      "id,rank,name,parent_id\nEIG-01A,alliance,Eigenverband Moor 1990,\n",
 		links:      "typology_id,code,syntaxon_id\n",
@@ -621,7 +675,7 @@ func TestIngestSyntaxaRollbackBeiFehlerhaftemLinkSyntaxon(t *testing.T) {
 	repo := newFakeRepo()
 	repo.failOn = "LinkSyntaxon"
 	dir := writeSyntaxaDir(t, syntaxaFiles{
-		formations: "letter,name_en,life_form_group\n",
+		formations: minimalFormations,
 		hierarchy:  "code,rank,name,author,parent_code,eea_code\n",
 		eunis:      "id,rank,name,parent_id\nEIG-01A,alliance,Eigenverband Moor 1990,\n",
 		links:      "typology_id,code,syntaxon_id\neunis@2021,T11,EIG-01A\n",

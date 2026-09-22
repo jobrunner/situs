@@ -168,7 +168,7 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
    verbleibende Waise) atomar — der Index bleibt unverändert, statt leer
    dazustehen.
 
-   **Vier Datenfehler lassen `IngestSyntaxa` absichtlich scheitern**, statt
+   **Fünf Datenfehler lassen `IngestSyntaxa` absichtlich scheitern**, statt
    zu warnen und weiterzulaufen:
 
    - eine **Waise** — eine Zeile mit einem anderen Rang als `formation`, für
@@ -199,6 +199,14 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
      Buchstabe bleibt trotzdem nicht unbemerkt — jede Klasse darunter wird
      übersprungen, und deren Ordnungen und Verbände werden dadurch zu Waisen
      (erster Spiegelstrich).
+   - eine **Formationsdatei ohne eine einzige Zeile**. Eine `syntaxa_formations.csv`
+     mit bloßer Kopfzeile besteht die Pflichtquellen-Prüfung — die Datei ist ja
+     da und trägt alle Spalten —, und seit das Leeren zum Ingest gehört, würde
+     ein solcher Lauf den Syntaxa-Teil des Index löschen und mit null Wurzeln
+     committen: eine abgeschnittene kuratierte Quelle nimmt lautlos die ganze
+     Hierarchie mit. Auch das wird beim Lesen geprüft, also vor der
+     Transaktion. Eine **leere `syntaxa_hierarchy.csv` bleibt erlaubt**: die
+     Formationen allein sind eine karge, aber gültige Hierarchie.
 3. `IngestAreas` — liest **zwei** Dateien über denselben Code-Pfad, je einmal
    aufgerufen: `wgsrpd_areas.csv` (`pipelines/wgsrpd`, aus der gepinnten
    TDWG-Tabelle, Report-Zweig `AreaNames`) und `evc_territories.csv`
