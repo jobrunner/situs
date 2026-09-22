@@ -31,6 +31,22 @@ func (d *DB) SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string) ([]d
 	return out, nil
 }
 
+// maxSyntaxonAncestors is the number of STEPS from the deepest rank to the
+// root: alliance -> order -> class -> formation is three steps and four nodes.
+// The name says "ancestors", not "depth", because confusing 3 with 4 is
+// otherwise a matter of time. A fourth step means a cycle in the parent_id
+// graph or a further rank; either is an index defect and is reported with the
+// id that triggered it instead of being experienced as an endless loop.
+//
+// It guards two seams at once: SyntaxonAncestors' walk-loop bound in
+// read_syntaxon.go, and the `u.steps < 3` literal in
+// syntaxaByRankRowsWithGroupSQL below — the two places that detect the same
+// defect. It lives here, next to the SQL literal, so the two cannot drift
+// apart unnoticed; TestSyntaxaByRankStepBoundMatchesMaxSyntaxonAncestors is
+// the guard that actually enforces it, since gosec G201 forbids building the
+// literal from this constant.
+const maxSyntaxonAncestors = 3
+
 // syntaxaByRankRowsWithGroupSQL is the recursive-CTE statement
 // syntaxaByRankRows issues when lifeFormGroup is non-empty. It is a package
 // constant — not inlined at the call site — so a test can read the same

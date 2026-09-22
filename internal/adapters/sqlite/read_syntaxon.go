@@ -11,14 +11,6 @@ import (
 	"github.com/jobrunner/situs/internal/ports/output"
 )
 
-// maxSyntaxonAncestors is the number of STEPS from the deepest rank to the
-// root: alliance -> order -> class -> formation is three steps and four nodes.
-// The name says "ancestors", not "depth", because confusing 3 with 4 is
-// otherwise a matter of time. A fourth step means a cycle in the parent_id
-// graph or a further rank; either is an index defect and is reported with the
-// id that triggered it instead of being experienced as an endless loop.
-const maxSyntaxonAncestors = 3
-
 // scanSyntaxa drains rows whose SELECT names the nine syntaxon columns in
 // exactly this order. One scan site instead of four: a future tenth column
 // must not reach three readers and be forgotten in the fourth.
@@ -164,6 +156,11 @@ func (d *DB) HabitatTypeCountForSyntaxon(ctx context.Context, syntaxonID string)
 // a shortened breadcrumb trail as if it were complete); and more than
 // maxSyntaxonAncestors steps means a cycle or a further rank, reported with the
 // id that triggered it instead of looping.
+//
+// maxSyntaxonAncestors lives in read_syntaxon_rank.go, next to the recursive
+// CTE step bound it also guards — the constant is package-wide visible, as is
+// normal in Go, but its home moved so the SQL literal it must match sits right
+// beside it instead of three files away.
 func (d *DB) SyntaxonAncestors(ctx context.Context, id string) ([]domain.Syntaxon, error) {
 	current, err := d.Syntaxon(ctx, id)
 	if err != nil {
