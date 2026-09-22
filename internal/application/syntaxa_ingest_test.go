@@ -493,6 +493,75 @@ func TestIngestSyntaxaFuehrtEeaOrdnungMitFloraVegGegenstueckZusammen(t *testing.
 	}
 }
 
+func TestIngestSyntaxaSchliesstKollidierendenEEACodeVomRemappingAus(t *testing.T) {
+	// Two FloraVeg rows carrying the SAME eea_code. Picking the last one
+	// read would hang the EEA unit's habitat edges on an arbitrary
+	// syntaxon; the collision is reported and the code is left unmapped
+	// instead, so TST-01A stays its own row like an EEA unit without a
+	// counterpart.
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy: minimalHierarchy +
+			"RA02A,alliance,Doppelverband,Braun 1990,RA01,TST-01A\n",
+		eunis: "id,rank,name,parent_id\nTST-01A,alliance,Testverband Moor 1970,\n",
+		// annex1, not eunis@2021: the remapping must not depend on the
+		// typology an edge belongs to.
+		links: "typology_id,code,syntaxon_id\nannex1,9130,TST-01A\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if len(rep.EEACodeCollisions) != 1 || rep.EEACodeCollisions[0] != "TST-01A" {
+		t.Errorf("EEACodeCollisions = %v, erwartet [TST-01A]", rep.EEACodeCollisions)
+	}
+	if !repo.has("TST-01A") {
+		t.Error("TST-01A fehlt im Index, obwohl der kollidierende EEA-Code kein Gegenstueck benennt")
+	}
+	if rep.EunisOnly != 1 {
+		t.Errorf("EunisOnly = %d, erwartet 1", rep.EunisOnly)
+	}
+	if rep.LinksRemapped != 0 {
+		t.Errorf("LinksRemapped = %d, erwartet 0", rep.LinksRemapped)
+	}
+	if got := repo.linkTargets("annex1", "9130"); len(got) != 1 || got[0] != "TST-01A" {
+		t.Errorf("Kanten = %v, erwartet [TST-01A]", got)
+	}
+}
+
+func TestIngestSyntaxaMeldetJedenKollidierendenEEACodeGenauEinmal(t *testing.T) {
+	// Three rows on one code must not report the code twice, and the
+	// report is sorted so a run is reproducible. RA05A carries no eea_code
+	// at all — the empty string is not a code that can collide.
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy: minimalHierarchy +
+			"RA02A,alliance,Doppelverband,Braun 1990,RA01,TST-01A\n" +
+			"RA03A,alliance,Drittverband,Braun 1991,RA01,TST-01A\n" +
+			"RA04A,alliance,Viertverband,Braun 1992,RA01,MOO-01A\n" +
+			"RA05A,alliance,Leerverband,Braun 1993,RA01,\n" +
+			"RA06A,alliance,Zweitleerverband,Braun 1994,RA01,\n",
+		eunis: "id,rank,name,parent_id\n",
+		links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	want := []string{"MOO-01A", "TST-01A"}
+	if len(rep.EEACodeCollisions) != len(want) {
+		t.Fatalf("EEACodeCollisions = %v, erwartet %v", rep.EEACodeCollisions, want)
+	}
+	for i, w := range want {
+		if rep.EEACodeCollisions[i] != w {
+			t.Errorf("EEACodeCollisions = %v, erwartet %v", rep.EEACodeCollisions, want)
+			break
+		}
+	}
+}
+
 func TestIngestSyntaxaRollbackBeiFehlerhaftemUpsertEunisOnly(t *testing.T) {
 	repo := newFakeRepo()
 	repo.failOn = "UpsertSyntaxon"

@@ -157,12 +157,18 @@ seit dieser Umkehrung das frühere Feldpaar `Syntaxa`/`SyntaxonLinks` von
 }
 ```
 
-`EEACodeCollisions`, `SkippedUnknownSection` und `SkippedPattern` sind seit
-der letzten Review-Runde entfernt: keines der drei wurde je befüllt, und für
-`EEACodeCollisions` gibt es seither eine echte Absicherung an einer anderen
-Stelle — `pipelines/eurovegchecklist/xlsx_to_csv.py` bricht die Konvertierung
-ab, sobald zwei Primärcodes denselben EEA-Code beanspruchen, statt es nur zu
-zählen.
+`SkippedUnknownSection` und `SkippedPattern` sind seit der letzten
+Review-Runde entfernt: keines der beiden wurde je befüllt.
+
+`EEACodeCollisions` fehlt im obigen Block, weil der gemessene Lauf älter ist
+als das Feld; für diese Daten wäre es `null`.
+`pipelines/eurovegchecklist/xlsx_to_csv.py` bricht die Konvertierung ab,
+sobald zwei Primärcodes denselben EEA-Code beanspruchen — aber der Go-Ingest
+liest CSV direkt, und eine handeditierte oder anders erzeugte Datei umgeht
+diese Absicherung. Trägt die Hierarchie denselben EEA-Code doppelt, wird der
+Code gemeldet und **ganz aus der Abbildung EEA-Code → Primärcode genommen**,
+statt die zufällig letzte Zeile zum Gewinner zu küren; die betroffene
+EEA-Einheit bleibt dann als eigene Zeile stehen, wie eine ohne Gegenstück.
 
 `AlliancesWritten` (1310) zählt nur die FloraVeg-Hierarchiezeilen; zusammen mit
 `EunisOnly` (16) ergibt das die 1326 Verbandszeilen der `syntaxon`-Tabelle.

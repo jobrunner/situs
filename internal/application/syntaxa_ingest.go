@@ -47,16 +47,21 @@ type SyntaxaReport struct {
 	// that point.
 	Orphans []string
 
-	// AmbiguousMatches, UnknownLinkTargets and SkippedRows are the only
-	// counters left of the "collected but never enforced" kind this report
-	// used to carry three of (EEACodeCollisions, SkippedUnknownSection,
-	// SkippedPattern, all removed): an eea_code collision is now impossible
-	// to ingest at all, because pipelines/eurovegchecklist/xlsx_to_csv.py
-	// aborts the conversion the moment it finds one — the ONE place that
-	// invariant is enforced, not a second, silently-vacuous check here. A
-	// class with an unknown formation letter and a code matching no rank
-	// pattern both already land in SkippedRows; there never was a second,
-	// finer-grained bucket that anything filled.
+	// EEACodeCollisions names every eea_code that more than one hierarchy
+	// row claims, sorted and each listed once. pipelines/eurovegchecklist/
+	// xlsx_to_csv.py aborts on such a collision, but the Go ingest reads the
+	// CSV directly, so a hand-edited or differently-produced file reaches
+	// here unguarded. A listed code is excluded from the EEA -> primary-code
+	// map entirely: crowning the last row read would hang an EEA unit's
+	// habitat edges on an arbitrary syntaxon.
+	EEACodeCollisions []string
+
+	// AmbiguousMatches, UnknownLinkTargets and SkippedRows are the counters
+	// left of the "collected but never enforced" kind this report used to
+	// carry two more of (SkippedUnknownSection, SkippedPattern, both
+	// removed): a class with an unknown formation letter and a code matching
+	// no rank pattern both already land in SkippedRows; there never was a
+	// second, finer-grained bucket that anything filled.
 	AmbiguousMatches   []string
 	UnknownLinkTargets []string
 	SkippedRows        int
@@ -146,12 +151,7 @@ func writeSyntaxa(ctx context.Context, tx output.IngestTx, dir string,
 	// unit is already represented by its FloraVeg row — writing it a
 	// second time would put the same syntaxon into the index under two
 	// ids.
-	byEEA := map[string]string{}
-	for _, r := range rows {
-		if r.eeaCode != "" {
-			byEEA[r.eeaCode] = r.code
-		}
-	}
+	byEEA := mapByEEACode(rows, rep)
 	eunisOnly, err := writeEunisOnly(ctx, tx, dir, byEEA, written, rep)
 	if err != nil {
 		return err
@@ -175,6 +175,38 @@ func writeSyntaxa(ctx context.Context, tx output.IngestTx, dir string,
 			len(rep.Orphans), strings.Join(rep.Orphans, ", "))
 	}
 	return nil
+}
+
+// mapByEEACode maps each eea_code the hierarchy carries to its FloraVeg
+// primary code. A code claimed by more than one row is REMOVED from the map
+// rather than resolved to one of them: which row wins would be the file's
+// line order, and writeLinks/writeEunisOnly would silently move an EEA
+// unit's identity and its habitat edges onto an arbitrary syntaxon. Without
+// the entry the EEA unit stays a row of its own, exactly like one that has
+// no counterpart at all.
+func mapByEEACode(rows []hierarchyRow, rep *SyntaxaReport) map[string]string {
+	byEEA := map[string]string{}
+	colliding := map[string]bool{}
+	for _, r := range rows {
+		if r.eeaCode == "" {
+			continue
+		}
+		if _, seen := byEEA[r.eeaCode]; seen {
+			delete(byEEA, r.eeaCode)
+			colliding[r.eeaCode] = true
+		}
+		if colliding[r.eeaCode] {
+			slog.Warn("eea_code claimed by more than one hierarchy row",
+				"eea_code", r.eeaCode, "code", r.code, "file", fileHierarchy)
+			continue
+		}
+		byEEA[r.eeaCode] = r.code
+	}
+	for code := range colliding {
+		rep.EEACodeCollisions = append(rep.EEACodeCollisions, code)
+	}
+	sort.Strings(rep.EEACodeCollisions)
+	return byEEA
 }
 
 // writeFormations writes the 25 EuroVegChecklist sections as the root of

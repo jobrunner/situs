@@ -216,6 +216,9 @@ func ingestSyntaxaPhase(ctx context.Context, db *sqlite.DB, csvDir string) (appl
 	if err != nil {
 		return application.SyntaxaReport{}, fmt.Errorf("ingesting syntaxa from %q: %w", csvDir, err)
 	}
+	if len(rep.EEACodeCollisions) > 0 {
+		slog.WarnContext(ctx, "syntaxa ingest left ambiguous eea codes unmapped", "eea_codes", rep.EEACodeCollisions)
+	}
 	if len(rep.AmbiguousMatches) > 0 {
 		slog.WarnContext(ctx, "syntaxa ingest found ambiguous name matches", "ids", rep.AmbiguousMatches)
 	}
