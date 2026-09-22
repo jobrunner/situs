@@ -178,8 +178,10 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
    - ein **Elternteil vom falschen Rang** — eine Kante, die eine Stufe von
      Formation → Klasse → Ordnung → Verband überspringt (ein Verband direkt
      unter einer Klasse), oder eine Zeile mit einem Rang, den die Leiter gar
-     nicht führt. Beides erreicht eine Formation und ist trotzdem nicht
-     navigierbar: `GET /v1/syntaxon/{id}` verspricht genau diese vier Stufen.
+     nicht führt, oder eine **Formation mit Elternteil**, obwohl über der
+     Formation nichts steht. Alles drei erreicht eine Formation und ist
+     trotzdem nicht navigierbar: `GET /v1/syntaxon/{id}` verspricht genau
+     diese vier Stufen.
    - ein **doppelt vergebener Primärcode** — zwei Zeilen in
      `syntaxa_hierarchy.csv` mit demselben `code`. Der Primärcode ist die
      Identität des Syntaxons: er wird als `id` geschrieben, und ein Konflikt
@@ -229,7 +231,13 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
    gilt für eine Zeile in `syntaxa.csv` **ohne `id`** — trifft ihr Name einen
    FloraVeg-Verband, löst sogar der Namensabgleich einen Elternteil auf, und
    der Lauf committet ein unerreichbares Syntaxon. Beide Schlüssel werden
-   geprüft wie die Verbreitungsleser ihre prüfen.
+   geprüft wie die Verbreitungsleser ihre prüfen. Ebenfalls verworfen und
+   gemeldet wird eine Zeile in `syntaxa.csv` **mit dem Rang `formation`**:
+   Formationen definiert allein `syntaxa_formations.csv`, und geschrieben
+   bekäme die Zeile wie jede andere EEA-Zeile einen Elternteil abgeleitet —
+   eine Formation *mit* Elternteil, obwohl die Formation die Wurzel ist. Die
+   Rangprüfung meldet eine solche Formation seitdem auch, statt Formationen
+   ungeprüft zu überspringen (zweiter Spiegelstrich oben).
 3. `IngestAreas` — liest **zwei** Dateien über denselben Code-Pfad, je einmal
    aufgerufen: `wgsrpd_areas.csv` (`pipelines/wgsrpd`, aus der gepinnten
    TDWG-Tabelle, Report-Zweig `AreaNames`) und `evc_territories.csv`

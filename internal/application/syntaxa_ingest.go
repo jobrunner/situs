@@ -327,6 +327,20 @@ func writeEunisOnly(ctx context.Context, tx output.IngestTx, dir string,
 				skip(line, fmt.Errorf("eunis-only row without an id"))
 				return nil
 			}
+			// A formation is the root of the hierarchy, and only
+			// syntaxa_formations.csv defines one. Written from here the row
+			// would go through assignRemainingParents like any other, and a
+			// name matching a FloraVeg alliance hands it an order as parent —
+			// a formation WITH a parent, which checkParentRanks reports but
+			// which must not be produced in the first place. Discarded and
+			// reported like the row without an id above, not fatal: the row
+			// claims a rank this file cannot hold, so dropping it loses
+			// nothing but itself.
+			if rank := row[idx[colRank]]; rank == domain.SyntaxonRankFormation {
+				skip(line, fmt.Errorf("eunis-only row %s claims rank %q, which only %s defines",
+					id, rank, fileFormations))
+				return nil
+			}
 			if _, ok := byEEA[id]; ok {
 				return nil
 			}

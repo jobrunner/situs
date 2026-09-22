@@ -72,7 +72,9 @@ func (g *writtenGraph) setResolvedParents(eunisOnly []eunisOnlyRow, parents map[
 
 // checkParentRanks records, into rep.WrongRankParents, every written row
 // whose parent sits at the wrong level of the ladder — or whose own rank is
-// not on it, which no correct parent can repair. A row whose parent was
+// not on it, which no correct parent can repair, or which is a formation and
+// carries a parent at all, the ladder's top having nothing above it. A row
+// whose parent was
 // never written is skipped: that is checkDanglingParents' finding, and
 // reporting it twice under two names would only obscure which check saw
 // what.
@@ -85,7 +87,16 @@ func checkParentRanks(g *writtenGraph, rep *SyntaxaReport) {
 
 	for _, id := range ids {
 		rank := g.rank[id]
+		parentID := g.parent[id]
 		if rank == domain.SyntaxonRankFormation {
+			// The root case is checked, not skipped: nothing sits above a
+			// formation, so a parent on one is exactly as unnavigable as a
+			// level skipped further down — and a check that leaves its own
+			// root case unexamined invites the next such defect.
+			if parentID != "" {
+				rep.WrongRankParents = append(rep.WrongRankParents,
+					fmt.Sprintf("%s is a formation and hangs under %s; a formation is a root", id, parentID))
+			}
 			continue
 		}
 		want, ok := parentRankOf(rank)
@@ -94,7 +105,6 @@ func checkParentRanks(g *writtenGraph, rep *SyntaxaReport) {
 				fmt.Sprintf("%s has rank %q, which is not a rank of the hierarchy", id, rank))
 			continue
 		}
-		parentID := g.parent[id]
 		got, written := g.rank[parentID]
 		if !written || got == want {
 			continue
