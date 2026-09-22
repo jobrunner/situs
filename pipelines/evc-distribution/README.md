@@ -36,6 +36,13 @@ out/evc_territories.csv                 area_scheme,area_code,name_en
 out/report.json
 ```
 
+Die vier Ausgaben werden **vor** Download und Prüfsummenprüfung gelöscht:
+`collect-ingest-input.sh` geht nach Dateipräsenz, ein fehlgeschlagener Lauf
+würde sonst die CSVs des vorigen Laufs still in den nächsten Ingest
+veröffentlichen. Nach diesem Punkt enthält `out/` das Ergebnis dieses Laufs
+oder gar nichts. `artifacts/` bleibt unangetastet — der Download-Cache ist
+absichtlich dauerhaft.
+
 Gemessen gegen die gepinnte Datei: **1115** Verbände, **136** Territorien,
 **9608** `verified`, **1920** `uncertain`, **11528** Zeilen, 0 Slug-Kollisionen,
 **4** übersprungene Summenzeilen, 0 sonstige übersprungene Zeilen, und das

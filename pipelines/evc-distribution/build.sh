@@ -22,6 +22,24 @@ OUT_DIR="${SCRIPT_DIR}/out"
 mkdir -p "${ART_DIR}" "${OUT_DIR}"
 SRC_PATH="${ART_DIR}/${FILE}"
 
+# The four files xlsx_to_csv.py writes. Cleared BEFORE the download and the
+# checksum check, not after them: collect-ingest-input.sh goes by file
+# presence, so a run that fails at the download, at the pin check or in the
+# parser would otherwise publish the previous run's CSVs into the next
+# ingest as if they were current. After this point out/ holds the result of
+# this run or nothing at all.
+#
+# artifacts/ is NOT touched — the download cache is deliberately persistent.
+OUTPUTS=(
+  syntaxon_distribution.csv
+  syntaxon_distribution_coverage.csv
+  evc_territories.csv
+  report.json
+)
+for name in "${OUTPUTS[@]}"; do
+  rm -f "${OUT_DIR}/${name}"
+done
+
 if [[ ! -f "${SRC_PATH}" ]]; then
   echo "evc-distribution: downloading ${SOURCE_URL}"
   curl -fsSL "${SOURCE_URL}" -o "${SRC_PATH}"
