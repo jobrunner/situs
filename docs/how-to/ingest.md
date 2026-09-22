@@ -44,7 +44,9 @@ Liest die von `pipelines/eunis/xlsx_to_csv.py` erzeugten CSVs
 `localizations.csv`), die zwei **Pflichtquellen** der Syntaxa-Hierarchie
 `syntaxa_formations.csv` (aus `data/`) und `syntaxa_hierarchy.csv` (von
 `pipelines/eurovegchecklist/xlsx_to_csv.py`) plus, optional,
-`wgsrpd_areas.csv` von `pipelines/wgsrpd`, `habitat_descriptions.csv` von
+`wgsrpd_areas.csv` von `pipelines/wgsrpd`, `evc_territories.csv` und
+`syntaxon_distribution.csv`/`syntaxon_distribution_coverage.csv` von
+`pipelines/evc-distribution`, `habitat_descriptions.csv` von
 `pipelines/floraveg-factsheets`, `localizations_descriptions.csv` (aus
 `data/`) und die drei Zeigerwert-CSVs
 (`eive_traits.csv`, `tichy_traits.csv`, `midolo_traits.csv` — erzeugt von
@@ -52,6 +54,14 @@ Liest die von `pipelines/eunis/xlsx_to_csv.py` erzeugten CSVs
 `--csv-dir` — aus `--csv-dir` und schreibt in die SQLite-Datei `--db`. Die
 Ausgabe ist ein JSON-Report mit den Zeilenzählern je Entität plus dem
 Artenrollen-Report und dem Trait-Report (siehe unten).
+
+**Ein Feld im JSON wechselt seit der Quellenumkehr die Form.**
+`ingestOutput` bettet den generischen `application.IngestReport` ein (der
+seither kein eigenes `Syntaxa`- oder `SyntaxonLinks`-Zahlenfeld mehr führt)
+**und** trägt ein eigenes Feld `Syntaxa` vom Typ `application.SyntaxaReport`.
+Der JSON-Schlüssel `Syntaxa` ist damit seit dieser Quellenumkehr ein
+**Objekt**, kein Zähler mehr — ein Skript, das `Syntaxa` als Zahl liest,
+bricht. Der Nachfolger von `SyntaxonLinks` ist `Syntaxa.LinksWritten`.
 
 `--crosswalk`/`--aggregate-members` sind optional und fallen auf
 `<csv-dir>/eurosl_crosswalk.csv` bzw. `<csv-dir>/aggregate_members.csv`
@@ -124,7 +134,8 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
 
 `ingest` läuft in mehreren Schritten, jeder mit eigener Transaktion:
 
-1. `IngestCSV` — Typologien, Habitattypen, Crosswalks, Syntaxa.
+1. `IngestCSV` — Typologien, Habitattypen, Crosswalks. (Syntaxa sind seit der
+   Quellenumkehr **nicht** mehr Teil dieses Schritts, siehe Schritt 2.)
 2. `IngestSyntaxa` — liest **vier** Dateien: `syntaxa_formations.csv` (die 25
    EuroVegChecklist-Sektionen A–Y, aus `data/`) und `syntaxa_hierarchy.csv`
    (FloraVeg.EU EuroVegChecklist, aus `pipelines/eurovegchecklist`) sind seit
@@ -138,16 +149,20 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
    `../reference/measured-index.md#syntaxa-tiefe-offener-punkt-1`. Läuft
    direkt nach `IngestCSV` und vor Artenrollen/Verbreitung/Zeigerwerten/
    Label-Overlay, von denen keiner davon abhängt.
-3. `IngestAreas` — liest optional `wgsrpd_areas.csv` (`pipelines/wgsrpd`, aus
-   der gepinnten TDWG-Tabelle) und schreibt die Namen der Gebietscodes, die
+3. `IngestAreas` — liest **zwei** Dateien über denselben Code-Pfad, je einmal
+   aufgerufen: `wgsrpd_areas.csv` (`pipelines/wgsrpd`, aus der gepinnten
+   TDWG-Tabelle, Report-Zweig `AreaNames`) und `evc_territories.csv`
+   (`pipelines/evc-distribution`, Report-Zweig `Territories`, separat gezählt
+   statt aufsummiert). Beide schreiben nur die Namen der Gebietscodes, die
    `GET /v1/areas` neben dem Code liefert. Rein lokal, kein Dienst wird
    gefragt; hängt von nichts ab und nichts hängt davon ab — die Namen sind ein
-   Overlay auf die Codes, die Schritt 6 schreibt. Fehlt die Datei, ist das
-   **keine** Fehlersituation: der Report zählt 0 (`AreaNames.Areas`) und die
-   Codes bleiben namenlos. Eine Zeile ohne Code oder mit einem anderen
-   Gebietsschema als `wgsrpd_l3` wird übersprungen und gezählt
-   (`AreaNames.SkippedRows`) statt geschrieben: sie würde auf der Leseseite
-   mit nichts zusammenfinden, und dieses Schweigen soll im Report stehen.
+   Overlay auf Codes, die andere Schritte schreiben (Artenverbreitung bzw.
+   Syntaxa-Verbreitung, Schritt 6). Fehlt eine der beiden Dateien, ist das
+   **keine** Fehlersituation: der jeweilige Zweig zählt 0 Areas und die Codes
+   bleiben namenlos. Eine Zeile ohne Code oder mit einem fremden
+   Gebietsschema wird übersprungen und gezählt (`SkippedRows`) statt
+   geschrieben: sie würde auf der Leseseite mit nichts zusammenfinden, und
+   dieses Schweigen soll im Report stehen.
 4. `IngestDescriptions` — liest optional `habitat_descriptions.csv`
    (`pipelines/floraveg-factsheets`, aus dem gepinnten Factsheet-PDF) und
    `annex1_descriptions.csv` (aus `data/`, von situs verfasst) und schreibt je
@@ -159,30 +174,41 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
    gezählt. `Descriptions.SkippedUnknownCode` ist die **Summe über beide
    Dateien** (am Referenzstand 13, sämtlich aus den Factsheets: die marinen
    `MA*`-Codes sowie `N23`/`N24`). Rein lokal, kein Dienst wird gefragt.
-5. `IngestSpeciesRoles` — Artenrollen, aufgelöst gegen eine lokale
+5. `IngestSyntaxonDistribution` — die Verbreitung der Syntaxa (nicht der
+   Arten — das ist Schritt 7), gelesen aus `syntaxon_distribution.csv` und
+   `syntaxon_distribution_coverage.csv` (beide von
+   `pipelines/evc-distribution`, dem gepinnten EuroVegChecklist-Verbreitungs-
+   export). Rein lokal, kein Dienst wird gefragt. Läuft nach `IngestSyntaxa`:
+   eine Verbreitungszeile zu einer Syntaxon-ID, die der Index nicht führt,
+   wird verworfen und gezählt (`UnknownSyntaxa`) — das bedeutet erst etwas,
+   sobald die Syntaxa selbst im Index stehen. Die Coverage-Datei trennt eine
+   echte „kommt hier nicht vor"-Aussage von einem bloß fehlenden Datenpunkt;
+   siehe `../reference/http-api.md` für die Dreiwertigkeit auf der Leseseite.
+6. `IngestSpeciesRoles` — Artenrollen, aufgelöst gegen eine lokale
    Crosswalk-Datei (`eurosl_crosswalk.csv`), plus abgeleitete
    Mitgliedsarten-Zeilen für Sammelarten (`aggregate_members.csv`). Kein
    hostus-Aufruf mehr in diesem Schritt.
-6. `IngestDistribution` — die Verbreitung der aufgelösten Konzepte (siehe unten).
-7. `IngestTraits` — die Zeigerwerte (EIVE, Tichý, Midolo) der aufgelösten
+7. `IngestDistribution` — die Verbreitung der aufgelösten Arten-Konzepte
+   (siehe unten; nicht zu verwechseln mit Schritt 5, der Syntaxa-Verbreitung).
+8. `IngestTraits` — die Zeigerwerte (EIVE, Tichý, Midolo) der aufgelösten
    Konzepte, gelesen aus `eive_traits.csv`, `tichy_traits.csv` und
    `midolo_traits.csv` im `--csv-dir`, ebenfalls über hostus-Namensauflösung.
-8. `IngestLocalizations` und `DeriveGermanLabels` — der Label-Overlay. Gelesen
+9. `IngestLocalizations` und `DeriveGermanLabels` — der Label-Overlay. Gelesen
    werden **zwei** Dateien über denselben Code-Pfad: `localizations.csv` (die
    Labels, aus `pipelines/eurlex`) und `localizations_descriptions.csv` (die
    deutschen Beschreibungen, gepflegt in `data/`). Beide sind optional, ihre
    Zeilen werden im Report zusammengezählt.
 
-Fehlt `eurosl_crosswalk.csv`, bricht `ingest` beim **fünften** Schritt
-(`IngestSpeciesRoles`) mit einem Fehler ab — aber die **ersten vier**
+Fehlt `eurosl_crosswalk.csv`, bricht `ingest` beim **sechsten** Schritt
+(`IngestSpeciesRoles`) mit einem Fehler ab — aber die **ersten fünf**
 Schritte sind zu diesem Zeitpunkt bereits committed
-(Typologien/Habitattypen/Crosswalks/Syntaxa inklusive der
-FloraVeg-Hierarchie-Anreicherung, die Gebietsnamen und die Beschreibungen,
-aber keine Artenrollen). hostus wird dabei gar nicht erst kontaktiert: die
-Namensauflösung ist seit der Aggregat-Mitgliedsarten-Erweiterung rein
-dateibasiert, hostus kommt erst ab Schritt 6 (`IngestDistribution`) ins
-Spiel. Ein fehlgeschlagener fünfter Schritt ist kein Datenverlust: jeder
-`Upsert*` ist idempotent, ein erneuter
+(Typologien/Habitattypen/Crosswalks, Syntaxa inklusive der
+FloraVeg-Hierarchie-Anreicherung, die Gebietsnamen, die Beschreibungen und
+die Syntaxa-Verbreitung, aber keine Artenrollen). hostus wird dabei gar nicht
+erst kontaktiert: die Namensauflösung ist seit der
+Aggregat-Mitgliedsarten-Erweiterung rein dateibasiert, hostus kommt erst ab
+Schritt 7 (`IngestDistribution`) ins Spiel. Ein fehlgeschlagener sechster
+Schritt ist kein Datenverlust: jeder `Upsert*` ist idempotent, ein erneuter
 `situs ingest`-Lauf gegen denselben Index holt ihn einfach nach. Ein
 Operator, der nach einem fehlgeschlagenen Lauf den Index inspiziert, sollte
 diese Teilbefüllung nicht als Bug lesen.
