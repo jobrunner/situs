@@ -92,8 +92,10 @@ class CellValueError(RuntimeError):
 
 
 class SlugCollisionError(RuntimeError):
-    """Two column names derive the same area_code. Picking a winner would
-    silently merge two territories."""
+    """Two columns derive the same area_code. Picking a winner would silently
+    merge two territories. Two columns spelled EXACTLY alike count too: they
+    are not harmless duplicates but two evc_territories.csv rows on one
+    area_code, which the SQLite primary key merges without a word."""
 
 
 def col_index(ref):
@@ -210,11 +212,13 @@ def _territories(head, meta, xlsx_path):
                 f"position {summary_boundary}) but is not one of "
                 f"{_SUMMARY_LABELS}; unrecognized sheet structure")
         code = slugify(name)
-        if code in seen and seen[code] != name:
+        if code in seen:
+            first_name, first_ci = seen[code]
             raise SlugCollisionError(
-                f"{xlsx_path} [{DATA_SHEET}]: columns {seen[code]!r} and "
-                f"{name!r} both derive area_code {code!r}")
-        seen[code] = name
+                f"{xlsx_path} [{DATA_SHEET}]: columns {first_name!r} (position "
+                f"{first_ci}) and {name!r} (position {ci}) both derive "
+                f"area_code {code!r}")
+        seen[code] = (name, ci)
         out.append((ci, code, name))
     return out
 

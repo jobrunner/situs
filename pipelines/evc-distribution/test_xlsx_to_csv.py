@@ -278,6 +278,18 @@ class ConvertTest(unittest.TestCase):
         self.assertIn("Austria Alps", message)
         self.assertIn("Austria_Alps", message)
 
+    def test_two_identical_column_headers_abort_too(self):
+        # The collision check used to compare the ORIGINAL names, so two
+        # columns spelled exactly alike slipped past it and produced two
+        # evc_territories.csv rows on one area_code — silently merged later
+        # by the SQLite primary key.
+        with self.assertRaises(SlugCollisionError) as ctx:
+            self._convert(
+                [row((0, "AA01A"), (1, "PAP-01A"), (2, "N"), (3, "N A"))],
+                territories=("Austria Alps", "Austria Alps"),
+            )
+        self.assertIn("Austria Alps", str(ctx.exception))
+
     def test_a_missing_meta_column_raises_header_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             xlsx = os.path.join(tmp, "dist.xlsx")
