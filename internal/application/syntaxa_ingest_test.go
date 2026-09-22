@@ -713,6 +713,62 @@ func TestIngestSyntaxaNenntJedenKollidierendenEEACodeGenauEinmal(t *testing.T) {
 	}
 }
 
+func TestIngestSyntaxaScheitertAnDoppeltemPrimaercode(t *testing.T) {
+	// Two hierarchy rows on the SAME primary code. The code is the syntaxon's
+	// id, and UpsertSyntaxon resolves a conflict on it with DO UPDATE — so the
+	// later row would silently replace the earlier one's rank, name and parent
+	// while the report counted both. The ingest must fail on it instead.
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy: minimalHierarchy +
+			"CA01A,alliance,Zweitverband,Braun 1990,CA01,MOO-02A\n",
+		eunis: "id,rank,name,parent_id\n",
+		links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz doppeltem Primaercode durch")
+	}
+	if len(rep.PrimaryCodeCollisions) != 1 || rep.PrimaryCodeCollisions[0] != "CA01A" {
+		t.Errorf("PrimaryCodeCollisions = %v, erwartet [CA01A]", rep.PrimaryCodeCollisions)
+	}
+	if strings.Count(err.Error(), "CA01A") != 1 {
+		t.Errorf("Fehler = %v, erwartet CA01A genau einmal", err)
+	}
+	if repo.has("CA01A") {
+		t.Error("CA01A wurde geschrieben, obwohl der Ingest abbrechen sollte")
+	}
+}
+
+func TestIngestSyntaxaNenntJedenDoppeltenPrimaercodeGenauEinmal(t *testing.T) {
+	// Like the eea_code case: every colliding code is named, sorted and once,
+	// so the source can be repaired in one pass.
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy: minimalHierarchy +
+			"RA01A,alliance,Zweitmoosverband,Braun 1990,RA01,MOO-02A\n" +
+			"RA01A,alliance,Drittmoosverband,Braun 1991,RA01,MOO-03A\n" +
+			"CA01A,alliance,Zweitverband,Braun 1992,CA01,TST-02A\n",
+		eunis: "id,rank,name,parent_id\n",
+		links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz doppelter Primaercodes durch")
+	}
+	want := []string{"CA01A", "RA01A"}
+	if !slices.Equal(rep.PrimaryCodeCollisions, want) {
+		t.Fatalf("PrimaryCodeCollisions = %v, erwartet %v", rep.PrimaryCodeCollisions, want)
+	}
+	for _, code := range want {
+		if strings.Count(err.Error(), code) != 1 {
+			t.Errorf("Fehler = %v, erwartet %s genau einmal", err, code)
+		}
+	}
+}
+
 func TestIngestSyntaxaRollbackBeiFehlerhaftemUpsertEunisOnly(t *testing.T) {
 	repo := newFakeRepo()
 	repo.failOn = "UpsertSyntaxon"

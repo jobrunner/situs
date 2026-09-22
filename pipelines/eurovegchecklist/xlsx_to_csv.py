@@ -84,7 +84,24 @@ class HeaderError(RuntimeError):
     of silently defaulting every cell to empty."""
 
 
-class EEACodeCollisionError(RuntimeError):
+class CodeCollisionError(RuntimeError):
+    """A code column of the output claims one value twice. Both concrete
+    collisions below stop the pipeline for the same reason — a collision is a
+    data defect, not a warning to note and carry on past — so main() catches
+    this one class instead of growing a branch per check."""
+
+
+class PrimaryCodeCollisionError(CodeCollisionError):
+    """Two rows claim the same primary EVC code. That code IS the syntaxon's
+    identity: IngestSyntaxa writes it as the row's id and UpsertSyntaxon
+    resolves a conflict on it with ON CONFLICT(id) DO UPDATE, so emitting both
+    rows would merge two vegetation units into one — the later row winning
+    rank, name and parent — while the report still counted both, and every
+    parent_code and habitat-type edge pointing at the code would mean
+    whichever row came last in the file."""
+
+
+class EEACodeCollisionError(CodeCollisionError):
     """Two different primary codes claim the same eea_code (the historical
     EEA-EUNIS code in parentheses). That code is the join key
     IngestSyntaxa's byEEA map uses to resolve an EEA edge onto its FloraVeg
@@ -93,9 +110,7 @@ class EEACodeCollisionError(RuntimeError):
     pick one of the two at random ("last one wins" in a Go map iteration).
     Failing here, at conversion time, is the ONE place this is checked —
     mirrors SlugCollisionError in pipelines/evc-distribution/xlsx_to_csv.py,
-    which aborts for the analogous reason (a collision is a data defect
-    worth stopping the pipeline for, not a warning to note and carry on
-    past)."""
+    which aborts for the analogous reason."""
 
 
 def _shared_strings(zf):
@@ -235,6 +250,9 @@ def convert(xlsx_path, out_dir):
     # different primary code claiming the same eea_code is a real collision —
     # not just the same row's eea_code seen twice.
     alt_seen = {}
+    # The primary code, unlike the eea_code, is the row's own identity: a
+    # second claim is a collision however the rest of the row reads.
+    code_seen = {}
 
     for sheet_name, sheet_path in _data_sheets(xlsx_path):
         rows = read_sheet(xlsx_path, sheet_path)
@@ -251,6 +269,11 @@ def convert(xlsx_path, out_dir):
             if not rank:
                 skipped.append((sheet_name, code))
                 continue
+            if code in code_seen:
+                raise PrimaryCodeCollisionError(
+                    f"{xlsx_path} [{sheet_name}]: code {code!r} is claimed twice, "
+                    f"first in sheet {code_seen[code]!r}")
+            code_seen[code] = sheet_name
             if alt:
                 if alt in alt_seen and alt_seen[alt] != code:
                     raise EEACodeCollisionError(
@@ -299,7 +322,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         report = convert(args.xlsx, args.out_dir)
-    except (HeaderError, EEACodeCollisionError) as exc:
+    except (HeaderError, CodeCollisionError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)
     print(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True))

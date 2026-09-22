@@ -33,7 +33,7 @@ python3 xlsx_to_csv.py \
 Der Lauf **leert zuerst seine eigenen Ausgaben** (`syntaxa_hierarchy.csv`,
 `report.json`) und schreibt sie danach neu. Grund:
 `scripts/collect-ingest-input.sh` sammelt die Hierarchie allein nach
-Dateipräsenz ein — ein Lauf, der an einer EEA-Code-Kollision oder an einer
+Dateipräsenz ein — ein Lauf, der an einer Code-Kollision oder an einer
 fehlenden Spalte scheitert, würde sonst die Datei von gestern als aktuelle in
 den nächsten Ingest schieben. Nach dem Start gilt: `out/` trägt das Ergebnis
 **dieses** Laufs oder gar nichts. Dieselbe Haltung wie in
@@ -44,11 +44,19 @@ absichtlich dauerhaft.
 
 Schreibt `out/syntaxa_hierarchy.csv`
 (`code,rank,name,author,parent_code,eea_code`) und `out/report.json`
-(Klassen/Ordnungen/Verbände/übersprungene Zeilen/EEA-Codes/EEA-Code-Kollisionen).
+(Klassen/Ordnungen/Verbände/Zeilen insgesamt/übersprungene Zeilen/EEA-Codes).
 Gemessen gegen die reale, am 2026-08-30 gepinnte Datei (siehe
 `manifest.yaml`): 150 Klassen, 381 Ordnungen, 1310 Verbände, 1841 Zeilen
-insgesamt, 0 übersprungene Zeilen, 1841 EEA-Codes, 0 EEA-Code-Kollisionen — deckt
-sich exakt mit dem Design-Spec-Spike (Zeile 20-21).
+insgesamt, 0 übersprungene Zeilen, 1841 EEA-Codes — deckt sich exakt mit dem
+Design-Spec-Spike (Zeile 20-21).
+
+**Zwei Code-Kollisionen brechen die Konvertierung ab**, statt eine Zeile
+lautlos gewinnen zu lassen (beide gemessen: in der gepinnten Datei kommt
+keine vor). Ein doppelt vergebener **Primärcode** verschmölze zwei
+Vegetationseinheiten zu einer, weil der Code die `id` des Syntaxons ist und
+`IngestSyntaxa` Konflikte darauf per `ON CONFLICT(id) DO UPDATE` auflöst; ein
+von zwei Primärcodes beanspruchter **EEA-Code** machte den Migrations- und
+Join-Schlüssel mehrdeutig.
 
 `rank` und `parent_code` werden **ausschließlich** aus dem Code-Muster
 abgeleitet (`AA` Klasse → `AA01` Ordnung → `AA01A` Verband, Elternteil durch

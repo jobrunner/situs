@@ -58,6 +58,16 @@ type SyntaxaReport struct {
 	// field is the diagnosis to that abort and is returned filled with it.
 	EEACodeCollisions []string
 
+	// PrimaryCodeCollisions names every primary EVC code that more than one
+	// hierarchy row claims, sorted and each listed once, and is returned filled
+	// with the abort it diagnoses — like EEACodeCollisions above. The primary
+	// code is the syntaxon's id, so a duplicate is worse than an ambiguous
+	// lookup key: UpsertSyntaxon merges the rows into one
+	// (ON CONFLICT(id) DO UPDATE), the later one winning rank, name and parent,
+	// while the report still counts both. The pipeline aborts on it too, but
+	// the Go ingest reads the CSV directly.
+	PrimaryCodeCollisions []string
+
 	// AmbiguousMatches, UnknownLinkTargets and SkippedRows are the counters
 	// left of the "collected but never enforced" kind this report used to
 	// carry two more of (SkippedUnknownSection, SkippedPattern, both
@@ -105,10 +115,13 @@ func IngestSyntaxa(ctx context.Context, repo output.Repository, dir string) (Syn
 	if err != nil {
 		return SyntaxaReport{}, err
 	}
-	// Before the transaction opens: nothing about an ambiguous eea_code can
-	// be repaired by writing rows first. The report is returned filled here,
+	// Before the transaction opens: nothing about a duplicate code can be
+	// repaired by writing rows first. The report is returned filled here,
 	// unlike the zero value every other error path returns, because its
-	// EEACodeCollisions list is exactly the diagnosis to this abort.
+	// collision list is exactly the diagnosis to this abort.
+	if err := checkPrimaryCodeCollisions(rows, &rep); err != nil {
+		return rep, err
+	}
 	if err := checkEEACodeCollisions(rows, &rep); err != nil {
 		return rep, err
 	}

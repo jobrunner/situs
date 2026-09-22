@@ -168,7 +168,7 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
    verbleibende Waise) atomar — der Index bleibt unverändert, statt leer
    dazustehen.
 
-   **Fünf Datenfehler lassen `IngestSyntaxa` absichtlich scheitern**, statt
+   **Sechs Datenfehler lassen `IngestSyntaxa` absichtlich scheitern**, statt
    zu warnen und weiterzulaufen:
 
    - eine **Waise** — eine Zeile mit einem anderen Rang als `formation`, für
@@ -180,6 +180,18 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
      unter einer Klasse), oder eine Zeile mit einem Rang, den die Leiter gar
      nicht führt. Beides erreicht eine Formation und ist trotzdem nicht
      navigierbar: `GET /v1/syntaxon/{id}` verspricht genau diese vier Stufen.
+   - ein **doppelt vergebener Primärcode** — zwei Zeilen in
+     `syntaxa_hierarchy.csv` mit demselben `code`. Der Primärcode ist die
+     Identität des Syntaxons: er wird als `id` geschrieben, und ein Konflikt
+     darauf wird per `ON CONFLICT(id) DO UPDATE` aufgelöst. Beide Zeilen zu
+     schreiben verschmölze also zwei Vegetationseinheiten zu einer — die
+     spätere gewinnt Rang, Name und Elternteil —, während der Report beide
+     zählt; jede `parent_code`- und Habitattyp-Kante auf diesen Code meinte
+     dann, wer zuletzt in der Datei stand. Wie beim EEA-Code nennt die Meldung
+     **alle** kollidierenden Codes, und die Prüfung läuft vor der Transaktion.
+     `pipelines/eurovegchecklist/xlsx_to_csv.py` bricht bereits bei der
+     Konvertierung ab; der Go-Ingest liest die CSV aber direkt, eine
+     handverlesene Datei erreicht ihn also ungeprüft.
    - ein **doppelt beanspruchter EEA-Code** — zwei Zeilen in
      `syntaxa_hierarchy.csv` mit demselben nichtleeren `eea_code`. Der
      EEA-Code ist der Migrationsschlüssel von den alten IDs

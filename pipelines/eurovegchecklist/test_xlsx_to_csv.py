@@ -5,7 +5,16 @@ import unittest
 import zipfile
 
 import xlsx_to_csv
-from xlsx_to_csv import EEACodeCollisionError, HeaderError, col_index, convert, rank_and_parent, split_code
+from xlsx_to_csv import (
+    CodeCollisionError,
+    EEACodeCollisionError,
+    HeaderError,
+    PrimaryCodeCollisionError,
+    col_index,
+    convert,
+    rank_and_parent,
+    split_code,
+)
 
 
 def _xml_escape(value):
@@ -247,6 +256,26 @@ class ConvertTest(unittest.TestCase):
             self._convert_rows(rows)
         self.assertIn("PAP-01", str(ctx.exception))
 
+    def test_doppelter_primaercode_bricht_die_konvertierung_ab(self):
+        # The primary code is the syntaxon's id, and IngestSyntaxa's
+        # UpsertSyntaxon resolves a conflict on it with DO UPDATE — emitting
+        # both rows would silently merge two vegetation units into one, the
+        # later row winning rank, name and parent, while the report counts
+        # both. Same weight as the eea_code collision, so the same abort.
+        rows = [
+            {"Code": "AA01A (PAP-01A)", "Name": "V", "Author": ""},
+            {"Code": "AA01A (PAP-02A)", "Name": "V2", "Author": ""},
+        ]
+        with self.assertRaises(PrimaryCodeCollisionError) as ctx:
+            self._convert_rows(rows)
+        self.assertIn("AA01A", str(ctx.exception))
+
+    def test_beide_kollisionen_teilen_eine_oberklasse(self):
+        # main() catches one class for both aborts; a future third collision
+        # check must not need a third except-branch to stop the pipeline.
+        self.assertTrue(issubclass(PrimaryCodeCollisionError, CodeCollisionError))
+        self.assertTrue(issubclass(EEACodeCollisionError, CodeCollisionError))
+
 
 class StaleOutputTest(unittest.TestCase):
     """scripts/collect-ingest-input.sh collects out/syntaxa_hierarchy.csv by
@@ -277,6 +306,16 @@ class StaleOutputTest(unittest.TestCase):
             make_workbook([header, ["AA01 (PAP-01)", "O", ""], ["AB01 (PAP-01)", "O2", ""]], xlsx)
             out_dir = self._stale_out_dir(tmp)
             with self.assertRaises(EEACodeCollisionError):
+                convert(xlsx, out_dir)
+            self._assert_no_outputs(out_dir)
+
+    def test_primary_code_collision_leaves_no_stale_csv(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            xlsx = os.path.join(tmp, "floraveg.xlsx")
+            header = ["Code", "Name", "Author"]
+            make_workbook([header, ["AA01A (PAP-01A)", "V", ""], ["AA01A (PAP-02A)", "V2", ""]], xlsx)
+            out_dir = self._stale_out_dir(tmp)
+            with self.assertRaises(PrimaryCodeCollisionError):
                 convert(xlsx, out_dir)
             self._assert_no_outputs(out_dir)
 
