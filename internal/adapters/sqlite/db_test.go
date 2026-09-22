@@ -172,7 +172,7 @@ func TestMigrateFuegtSyntaxonSpaltenHinzu(t *testing.T) {
 		t.Fatalf("Migrate: %v", err)
 	}
 
-	for _, col := range []string{"alt_code", "source", "parent_provenance", "life_form_group"} {
+	for _, col := range []string{"eea_code", "source", "parent_provenance", "life_form_group"} {
 		var n int
 		row := db.QueryRowContext(ctx,
 			`SELECT COUNT(*) FROM pragma_table_info('syntaxon') WHERE name = ?`, col)

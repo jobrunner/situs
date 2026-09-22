@@ -83,8 +83,8 @@ hier stellt, betrifft das Elternteil (`parent_provenance`).
 ```
 FloraVeg.EU .xlsx (List_of_European_vegetation_units_version_4)
       ↓ pipelines/eurovegchecklist/xlsx_to_csv.py (erweitert)
-      ↓ syntaxa_hierarchy.csv (code|rank|name|author|parent_code|alt_code)
-      │   rank/parent_code/alt_code AUSSCHLIESSLICH aus dem Code-Muster bzw.
+      ↓ syntaxa_hierarchy.csv (code|rank|name|author|parent_code|eea_code)
+      │   rank/parent_code/eea_code AUSSCHLIESSLICH aus dem Code-Muster bzw.
       │   der Code-Zelle — nie aus dem Namen geraten
 data/syntaxa_formations.csv (letter|name_en|life_form_group)
       ↓
@@ -94,7 +94,7 @@ situs ingest → application.IngestSyntaxa (neu, EINE Transaktion)
                       syntaxa_hierarchy.csv; parent_id aus dem Codemuster
   3. EEA-Rest      → NUR Einheiten OHNE FloraVeg-Gegenstück (gemessen 16),
                       als eigene Zeilen mit source=eunis
-  4. Kanten        → habitat_type_syntaxa.csv; Syntaxon-ID über alt_code auf
+  4. Kanten        → habitat_type_syntaxa.csv; Syntaxon-ID über eea_code auf
                       den FloraVeg-Primärcode aufgelöst
   5. Restelternteile → Namensabgleich, dann Geschwisterkonsens
                       (parent_provenance=derived) für die EEA-Waisen
@@ -111,7 +111,7 @@ Umkehrung dreht diese Abhängigkeit, also wandern **alle** Syntaxa-Schritte aus
 Schritte oben in einer Transaktion ausführt.
 
 Das ist mehr als eine Reihenfolgenänderung und bewusst so: die Schritte 2 bis
-5 sind voneinander abhängig (Schritt 4 braucht die Altcodes aus 2, Schritt 5
+5 sind voneinander abhängig (Schritt 4 braucht die EEA-Codes aus 2, Schritt 5
 die Kanten aus 4 nicht, aber die Geschwister aus 2 und 3), und sie über zwei
 Transaktionen und zwei Aufrufebenen zu verteilen hat schon einmal zu der
 Reihenfolge-Kopplung geführt, die dieses Spec auflöst. `IngestCSV` behält
@@ -141,10 +141,10 @@ type Syntaxon struct {
 	Author   string
 	ParentID string
 
-	// AltCode is the EEA-EUNIS code of the same syntaxon, from the
+	// EEACode is the EEA-EUNIS code of the same syntaxon, from the
 	// parenthesized part of the FloraVeg code cell. Empty for formations
 	// and for units known to only one of the two sources.
-	AltCode string
+	EEACode string
 
 	// Source names the source of the ROW: "evc" (FloraVeg/
 	// EuroVegChecklist) or "eunis" (carried only by the EEA).
@@ -174,7 +174,7 @@ zentrale prüfbare Zusage (Abschnitt 8).
 
 ```sql
 -- syntaxon, extended (Migrate, not a fresh schema.sql creation)
-ALTER TABLE syntaxon ADD COLUMN alt_code          TEXT NOT NULL DEFAULT '';
+ALTER TABLE syntaxon ADD COLUMN eea_code          TEXT NOT NULL DEFAULT '';
 ALTER TABLE syntaxon ADD COLUMN source            TEXT NOT NULL DEFAULT 'evc';
 ALTER TABLE syntaxon ADD COLUMN parent_provenance TEXT NOT NULL DEFAULT 'official';
 ALTER TABLE syntaxon ADD COLUMN life_form_group   TEXT NOT NULL DEFAULT ''
@@ -214,13 +214,13 @@ falsch beschriftet werden könnten.
 
 `OpenForIngest` wendet das eingebettete `schema.sql` **vor** `Migrate` an
 (`internal/adapters/sqlite/open.go`, dann `cmd/situs/ingest.go`). Ein
-`CREATE INDEX ... ON syntaxon(alt_code)` in `schema.sql` scheitert deshalb auf
+`CREATE INDEX ... ON syntaxon(eea_code)` in `schema.sql` scheitert deshalb auf
 jedem Index, der vor dieser Fassung gebaut wurde, mit `no such column:
-alt_code` — und zwar beim Öffnen, also bricht der ganze Ingest ab, bevor die
+eea_code` — und zwar beim Öffnen, also bricht der ganze Ingest ab, bevor die
 Migration die Spalte anlegen könnte.
 
 Also: `idx_syntaxon_parent` und `idx_syntaxon_rank` nach `schema.sql` (beide
-Spalten existieren seit immer), `idx_syntaxon_alt_code` in `Migrate`,
+Spalten existieren seit immer), `idx_syntaxon_eea_code` in `Migrate`,
 unmittelbar nach dem `ALTER TABLE`.
 
 `idx_syntaxon_parent` ist nicht optional: die Navigationskette von Teilprojekt
@@ -235,7 +235,7 @@ handgepflegt (im Unterschied zur Tabellenliste, die `verifyTables` per Regex
 aus `schema.sql` liest). Dort kommt hinzu:
 
 ```go
-{"syntaxon", `PRAGMA table_info(syntaxon)`, []string{"alt_code", "source", "parent_provenance", "life_form_group"}},
+{"syntaxon", `PRAGMA table_info(syntaxon)`, []string{"eea_code", "source", "parent_provenance", "life_form_group"}},
 ```
 
 Ohne diesen Eintrag startet ein Dienst mit altem Index still und antwortet
@@ -246,15 +246,15 @@ ohne Hierarchie — genau der Fall, den die Prüfung verhindern soll.
 `pipelines/eurovegchecklist/xlsx_to_csv.py`:
 
 - `primary_code` wird zu `split_code(cell) -> (primary, alt)`. Der
-  Klammerinhalt wird nicht mehr verworfen, sondern als `alt_code` geführt.
+  Klammerinhalt wird nicht mehr verworfen, sondern als `eea_code` geführt.
   Eine Zelle ohne Klammerteil liefert `alt = ""` — kein Fehler, die
   Testfixtures haben keinen.
-- Neue CSV-Spalte `alt_code`. Die Kopfzeile wächst von fünf auf sechs
+- Neue CSV-Spalte `eea_code`. Die Kopfzeile wächst von fünf auf sechs
   Spalten; der Go-Ingest fordert sie über dieselbe `readAll`-Spaltenprüfung
-  ein, sodass eine alte CSV laut scheitert statt still leere Altcodes zu
+  ein, sodass eine alte CSV laut scheitert statt still leere EEA-Codes zu
   liefern.
-- `report.json` bekommt `alt_codes` (Anzahl nichtleerer) und
-  `alt_code_collisions` (Anzahl Altcodes, die auf mehr als einen Primärcode
+- `report.json` bekommt `eea_codes` (Anzahl nichtleerer) und
+  `eea_code_collisions` (Anzahl EEA-Codes, die auf mehr als einen Primärcode
   zeigen). Gemessen sind das 1841 und 0; eine künftige Fassung mit
   Kollisionen muss auffallen, nicht stillschweigend einen Gewinner wählen.
 
@@ -289,7 +289,7 @@ type SyntaxaHierarchyReport struct {
 	// as their own rows (measured: 16).
 	EunisOnly int
 	// LinksRemapped are habitat-type edges whose EEA syntaxon id was
-	// rewritten to a FloraVeg primary code via alt_code.
+	// rewritten to a FloraVeg primary code via eea_code.
 	LinksRemapped int
 	// ParentsByName are EEA orphans whose parent name matching found
 	// (measured: 6).
@@ -308,7 +308,7 @@ type SyntaxaHierarchyReport struct {
 	// (measured 0 of 1841 — still no automatism that assumes it).
 	SkippedPattern int
 
-	AltCodeCollisions  []string
+	EEACodeCollisions  []string
 	AmbiguousMatches   []string
 	UnknownLinkTargets []string
 }
@@ -318,7 +318,7 @@ type SyntaxaHierarchyReport struct {
 
 Die Regel gilt **nur für den Rang Verband**. Auf eine Ordnung angewandt
 ergäbe das Abschneiden des letzten Zeichens Unsinn (`ASP-03` → `ASP-0`); die
-einzige EEA-Ordnung wird ohnehin per Altcode auf `KC03` aufgelöst. Eine
+einzige EEA-Ordnung wird ohnehin per EEA-Code auf `KC03` aufgelöst. Eine
 EEA-Ordnung ohne Gegenstück bliebe also Waise und ließe den Ingest scheitern
 — richtig so, denn geraten würde hier nichts.
 
@@ -331,14 +331,14 @@ einzigen gesetzten wird nichts abgeleitet.
 
 Gemessen über alle 287 EEA-Ordnungsgruppen: 285 einheitlich, 1 mit zwei
 verschiedenen Elternteilen (`QUI-01`, enthält keine Waise), 1 ohne jedes
-gesetzte Elternteil (`THE-01`, deren einzige Waise `THE-01A` per Altcode
+gesetzte Elternteil (`THE-01`, deren einzige Waise `THE-01A` per EEA-Code
 auflösbar ist). Kein Konflikt betrifft eine Waise. Die Ableitung greift damit
 genau zehnmal, und der Report nennt jeden Fall einzeln.
 
 ### ASP-03 braucht keine Sonderregel
 
 `ASP-03` (*Moltkeetalia petraeae* Lakušić 1968) ist die einzige EEA-Ordnung
-und FloraVegs `KC03`; der Altcode-Join führt sie zusammen, die Kante
+und FloraVegs `KC03`; der EEA-Code-Join führt sie zusammen, die Kante
 `eunis@2021/U36 → ASP-03` wird zu `→ KC03`. Die EEA nennt bei `U36` neben
 elf Verbänden bewusst die Ordnung als Ganzes, weil `U36` Teile der Ordnung
 umfasst, die keinem gelisteten Verband zuzuordnen sind (der dritte Verband
@@ -352,9 +352,9 @@ absichtlich.
 |---|---|
 | `syntaxa_hierarchy.csv` fehlt | Ingest bricht **ab**. Anders als bisher: die Datei ist jetzt die Primärquelle, ohne sie entsteht ein Index ohne jede Hierarchie. Der stille Weiterlauf war für ein Overlay richtig und ist für eine Primärquelle falsch. |
 | `data/syntaxa_formations.csv` fehlt | Ingest bricht ab, gleiche Begründung — ohne Formationen hat die Kette keine Wurzel. |
-| CSV ohne Spalte `alt_code` | Ingest bricht mit Spaltenfehler ab (alte Pipeline-Ausgabe). |
-| Altcode zeigt auf mehrere Primärcodes | Kein Join für diesen Altcode, in `AltCodeCollisions` vermerkt, Ingest läuft weiter. Nie einen Gewinner raten. |
-| EEA-Einheit ohne FloraVeg-Gegenstück | Eigene Zeile, `source=eunis`, `alt_code=""`; Elternteil per Namensabgleich, sonst Geschwisterkonsens. |
+| CSV ohne Spalte `eea_code` | Ingest bricht mit Spaltenfehler ab (alte Pipeline-Ausgabe). |
+| EEA-Code zeigt auf mehrere Primärcodes | Kein Join für diesen EEA-Code, in `EEACodeCollisions` vermerkt, Ingest läuft weiter. Nie einen Gewinner raten. |
+| EEA-Einheit ohne FloraVeg-Gegenstück | Eigene Zeile, `source=eunis`, `eea_code=""`; Elternteil per Namensabgleich, sonst Geschwisterkonsens. |
 | Klassencode mit unbekanntem Anfangsbuchstaben | Zeile übersprungen und gezählt; die Formation wird **nie** aus einem unbekannten Buchstaben erfunden. |
 | Zeile bleibt nach allen Schritten elternlos | In `Orphans` vermerkt und vom Ingest als Fehler gemeldet. |
 
@@ -381,7 +381,7 @@ type SyntaxonRef struct {
 	Author   string `json:"author,omitempty"`
 	ParentID string `json:"parent_id,omitempty"`
 
-	AltCode          string `json:"alt_code,omitempty"`
+	EEACode          string `json:"eea_code,omitempty"`
 	Source           string `json:"source,omitempty"`
 	ParentProvenance string `json:"parent_provenance,omitempty"`
 
@@ -408,7 +408,7 @@ wenn unbekannt“ — nach diesem Spec fehlt er nur noch bei Formationen.
   Musterzellen (`AA01A (PAP-01A)`, Zelle ohne Klammer, Zelle mit
   Mehrfachinhalt), Kollisionszählung im Report.
 - `internal/application/syntaxa_hierarchy_ingest_test.go`: Formationsableitung
-  aus dem Buchstaben, Altcode-Join, die drei Elternteil-Wege mit ihrer
+  aus dem Buchstaben, EEA-Code-Join, die drei Elternteil-Wege mit ihrer
   Provenienz, Geschwisterkonsens bei einheitlicher und bei widersprüchlicher
   Gruppe, Kantenumschreibung, Abbruch bei fehlender Primärquelle, Abbruch bei
   verbleibender Waise.
@@ -433,12 +433,12 @@ wenn unbekannt“ — nach diesem Spec fehlt er nur noch bei Formationen.
   im Report einzeln benannt — nie stillschweigend als Quellaussage ausgegeben.
 - Keine EUNIS-Habitattyp-Kante geht verloren: die Kantenzahl vor und nach der
   Umkehrung ist gleich, nur die Syntaxon-IDs sind auf Primärcodes umgestellt.
-  Das gilt, **weil** die Altcodes eineindeutig sind (gemessen: 1841 Codes,
+  Das gilt, **weil** die EEA-Codes eineindeutig sind (gemessen: 1841 Codes,
   1841 verschiedene Werte). Fiele diese Eigenschaft in einer künftigen
   Fassung, kollabierten zwei EEA-Syntaxa auf einen Primärcode und der
   Primärschlüssel von `habitat_type_syntaxon` verschluckte eine Kante
   lautlos. Die Prämisse ist deshalb nicht nur zugesichert, sondern geprüft:
-  Kollisionen landen in `AltCodeCollisions`, werden nicht gejoint, und der
+  Kollisionen landen in `EEACodeCollisions`, werden nicht gejoint, und der
   Ingest vergleicht die Kantenzahl vor und nach dem Umschreiben und scheitert
   bei einer Abweichung.
 

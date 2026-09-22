@@ -4,7 +4,7 @@
 
 **Goal:** FloraVeg wird die primäre Syntaxa-Quelle, sodass jeder Verband über eine lückenlose `parent_id`-Kette bis zu einer Formation navigierbar ist und die Moos-, Flechten- und Algengesellschaften überhaupt im Index erscheinen.
 
-**Architecture:** Die Pipeline `pipelines/eurovegchecklist` gibt den bisher verworfenen EEA-Altcode aus der Klammer der FloraVeg-Code-Zelle mit aus. Alle Syntaxa-Ingest-Schritte wandern aus `IngestCSV` in eine neue `application.IngestSyntaxa`, die in einer Transaktion Formationen, EVC-Hierarchie, EEA-Restzeilen, Habitattyp-Kanten (per Altcode auf Primärcodes umgeschrieben) und die Restelternteile schreibt. Der Namens-Präfixabgleich bleibt nur noch für die 16 Einheiten ohne FloraVeg-Gegenstück.
+**Architecture:** Die Pipeline `pipelines/eurovegchecklist` gibt den bisher verworfenen EEA-EEA-Code aus der Klammer der FloraVeg-Code-Zelle mit aus. Alle Syntaxa-Ingest-Schritte wandern aus `IngestCSV` in eine neue `application.IngestSyntaxa`, die in einer Transaktion Formationen, EVC-Hierarchie, EEA-Restzeilen, Habitattyp-Kanten (per EEA-Code auf Primärcodes umgeschrieben) und die Restelternteile schreibt. Der Namens-Präfixabgleich bleibt nur noch für die 16 Einheiten ohne FloraVeg-Gegenstück.
 
 **Tech Stack:** Go 1.26 (stdlib, `modernc.org/sqlite`, `gorilla/mux`, `cobra`, `viper`), Python 3 **nur Stdlib** für die Pipeline.
 
@@ -41,10 +41,10 @@ Diese Zahlen sind die Sollwerte, gegen die die Tasks prüfen:
 | Größe | Wert |
 |---|---|
 | FloraVeg-Zeilen gesamt | 1841 (150 Klassen, 381 Ordnungen, 1310 Verbände) |
-| Zeilen mit Altcode in der Klammer | 1841 von 1841, eindeutig, 0 Kollisionen |
+| Zeilen mit EEA-Code in der Klammer | 1841 von 1841, eindeutig, 0 Kollisionen |
 | Sektionsbuchstaben in den 150 Klassen | 25, lückenlos A–Y |
 | EEA-Syntaxa gesamt | 1050 (1049 Verbände, 1 Ordnung `ASP-03`) |
-| davon per Altcode auf FloraVeg joinbar | 1034 |
+| davon per EEA-Code auf FloraVeg joinbar | 1034 |
 | EEA-Einheiten **ohne** FloraVeg-Gegenstück | 16 |
 | davon mit Elternteil per Namensabgleich | 6 |
 | davon nur per Geschwisterkonsens lösbar | 10 |
@@ -55,7 +55,7 @@ Diese Zahlen sind die Sollwerte, gegen die die Tasks prüfen:
 
 ---
 
-### Task 1: Pipeline gibt den Altcode aus und liest Zellen über ihren Bezug
+### Task 1: Pipeline gibt den EEA-Code aus und liest Zellen über ihren Bezug
 
 **Files:**
 - Modify: `pipelines/eurovegchecklist/xlsx_to_csv.py`
@@ -64,18 +64,18 @@ Diese Zahlen sind die Sollwerte, gegen die die Tasks prüfen:
 
 **Interfaces:**
 - Consumes: nichts (erster Task).
-- Produces: `out/syntaxa_hierarchy.csv` mit **sechs** Spalten `code,rank,name,author,parent_code,alt_code`; `out/report.json` mit den zusätzlichen Schlüsseln `alt_codes` (int) und `alt_code_collisions` (Liste von Strings). Python-Funktionen: `split_code(cell) -> (primary, alt)` ersetzt `primary_code(cell) -> str`; `col_index(ref) -> int`; `read_sheet` unverändert in der Signatur.
+- Produces: `out/syntaxa_hierarchy.csv` mit **sechs** Spalten `code,rank,name,author,parent_code,eea_code`; `out/report.json` mit den zusätzlichen Schlüsseln `eea_codes` (int) und `eea_code_collisions` (Liste von Strings). Python-Funktionen: `split_code(cell) -> (primary, alt)` ersetzt `primary_code(cell) -> str`; `col_index(ref) -> int`; `read_sheet` unverändert in der Signatur.
 
 - [ ] **Step 1: Die failing Tests schreiben**
 
 In `pipelines/eurovegchecklist/test_xlsx_to_csv.py` ergänzen (die Datei nutzt `unittest`; bestehende Importzeile um `split_code`, `col_index` erweitern):
 
 ```python
-    def test_split_code_trennt_primaercode_und_altcode(self):
+    def test_split_code_trennt_primaercode_und_eea_code(self):
         self.assertEqual(xlsx_to_csv.split_code("AA01A (PAP-01A)"), ("AA01A", "PAP-01A"))
         self.assertEqual(xlsx_to_csv.split_code("  AA01 (PAP-01)  "), ("AA01", "PAP-01"))
 
-    def test_split_code_ohne_klammer_liefert_leeren_altcode(self):
+    def test_split_code_ohne_klammer_liefert_leeren_eea_code(self):
         self.assertEqual(xlsx_to_csv.split_code("AA01A"), ("AA01A", ""))
 
     def test_col_index_rechnet_zellbezug_in_spalte(self):
@@ -98,15 +98,15 @@ In `pipelines/eurovegchecklist/test_xlsx_to_csv.py` ergänzen (die Datei nutzt `
         rows = xlsx_to_csv.read_sheet(path, "xl/worksheets/sheet1.xml")
         self.assertEqual(rows[0], ["A", "", "x"])
 
-    def test_report_zaehlt_altcodes_und_kollisionen(self):
+    def test_report_zaehlt_eea_codes_und_kollisionen(self):
         rows = [
             {"Code": "AA (PAP)", "Name": "K", "Author": ""},
             {"Code": "AA01 (PAP-01)", "Name": "O", "Author": ""},
             {"Code": "AB01 (PAP-01)", "Name": "O2", "Author": ""},
         ]
         report = self._convert_rows(rows)
-        self.assertEqual(report["alt_codes"], 3)
-        self.assertEqual(report["alt_code_collisions"], ["PAP-01"])
+        self.assertEqual(report["eea_codes"], 3)
+        self.assertEqual(report["eea_code_collisions"], ["PAP-01"])
 ```
 
 Die Datei hat bereits Hilfsfunktionen zum Bauen einer XLSX aus Zeilen-Dicts. Falls `_write_xlsx_with_sheet` (rohes Sheet-XML) und `_convert_rows` (liefert das Report-Dict) fehlen, zuerst anlegen:
@@ -142,7 +142,7 @@ In `pipelines/eurovegchecklist/xlsx_to_csv.py`:
 
 ```python
 CSV_HEADERS = {
-    "syntaxa_hierarchy.csv": ["code", "rank", "name", "author", "parent_code", "alt_code"],
+    "syntaxa_hierarchy.csv": ["code", "rank", "name", "author", "parent_code", "eea_code"],
 }
 ```
 
@@ -158,8 +158,8 @@ _CODE_CELL_RE = re.compile(r"^(\S+)\s*\(([^)]*)\)\s*$")
 
 
 def split_code(cell):
-    """Splits a code cell into (primary_code, alt_code). A cell without a
-    parenthesized part yields an empty alt_code — not an error."""
+    """Splits a code cell into (primary_code, eea_code). A cell without a
+    parenthesized part yields an empty eea_code — not an error."""
     cell = cell.strip()
     m = _CODE_CELL_RE.match(cell)
     if m:
@@ -204,7 +204,7 @@ def read_sheet(src, sheet_path):
     return rows
 ```
 
-In `convert` den Altcode führen und Kollisionen zählen:
+In `convert` den EEA-Code führen und Kollisionen zählen:
 
 ```python
     alt_seen = {}
@@ -226,15 +226,15 @@ In `convert` den Altcode führen und Kollisionen zählen:
                 "name": _cell(row, idx, "Name"),
                 "author": _cell(row, idx, "Author"),
                 "parent_code": parent_code,
-                "alt_code": alt,
+                "eea_code": alt,
             })
 ```
 
 und im Report:
 
 ```python
-        "alt_codes": sum(1 for r in rows_out if r["alt_code"]),
-        "alt_code_collisions": sorted(collisions),
+        "eea_codes": sum(1 for r in rows_out if r["eea_code"]),
+        "eea_code_collisions": sorted(collisions),
 ```
 
 - [ ] **Step 4: Tests laufen lassen und grün sehen**
@@ -249,19 +249,19 @@ Run:
 cd pipelines/eurovegchecklist && python3 xlsx_to_csv.py \
   --xlsx artifacts/List_of_European_vegetation_units_version_4.xlsx --out-dir out && cat out/report.json
 ```
-Expected: `classes: 150`, `orders: 381`, `alliances: 1310`, `total_rows: 1841`, `skipped_rows: 0`, **`alt_codes: 1841`**, **`alt_code_collisions: []`**.
+Expected: `classes: 150`, `orders: 381`, `alliances: 1310`, `total_rows: 1841`, `skipped_rows: 0`, **`eea_codes: 1841`**, **`eea_code_collisions: []`**.
 
 Fehlt das Artefakt, zuerst laden (URL und SHA-256 in `pipelines/eurovegchecklist/manifest.yaml`, Befehl in dessen `README.md`). Weicht eine Zahl ab: **anhalten und melden**, nicht die Erwartung anpassen — die Zahlen sind gemessen, nicht geschätzt.
 
 - [ ] **Step 6: README ergänzen**
 
-In `pipelines/eurovegchecklist/README.md` den Abschnitt „Reale Spaltenbelegung" anpassen: der Klammercode wird jetzt als `alt_code` ausgegeben (bisherige Formulierung „wird verworfen" ist falsch geworden), und `read_sheet` wertet den Zellbezug aus. Die gemessenen Zahlen um `alt_codes: 1841` erweitern.
+In `pipelines/eurovegchecklist/README.md` den Abschnitt „Reale Spaltenbelegung" anpassen: der Klammercode wird jetzt als `eea_code` ausgegeben (bisherige Formulierung „wird verworfen" ist falsch geworden), und `read_sheet` wertet den Zellbezug aus. Die gemessenen Zahlen um `eea_codes: 1841` erweitern.
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add pipelines/eurovegchecklist/
-git commit -m "feat(eurovegchecklist): Altcode ausgeben und Zellen ueber ihren Bezug lesen"
+git commit -m "feat(eurovegchecklist): EEA-Code ausgeben und Zellen ueber ihren Bezug lesen"
 ```
 
 ---
@@ -381,7 +381,7 @@ git commit -m "feat(data): Formationsebene A-Y als Datendatei, Hierarchie-CSV wi
 
 **Interfaces:**
 - Consumes: nichts.
-- Produces: `domain.Syntaxon` mit den zusätzlichen Feldern `AltCode`, `Source`, `ParentProvenance`, `LifeFormGroup` (alle `string`); die Konstanten `domain.SyntaxonRankFormation = "formation"`, `domain.SyntaxonSourceEVC = "evc"`, `domain.SyntaxonSourceEUNIS = "eunis"`, `domain.ParentProvenanceOfficial = "official"`, `domain.ParentProvenanceDerived = "derived"`, `domain.LifeFormPhanerogam = "phanerogam"`, `domain.LifeFormBryophyteLichen = "bryophyte_lichen"`, `domain.LifeFormAlgae = "algae"`; die Spalten `syntaxon.alt_code`, `syntaxon.source`, `syntaxon.parent_provenance`, `syntaxon.life_form_group`.
+- Produces: `domain.Syntaxon` mit den zusätzlichen Feldern `EEACode`, `Source`, `ParentProvenance`, `LifeFormGroup` (alle `string`); die Konstanten `domain.SyntaxonRankFormation = "formation"`, `domain.SyntaxonSourceEVC = "evc"`, `domain.SyntaxonSourceEUNIS = "eunis"`, `domain.ParentProvenanceOfficial = "official"`, `domain.ParentProvenanceDerived = "derived"`, `domain.LifeFormPhanerogam = "phanerogam"`, `domain.LifeFormBryophyteLichen = "bryophyte_lichen"`, `domain.LifeFormAlgae = "algae"`; die Spalten `syntaxon.eea_code`, `syntaxon.source`, `syntaxon.parent_provenance`, `syntaxon.life_form_group`.
 
 - [ ] **Step 1: Den failing Test für die Migration schreiben**
 
@@ -411,7 +411,7 @@ func TestMigrateFuegtSyntaxonSpaltenHinzu(t *testing.T) {
 		t.Fatalf("Migrate: %v", err)
 	}
 
-	for _, col := range []string{"alt_code", "source", "parent_provenance", "life_form_group"} {
+	for _, col := range []string{"eea_code", "source", "parent_provenance", "life_form_group"} {
 		var n int
 		row := db.QueryRowContext(context.Background(),
 			`SELECT COUNT(*) FROM pragma_table_info('syntaxon') WHERE name = ?`, col)
@@ -442,7 +442,7 @@ func TestMigrateIstIdempotentFuerSyntaxon(t *testing.T) {
 - [ ] **Step 2: Test laufen lassen und Fehlschlag sehen**
 
 Run: `go test ./internal/adapters/sqlite/ -run 'TestMigrate.*Syntaxon|TestMigrateIstIdempotent' -v`
-Expected: FAIL — „Spalte alt_code fehlt nach Migrate" (viermal).
+Expected: FAIL — „Spalte eea_code fehlt nach Migrate" (viermal).
 
 - [ ] **Step 3: Schema und Migration implementieren**
 
@@ -458,7 +458,7 @@ CREATE TABLE IF NOT EXISTS syntaxon (
   -- The EEA-EUNIS code of the same syntaxon, from the parenthesized part
   -- of the FloraVeg code cell. It is the join key between the two sources
   -- and stays in the index so a client can resolve an old code.
-  alt_code          TEXT NOT NULL DEFAULT '',
+  eea_code          TEXT NOT NULL DEFAULT '',
   source            TEXT NOT NULL DEFAULT 'evc'
                     CHECK (source IN ('evc', 'eunis')),
   parent_provenance TEXT NOT NULL DEFAULT 'official'
@@ -473,7 +473,7 @@ CREATE INDEX IF NOT EXISTS idx_syntaxon_parent ON syntaxon(parent_id);
 CREATE INDEX IF NOT EXISTS idx_syntaxon_rank   ON syntaxon(rank);
 ```
 
-**`idx_syntaxon_alt_code` darf hier NICHT stehen.** `OpenForIngest` wendet das eingebettete `schema.sql` an (`internal/adapters/sqlite/open.go`), und zwar **bevor** `cmd/situs/ingest.go` `Migrate` aufruft. Auf einem Index, der vor dieser Fassung gebaut wurde, gibt es die Spalte `alt_code` zu diesem Zeitpunkt noch nicht: das `CREATE INDEX` scheitert mit `no such column: alt_code`, `OpenForIngest` gibt „applying schema to …" zurück, und der ganze Ingest bricht ab, bevor die Migration die Spalte anlegen könnte. Der Index wird deshalb in `Migrate` erzeugt, direkt nach dem `ALTER TABLE` (Step 3 unten). `idx_syntaxon_parent` und `idx_syntaxon_rank` sind unbedenklich — beide Spalten gibt es seit immer.
+**`idx_syntaxon_eea_code` darf hier NICHT stehen.** `OpenForIngest` wendet das eingebettete `schema.sql` an (`internal/adapters/sqlite/open.go`), und zwar **bevor** `cmd/situs/ingest.go` `Migrate` aufruft. Auf einem Index, der vor dieser Fassung gebaut wurde, gibt es die Spalte `eea_code` zu diesem Zeitpunkt noch nicht: das `CREATE INDEX` scheitert mit `no such column: eea_code`, `OpenForIngest` gibt „applying schema to …" zurück, und der ganze Ingest bricht ab, bevor die Migration die Spalte anlegen könnte. Der Index wird deshalb in `Migrate` erzeugt, direkt nach dem `ALTER TABLE` (Step 3 unten). `idx_syntaxon_parent` und `idx_syntaxon_rank` sind unbedenklich — beide Spalten gibt es seit immer.
 
 Kein `CHECK` auf `rank`: die Tabelle hatte nie eines, und ein weiterer Rang soll eine Datenzeile sein, keine Schemaänderung. `source`, `parent_provenance` und `life_form_group` bekommen eines, weil ihre Wertemenge fachlich feststeht und ein Tippfehler dort eine stille Falschaussage wäre.
 
@@ -497,7 +497,7 @@ In `internal/adapters/sqlite/db.go`, in `addMissingColumns`, nach dem `habitat_d
 	// migrated-but-not-freshly-ingested index. The CHECK therefore
 	// explicitly allows ''; the ingest sets the real values.
 	for _, c := range []struct{ name, ddl string }{
-		{"alt_code", `ALTER TABLE syntaxon ADD COLUMN alt_code TEXT NOT NULL DEFAULT ''`},
+		{"eea_code", `ALTER TABLE syntaxon ADD COLUMN eea_code TEXT NOT NULL DEFAULT ''`},
 		{"source", `ALTER TABLE syntaxon ADD COLUMN source TEXT NOT NULL DEFAULT ''
 		            CHECK (source IN ('', 'evc', 'eunis'))`},
 		{"parent_provenance", `ALTER TABLE syntaxon ADD COLUMN parent_provenance TEXT NOT NULL DEFAULT ''
@@ -513,11 +513,11 @@ In `internal/adapters/sqlite/db.go`, in `addMissingColumns`, nach dem `habitat_d
 		}
 	}
 	// Only here, not in schema.sql: the schema is applied BEFORE this
-	// migration, and alt_code does not exist yet on an old index at that
+	// migration, and eea_code does not exist yet on an old index at that
 	// point.
 	if _, err := db.ExecContext(ctx,
-		`CREATE INDEX IF NOT EXISTS idx_syntaxon_alt_code ON syntaxon(alt_code)`); err != nil {
-		return fmt.Errorf("creating idx_syntaxon_alt_code: %w", err)
+		`CREATE INDEX IF NOT EXISTS idx_syntaxon_eea_code ON syntaxon(eea_code)`); err != nil {
+		return fmt.Errorf("creating idx_syntaxon_eea_code: %w", err)
 	}
 ```
 
@@ -570,7 +570,7 @@ Expected: FAIL — „OpenReadOnly hat einen Index ohne syntaxon.parent_provenan
 In `internal/adapters/sqlite/schema_check.go`, in `migratedColumns`:
 
 ```go
-	{"syntaxon", `PRAGMA table_info(syntaxon)`, []string{"alt_code", "source", "parent_provenance", "life_form_group"}},
+	{"syntaxon", `PRAGMA table_info(syntaxon)`, []string{"eea_code", "source", "parent_provenance", "life_form_group"}},
 ```
 
 Der Kommentar über `migratedColumns` erklärt bereits, warum: ein Index aus einer älteren Fassung trägt jede Tabelle, aber nicht diese Spalten, und ein neueres Binary würde ihn scheinbar bedienen und jede Syntaxa-Antwort mit `INTERNAL_ERROR` beantworten. Nach diesem Teilprojekt wäre die Folge schwerer: ein Dienst ohne Hierarchie bei grüner Gesundheitsprüfung.
@@ -614,9 +614,9 @@ type Syntaxon struct {
 	Author   string
 	ParentID string
 
-	// AltCode is the EEA-EUNIS code of the same syntaxon. Empty for
+	// EEACode is the EEA-EUNIS code of the same syntaxon. Empty for
 	// formations and for units known to only one of the two sources.
-	AltCode string
+	EEACode string
 
 	// Source names the source of the row: SyntaxonSourceEVC or
 	// SyntaxonSourceEUNIS.
@@ -661,7 +661,7 @@ Expected: PASS.
 
 ```bash
 git add internal/domain/ internal/adapters/sqlite/
-git commit -m "feat(domain,sqlite): Syntaxon um Altcode, Quelle, Elternteil-Provenienz und Lebensform"
+git commit -m "feat(domain,sqlite): Syntaxon um EEA-Code, Quelle, Elternteil-Provenienz und Lebensform"
 ```
 
 ---
@@ -680,7 +680,7 @@ git commit -m "feat(domain,sqlite): Syntaxon um Altcode, Quelle, Elternteil-Prov
   - `IngestTx.UpsertSyntaxon(s domain.Syntaxon) error` — schreibt jetzt **alle** Felder.
   - `IngestTx.SetSyntaxonParent(id, parentID, provenance string) error` — setzt nur das Elternteil samt Provenienz.
   - `IngestTx.RelinkSyntaxon(from, to string) error` — schreibt `habitat_type_syntaxon.syntaxon_id` von `from` auf `to` um.
-  - `Repository.SyntaxonIDsByAltCode(ctx) (map[string]string, error)` — Altcode → Primärcode.
+  - `Repository.SyntaxonIDsByEEACode(ctx) (map[string]string, error)` — EEA-Code → Primärcode.
   - `IngestTx.UpsertSyntaxonAuthor` **entfällt**.
 
 - [ ] **Step 1: Die failing Tests schreiben**
@@ -696,7 +696,7 @@ func TestUpsertSyntaxonSchreibtAlleFelder(t *testing.T) {
 	}
 	want := domain.Syntaxon{
 		ID: "CA01A", Rank: domain.SyntaxonRankAlliance, Name: "Test-Verband",
-		Author: "Autor 1970", ParentID: "CA01", AltCode: "TST-01A",
+		Author: "Autor 1970", ParentID: "CA01", EEACode: "TST-01A",
 		Source: domain.SyntaxonSourceEVC, ParentProvenance: domain.ParentProvenanceOfficial,
 	}
 	if err := tx.UpsertSyntaxon(want); err != nil {
@@ -786,20 +786,20 @@ func TestRelinkSyntaxonIstIdempotentBeiBestehenderZielkante(t *testing.T) {
 In `internal/adapters/sqlite/read_syntaxon_test.go`:
 
 ```go
-func TestSyntaxonIDsByAltCode(t *testing.T) {
+func TestSyntaxonIDsByEEACode(t *testing.T) {
 	db := openTestDB(t)
 	tx, _ := db.Begin(context.Background())
 	_ = tx.UpsertSyntaxon(domain.Syntaxon{ID: "AA01A", Rank: domain.SyntaxonRankAlliance,
-		Name: "X", AltCode: "PAP-01A", Source: domain.SyntaxonSourceEVC,
+		Name: "X", EEACode: "PAP-01A", Source: domain.SyntaxonSourceEVC,
 		ParentProvenance: domain.ParentProvenanceOfficial})
 	_ = tx.UpsertSyntaxon(domain.Syntaxon{ID: "AA01B", Rank: domain.SyntaxonRankAlliance,
 		Name: "Y", Source: domain.SyntaxonSourceEVC,
 		ParentProvenance: domain.ParentProvenanceOfficial})
 	_ = tx.Commit()
 
-	got, err := db.SyntaxonIDsByAltCode(context.Background())
+	got, err := db.SyntaxonIDsByEEACode(context.Background())
 	if err != nil {
-		t.Fatalf("SyntaxonIDsByAltCode: %v", err)
+		t.Fatalf("SyntaxonIDsByEEACode: %v", err)
 	}
 	if len(got) != 1 || got["PAP-01A"] != "AA01A" {
 		t.Errorf("Karte = %v, erwartet genau PAP-01A->AA01A", got)
@@ -810,7 +810,7 @@ func TestSyntaxonIDsByAltCode(t *testing.T) {
 - [ ] **Step 2: Tests laufen lassen und Fehlschlag sehen**
 
 Run: `go test ./internal/adapters/sqlite/ -run 'Syntaxon' -v`
-Expected: FAIL — die Methoden `SetSyntaxonParent`, `RelinkSyntaxon`, `SyntaxonIDsByAltCode` existieren nicht; `TestUpsertSyntaxonSchreibtAlleFelder` scheitert an den nicht geschriebenen Feldern.
+Expected: FAIL — die Methoden `SetSyntaxonParent`, `RelinkSyntaxon`, `SyntaxonIDsByEEACode` existieren nicht; `TestUpsertSyntaxonSchreibtAlleFelder` scheitert an den nicht geschriebenen Feldern.
 
 - [ ] **Step 3: Port anpassen**
 
@@ -832,11 +832,11 @@ In `internal/ports/output/repository.go`, in `IngestTx`, `UpsertSyntaxonAuthor` 
 und in `Repository`:
 
 ```go
-	// SyntaxonIDsByAltCode maps the EEA alt code to the syntaxon id. The
+	// SyntaxonIDsByEEACode maps the EEA code to the syntaxon id. The
 	// syntaxa ingest uses it to resolve the habitat-type edges of the EEA
-	// source onto the FloraVeg primary codes. Rows without an alt code are
+	// source onto the FloraVeg primary codes. Rows without an eea code are
 	// absent from the map.
-	SyntaxonIDsByAltCode(ctx context.Context) (map[string]string, error)
+	SyntaxonIDsByEEACode(ctx context.Context) (map[string]string, error)
 ```
 
 - [ ] **Step 4: Implementieren**
@@ -846,15 +846,15 @@ In der `IngestTx`-Implementierung `UpsertSyntaxon` auf alle Felder erweitern:
 ```go
 func (t *tx) UpsertSyntaxon(s domain.Syntaxon) error {
 	_, err := t.tx.ExecContext(t.ctx,
-		`INSERT INTO syntaxon (id, rank, name, author, parent_id, alt_code, source,
+		`INSERT INTO syntaxon (id, rank, name, author, parent_id, eea_code, source,
 		                       parent_provenance, life_form_group)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
 		   rank = excluded.rank, name = excluded.name, author = excluded.author,
-		   parent_id = excluded.parent_id, alt_code = excluded.alt_code,
+		   parent_id = excluded.parent_id, eea_code = excluded.eea_code,
 		   source = excluded.source, parent_provenance = excluded.parent_provenance,
 		   life_form_group = excluded.life_form_group`,
-		s.ID, s.Rank, s.Name, s.Author, s.ParentID, s.AltCode, s.Source,
+		s.ID, s.Rank, s.Name, s.Author, s.ParentID, s.EEACode, s.Source,
 		s.ParentProvenance, s.LifeFormGroup)
 	return err
 }
@@ -888,9 +888,9 @@ func (t *tx) RelinkSyntaxon(from, to string) error {
 In `internal/adapters/sqlite/read_syntaxon.go` das `SELECT` jeder Syntaxon-Leseoperation um die vier Spalten erweitern (`Syntaxon`, `Syntaxa`, `AllSyntaxa` — dem Scan-Muster der Datei folgen) und ergänzen:
 
 ```go
-func (d *DB) SyntaxonIDsByAltCode(ctx context.Context) (map[string]string, error) {
+func (d *DB) SyntaxonIDsByEEACode(ctx context.Context) (map[string]string, error) {
 	rows, err := d.QueryContext(ctx,
-		`SELECT alt_code, id FROM syntaxon WHERE alt_code <> ''`)
+		`SELECT eea_code, id FROM syntaxon WHERE eea_code <> ''`)
 	if err != nil {
 		return nil, err
 	}
@@ -938,9 +938,9 @@ Funktionsdeckel sofort. Die Aufteilung ist deshalb von Anfang an vorgegeben:
 liegen in einer zweiten Datei. Task 7 legt aus demselben Grund eine dritte an.
 
 **Interfaces:**
-- Consumes: `IngestTx.UpsertSyntaxon`, `Repository.Begin` (Task 4); `domain`-Konstanten (Task 3); die CSV-Spalte `alt_code` (Task 1); `data/syntaxa_formations.csv` (Task 2).
+- Consumes: `IngestTx.UpsertSyntaxon`, `Repository.Begin` (Task 4); `domain`-Konstanten (Task 3); die CSV-Spalte `eea_code` (Task 1); `data/syntaxa_formations.csv` (Task 2).
 - Produces:
-  - `application.SyntaxaReport` mit den Feldern `FormationsWritten, ClassesWritten, OrdersWritten, AlliancesWritten, EunisOnly, LinksRemapped, LinksWritten, ParentsByName, ParentsDerived int`, `Orphans, AltCodeCollisions, AmbiguousMatches, UnknownLinkTargets []string`, `SkippedRows int`.
+  - `application.SyntaxaReport` mit den Feldern `FormationsWritten, ClassesWritten, OrdersWritten, AlliancesWritten, EunisOnly, LinksRemapped, LinksWritten, ParentsByName, ParentsDerived int`, `Orphans, EEACodeCollisions, AmbiguousMatches, UnknownLinkTargets []string`, `SkippedRows int`.
   - `application.IngestSyntaxa(ctx context.Context, repo output.Repository, dir string) (SyntaxaReport, error)` — `dir` ist das Sammelverzeichnis; die Funktion liest daraus `syntaxa_formations.csv`, `syntaxa_hierarchy.csv`, `syntaxa.csv` und `habitat_type_syntaxa.csv`.
   - intern: `formationOf(classCode string) string` (erster Buchstabe), `readFormations`, `readHierarchy`.
 
@@ -976,7 +976,7 @@ const (
 	minimalFormations = "letter,name_en,life_form_group\n" +
 		"C,Vegetation of the nemoral forest zone,phanerogam\n" +
 		"R,Epigaeic bryophyte and lichen vegetation,bryophyte_lichen\n"
-	minimalHierarchy = "code,rank,name,author,parent_code,alt_code\n" +
+	minimalHierarchy = "code,rank,name,author,parent_code,eea_code\n" +
 		"CA,class,Testklasse,Autor 1950,,TST\n" +
 		"CA01,order,Testordnung,Autor 1960,CA,TST-01\n" +
 		"CA01A,alliance,Testverband,Autor 1970,CA01,TST-01A\n" +
@@ -1030,7 +1030,7 @@ func TestIngestSyntaxaHaengtKlassenAnIhreFormation(t *testing.T) {
 			t.Errorf("%s.ParentID = %q, erwartet %q", id, got, wantParent)
 		}
 	}
-	if got := repo.syntaxonByID("CA01A"); got.AltCode != "TST-01A" ||
+	if got := repo.syntaxonByID("CA01A"); got.EEACode != "TST-01A" ||
 		got.Source != domain.SyntaxonSourceEVC ||
 		got.ParentProvenance != domain.ParentProvenanceOfficial {
 		t.Errorf("Verband = %+v", got)
@@ -1082,7 +1082,7 @@ func TestIngestSyntaxaBrichtOhneHierarchiedateiAb(t *testing.T) {
 	}
 }
 
-func TestIngestSyntaxaBrichtBeiFehlenderAltcodeSpalteAb(t *testing.T) {
+func TestIngestSyntaxaBrichtBeiFehlenderEEA-CodeSpalteAb(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations,
@@ -1090,7 +1090,7 @@ func TestIngestSyntaxaBrichtBeiFehlenderAltcodeSpalteAb(t *testing.T) {
 		eunis:      "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
 	})
 	if _, err := application.IngestSyntaxa(context.Background(), repo, dir); err == nil {
-		t.Fatal("IngestSyntaxa akzeptierte eine CSV ohne alt_code")
+		t.Fatal("IngestSyntaxa akzeptierte eine CSV ohne eea_code")
 	}
 }
 
@@ -1098,7 +1098,7 @@ func TestIngestSyntaxaUeberspringtKlasseMitUnbekanntemBuchstaben(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations,
-		hierarchy: "code,rank,name,author,parent_code,alt_code\n" +
+		hierarchy: "code,rank,name,author,parent_code,eea_code\n" +
 			"ZA,class,Klasse ohne Formation,,,ZZZ\n",
 		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
 	})
@@ -1116,7 +1116,7 @@ func TestIngestSyntaxaUeberspringtKlasseMitUnbekanntemBuchstaben(t *testing.T) {
 }
 ```
 
-Das Paket hat in `ingest_test.go` bereits einen `fakeRepo`. Er muss um `SetSyntaxonParent`, `RelinkSyntaxon`, `SyntaxonIDsByAltCode` erweitert und um `UpsertSyntaxonAuthor` gekürzt werden; dazu die Helfer `syntaxonByID(id) domain.Syntaxon` und `has(id) bool`. Ein Aufruf von `SetSyntaxonParent` auf einer unbekannten ID muss im Fake fehlschlagen, sonst prüft Task 7 ins Leere:
+Das Paket hat in `ingest_test.go` bereits einen `fakeRepo`. Er muss um `SetSyntaxonParent`, `RelinkSyntaxon`, `SyntaxonIDsByEEACode` erweitert und um `UpsertSyntaxonAuthor` gekürzt werden; dazu die Helfer `syntaxonByID(id) domain.Syntaxon` und `has(id) bool`. Ein Aufruf von `SetSyntaxonParent` auf einer unbekannten ID muss im Fake fehlschlagen, sonst prüft Task 7 ins Leere:
 
 ```go
 func (r *fakeRepo) SetSyntaxonParent(id, parentID, provenance string) error {
@@ -1169,7 +1169,7 @@ type SyntaxaReport struct {
 	// worthless at exactly that point.
 	Orphans []string
 
-	AltCodeCollisions  []string
+	EEACodeCollisions  []string
 	AmbiguousMatches   []string
 	UnknownLinkTargets []string
 	SkippedRows        int
@@ -1223,7 +1223,7 @@ func IngestSyntaxa(ctx context.Context, repo output.Repository, dir string) (Syn
 
 `readFormations` liest `letter,name_en,life_form_group` über den bestehenden `readAll`-Helfer (er fordert die Spalten ein und bricht bei einer fehlenden ab; eine fehlende Datei muss hier **Fehler** sein, nicht Überspringen — anders als bei `IngestLocalizations`) und liefert `map[string]domain.Syntaxon`.
 
-**Pfade mit `splitCSVPath`, nicht `filepath.Split`.** `readAll` benutzt `os.OpenRoot(dir)`, und `filepath.Split` eines bloßen Dateinamens liefert `dir == ""`, was `os.OpenRoot` ablehnt. `internal/application/species_crosswalk.go` hält den Helfer `splitCSVPath` genau dafür bereit; `area_ingest.go` dokumentiert den Grund. Die gelöschte `syntaxa_hierarchy_ingest.go` benutzte noch das rohe `filepath.Split` — beim Umbau auf `splitCSVPath` wechseln. `readHierarchy` liest die sechs Spalten und liefert `[]hierarchyRow` (um `altCode` erweitert).
+**Pfade mit `splitCSVPath`, nicht `filepath.Split`.** `readAll` benutzt `os.OpenRoot(dir)`, und `filepath.Split` eines bloßen Dateinamens liefert `dir == ""`, was `os.OpenRoot` ablehnt. `internal/application/species_crosswalk.go` hält den Helfer `splitCSVPath` genau dafür bereit; `area_ingest.go` dokumentiert den Grund. Die gelöschte `syntaxa_hierarchy_ingest.go` benutzte noch das rohe `filepath.Split` — beim Umbau auf `splitCSVPath` wechseln. `readHierarchy` liest die sechs Spalten und liefert `[]hierarchyRow` (um `eeaCode` erweitert).
 
 `writeSyntaxa` führt in dieser Reihenfolge aus, jeweils über `tx`:
 1. Formationen schreiben (`Rank: domain.SyntaxonRankFormation`, `ParentID: ""`, `Source: domain.SyntaxonSourceEVC`, `LifeFormGroup` aus der Datei).
@@ -1245,7 +1245,7 @@ git commit -m "feat(ingest): Formationen und EVC-Hierarchie als primaere Syntaxa
 
 ---
 
-### Task 6: IngestSyntaxa — EEA-Restzeilen und Kanten über den Altcode
+### Task 6: IngestSyntaxa — EEA-Restzeilen und Kanten über den EEA-Code
 
 **Files:**
 - Modify: `internal/application/syntaxa_ingest.go`
@@ -1279,15 +1279,15 @@ func TestIngestSyntaxaSchreibtNurEeaEinheitenOhneFloraVegGegenstueck(t *testing.
 		t.Error("TST-01A wurde als eigene Zeile geschrieben, obwohl CA01A sie vertritt")
 	}
 	eig := repo.syntaxonByID("EIG-01A")
-	if eig.Source != domain.SyntaxonSourceEUNIS || eig.AltCode != "" {
-		t.Errorf("EIG-01A = %+v, erwartet source=eunis und leeren AltCode", eig)
+	if eig.Source != domain.SyntaxonSourceEUNIS || eig.EEACode != "" {
+		t.Errorf("EIG-01A = %+v, erwartet source=eunis und leeren EEACode", eig)
 	}
 	if eig.Name != "Eigenverband Autor 1990" {
 		t.Errorf("Name = %q, erwartet den EUNIS-Kombistring unveraendert", eig.Name)
 	}
 }
 
-func TestIngestSyntaxaLoestKantenUeberDenAltcodeAuf(t *testing.T) {
+func TestIngestSyntaxaLoestKantenUeberDenEEA-CodeAuf(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations, hierarchy: minimalHierarchy,
@@ -1387,23 +1387,23 @@ In `writeSyntaxa` nach dem Hierarchieschritt:
 	// unit is already represented by its FloraVeg row — writing it a
 	// second time would put the same syntaxon into the index under two
 	// ids.
-	byAlt := map[string]string{}
+	byEEA := map[string]string{}
 	for _, r := range rows {
-		if r.altCode != "" {
-			byAlt[r.altCode] = r.code
+		if r.eeaCode != "" {
+			byEEA[r.eeaCode] = r.code
 		}
 	}
-	if err := writeEunisOnly(ctx, tx, dir, byAlt, rep); err != nil {
+	if err := writeEunisOnly(ctx, tx, dir, byEEA, rep); err != nil {
 		return err
 	}
 	// Step 4: the edges. An EEA syntaxon id with a FloraVeg counterpart
 	// gets resolved to the primary code; one without stays as it is.
-	return writeLinks(ctx, tx, dir, byAlt, rep)
+	return writeLinks(ctx, tx, dir, byEEA, rep)
 ```
 
-`writeEunisOnly` liest `syntaxa.csv` (`id,rank,name,parent_id`) und schreibt nur Zeilen, deren `id` **nicht** in `byAlt` steht — mit `Source: domain.SyntaxonSourceEUNIS`, `AltCode: ""`, `Author: ""` und `Name` unverändert (der historische Kombistring; nie heuristisch zerlegen). `ParentID` bleibt zunächst leer und wird in Task 7 gesetzt. Jede geschriebene Zeile zählt `EunisOnly`.
+`writeEunisOnly` liest `syntaxa.csv` (`id,rank,name,parent_id`) und schreibt nur Zeilen, deren `id` **nicht** in `byEEA` steht — mit `Source: domain.SyntaxonSourceEUNIS`, `EEACode: ""`, `Author: ""` und `Name` unverändert (der historische Kombistring; nie heuristisch zerlegen). `ParentID` bleibt zunächst leer und wird in Task 7 gesetzt. Jede geschriebene Zeile zählt `EunisOnly`.
 
-`writeLinks` liest `habitat_type_syntaxa.csv`, löst die `syntaxon_id` über `byAlt` auf (Treffer zählt `LinksRemapped`) und ruft `tx.LinkSyntaxon`. Ein Ziel, das weder als FloraVeg- noch als EEA-eigene Zeile existiert, wird nicht verlinkt, in `UnknownLinkTargets` vermerkt und gewarnt. Dafür braucht `writeSyntaxa` die Menge der geschriebenen IDs; sie entsteht ohnehin aus den Schritten 2 und 3 und wird als `map[string]bool` mitgeführt.
+`writeLinks` liest `habitat_type_syntaxa.csv`, löst die `syntaxon_id` über `byEEA` auf (Treffer zählt `LinksRemapped`) und ruft `tx.LinkSyntaxon`. Ein Ziel, das weder als FloraVeg- noch als EEA-eigene Zeile existiert, wird nicht verlinkt, in `UnknownLinkTargets` vermerkt und gewarnt. Dafür braucht `writeSyntaxa` die Menge der geschriebenen IDs; sie entsteht ohnehin aus den Schritten 2 und 3 und wird als `map[string]bool` mitgeführt.
 
 `RelinkSyntaxon` wird hier **nicht** gebraucht: die Kanten werden in derselben Transaktion erstmals geschrieben, also gleich auf den richtigen Code. Die Methode bleibt für einen Ingest auf einen bereits gefüllten Index (idempotenter Wiederholungslauf) nötig — der Aufruf steht in Task 7, Schritt 3.
 
@@ -1416,7 +1416,7 @@ Expected: PASS.
 
 ```bash
 git add internal/application/
-git commit -m "feat(ingest): EEA-eigene Syntaxa erhalten, Kanten ueber den Altcode aufloesen"
+git commit -m "feat(ingest): EEA-eigene Syntaxa erhalten, Kanten ueber den EEA-Code aufloesen"
 ```
 
 ---
@@ -1443,7 +1443,7 @@ func TestIngestSyntaxaFindetElternteilPerNamensabgleich(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations, hierarchy: minimalHierarchy,
-		// Name matches FloraVeg's "Testverband", alt code does not.
+		// Name matches FloraVeg's "Testverband", eea code does not.
 		eunis: "id,rank,name,parent_id\nAND-01A,alliance,Testverband Morariu 1957,\n",
 		links: "typology_id,code,syntaxon_id\n",
 	})
@@ -1469,7 +1469,7 @@ func TestIngestSyntaxaLeitetElternteilAusGeschwisterkonsensAb(t *testing.T) {
 			"CA02A,alliance,Nachbarverband eins,A 1,CA02,NAR-01A\n" +
 			"CA02B,alliance,Nachbarverband zwei,A 2,CA02,NAR-01B\n" +
 			"CA02,order,Nachbarordnung,A 0,CA,NAR-01\n",
-		// NAR-01E has no alt-code partner and no name match, but siblings
+		// NAR-01E has no eea-code partner and no name match, but siblings
 		// NAR-01A/B unanimously point at CA02.
 		eunis: "id,rank,name,parent_id\n" +
 			"NAR-01A,alliance,Nachbarverband eins A 1,\n" +
@@ -1520,7 +1520,7 @@ func TestIngestSyntaxaScheitertAnVerbleibenderWaise(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations, hierarchy: minimalHierarchy,
-		// No alt-code partner, no name match, no sibling.
+		// No eea-code partner, no name match, no sibling.
 		eunis: "id,rank,name,parent_id\nEIN-09Z,alliance,Voellig Unbekanntes 1900,\n",
 		links: "typology_id,code,syntaxon_id\n",
 	})
@@ -1586,7 +1586,7 @@ Expected: FAIL — `ParentsByName = 0`, `ParentsDerived = 0`, und die Waisen-Tes
 //
 // Measured over all 287 EEA order groups: 285 consistent, one
 // contradictory (QUI-01, without an orphan), one with no parent set at
-// all (THE-01, whose orphan the alt-code join resolves). The derivation
+// all (THE-01, whose orphan the eea-code join resolves). The derivation
 // is thus the tightest rule that closes the ten open cases without
 // guessing.
 func siblingConsensus(id string, parents map[string]string) string {
@@ -1633,7 +1633,7 @@ func eeaGroup(id string) (string, bool) {
 2. Sonst `siblingConsensus` — Treffer setzt `SetSyntaxonParent(id, parent, domain.ParentProvenanceDerived)` und zählt `ParentsDerived`.
 3. Sonst bleibt die Zeile Waise und wird in `Orphans` vermerkt.
 
-Die Karte, die `siblingConsensus` bekommt, bildet **EEA-ID → Elternteil** und entsteht aus den Hierarchiezeilen mit Altcode (`altCode` → `parentCode`), ergänzt um die bereits in diesem Schritt gesetzten. Danach:
+Die Karte, die `siblingConsensus` bekommt, bildet **EEA-ID → Elternteil** und entsteht aus den Hierarchiezeilen mit EEA-Code (`eeaCode` → `parentCode`), ergänzt um die bereits in diesem Schritt gesetzten. Danach:
 
 ```go
 	// Any non-formation row without a parent fails the ingest. An
@@ -1647,7 +1647,7 @@ Die Karte, die `siblingConsensus` bekommt, bildet **EEA-ID → Elternteil** und 
 	}
 ```
 
-Am Ende von `writeSyntaxa` zusätzlich der idempotente Nachlauf: für jeden Altcode, der im Index noch als eigene Syntaxon-ID Kanten trägt (Wiederholungslauf auf einem gefüllten Index), `tx.RelinkSyntaxon(altCode, primaryCode)`. Dafür `repo.SyntaxonIDsByAltCode` vor `Begin` lesen und die IDs vergleichen; ein leerer Index liefert eine leere Karte und der Nachlauf tut nichts.
+Am Ende von `writeSyntaxa` zusätzlich der idempotente Nachlauf: für jeden EEA-Code, der im Index noch als eigene Syntaxon-ID Kanten trägt (Wiederholungslauf auf einem gefüllten Index), `tx.RelinkSyntaxon(eeaCode, primaryCode)`. Dafür `repo.SyntaxonIDsByEEACode` vor `Begin` lesen und die IDs vergleichen; ein leerer Index liefert eine leere Karte und der Nachlauf tut nichts.
 
 - [ ] **Step 4: Tests laufen lassen und grün sehen**
 
@@ -1684,7 +1684,7 @@ git commit -m "feat(ingest): Restelternteile per Namensabgleich und Geschwisterk
    mehrere zusammengehörige Phasen bündelt und einen Report zurückgibt. Hier
    passt `ingestSyntaxaPhase(ctx, db, csvDir) (application.SyntaxaReport, error)`
    zusammen mit dem Protokollieren der Warnungen — damit verliert `runIngest`
-   die Verzweigungen für `AltCodeCollisions`, `AmbiguousMatches`,
+   die Verzweigungen für `EEACodeCollisions`, `AmbiguousMatches`,
    `UnknownLinkTargets` und `ParentsDerived`, statt sie zu gewinnen.
 2. **`IngestReport` verliert zwei Felder.** Der Struct ist in
    `cmd/situs/ingest.go` in `ingestOutput` **eingebettet**, seine Felder sind
@@ -1705,7 +1705,7 @@ git commit -m "feat(ingest): Restelternteile per Namensabgleich und Geschwisterk
 
 **Interfaces:**
 - Consumes: `application.IngestSyntaxa`, `application.SyntaxaReport` (Task 5–7).
-- Produces: `input.SyntaxonRef` um `AltCode`, `Source`, `ParentProvenance` erweitert (alle `omitempty`); `IngestCSV` ohne Syntaxa-Schritte.
+- Produces: `input.SyntaxonRef` um `EEACode`, `Source`, `ParentProvenance` erweitert (alle `omitempty`); `IngestCSV` ohne Syntaxa-Schritte.
 
 - [ ] **Step 1: Die failing Tests schreiben**
 
@@ -1740,11 +1740,11 @@ In `internal/adapters/http/habitat_test.go` (Muster: der bestehende Test für `a
 
 ```go
 func TestHabitatTypeJSONTraegtSyntaxonHerkunftsfelder(t *testing.T) {
-	// Fixture syntaxon with alt code, source, and a derived parent.
+	// Fixture syntaxon with eea code, source, and a derived parent.
 	body := getJSON(t, srv, "/v1/habitat-type/eunis@2021/T11")
 	syn := body["syntaxa"].([]any)[0].(map[string]any)
 	for field, want := range map[string]any{
-		"alt_code":          "TST-01A",
+		"eea_code":          "TST-01A",
 		"source":            "evc",
 		"parent_provenance": "official",
 	} {
@@ -1757,8 +1757,8 @@ func TestHabitatTypeJSONTraegtSyntaxonHerkunftsfelder(t *testing.T) {
 func TestHabitatTypeJSONLaesstLeereHerkunftsfelderWeg(t *testing.T) {
 	body := getJSON(t, srv, "/v1/habitat-type/eunis@2021/T12")
 	syn := body["syntaxa"].([]any)[0].(map[string]any)
-	if _, ok := syn["alt_code"]; ok {
-		t.Error("alt_code erscheint, obwohl leer")
+	if _, ok := syn["eea_code"]; ok {
+		t.Error("eea_code erscheint, obwohl leer")
 	}
 }
 ```
@@ -1786,7 +1786,7 @@ In `cmd/situs/ingest.go` den Aufruf von `IngestSyntaxaHierarchy` ersetzen:
 	}
 ```
 
-und die Ausgabe des Reports entsprechend erweitern (dem bestehenden Protokollmuster der Funktion folgen, inklusive `AltCodeCollisions`, `AmbiguousMatches`, `UnknownLinkTargets` und `ParentsDerived` als Warnungen, wenn nichtleer).
+und die Ausgabe des Reports entsprechend erweitern (dem bestehenden Protokollmuster der Funktion folgen, inklusive `EEACodeCollisions`, `AmbiguousMatches`, `UnknownLinkTargets` und `ParentsDerived` als Warnungen, wenn nichtleer).
 
 In `internal/ports/input/services.go`:
 
@@ -1798,9 +1798,9 @@ type SyntaxonRef struct {
 	Author   string `json:"author,omitempty"`
 	ParentID string `json:"parent_id,omitempty"`
 
-	// AltCode is the EEA-EUNIS code of the same syntaxon — a client
+	// EEACode is the EEA-EUNIS code of the same syntaxon — a client
 	// holding an old code can switch over with it, without guessing.
-	AltCode string `json:"alt_code,omitempty"`
+	EEACode string `json:"eea_code,omitempty"`
 	// Source is "evc" or "eunis": which source this row carries.
 	Source string `json:"source,omitempty"`
 	// ParentProvenance is "official" or "derived". A derived parent is
@@ -1841,7 +1841,7 @@ In **beiden** OpenAPI-Kopien das `SyntaxonRef`-Schema erweitern:
             Verweist auf den übergeordneten Syntaxon (reine String-Referenz,
             kein Fremdschlüssel). Fehlt nur bei einer Formation — sie ist die
             Wurzel der Hierarchie.
-        alt_code:
+        eea_code:
           type: string
           description: >-
             Der EEA-EUNIS-Code desselben Syntaxons; fehlt bei Formationen und
@@ -1989,7 +1989,7 @@ SELECT rank, COUNT(*) FROM syntaxon GROUP BY 1 ORDER BY 1;
 SELECT 'Waisen', COUNT(*) FROM syntaxon WHERE rank<>'formation' AND parent_id='';
 SELECT 'derived', COUNT(*) FROM syntaxon WHERE parent_provenance='derived';
 SELECT 'source=eunis', COUNT(*) FROM syntaxon WHERE source='eunis';
-SELECT 'AMM-02B-Nachfolger', id, parent_id FROM syntaxon WHERE alt_code='AMM-02B';
+SELECT 'AMM-02B-Nachfolger', id, parent_id FROM syntaxon WHERE eea_code='AMM-02B';
 SELECT 'Kryptogamen-Verbaende', COUNT(*) FROM syntaxon a
   JOIN syntaxon o ON o.id=a.parent_id JOIN syntaxon c ON c.id=o.parent_id
   WHERE a.rank='alliance' AND c.parent_id IN ('R','S','T','U','V','W','X','Y');
@@ -2031,7 +2031,7 @@ must check" die neue Zusage aufnehmen: *jede Nicht-Formations-Zeile hat ein
 Elternteil, sonst scheitert der Ingest* — sie steht gleichrangig neben der
 Dreiwertigkeit von `in_area`.
 
-In `CLAUDE.md` den Abschnitt „Current State" ergänzen: die Syntaxa-Quellenumkehr ist umgesetzt, FloraVeg ist Primärquelle, der Join läuft über den Altcode, die Formationsebene und die Lebensform-Gruppe sind ableitbar, und das Spec vom 2026-08-30 ist durch das vom 2026-09-21 revidiert. In der Tabelle der Design-Dokumente die drei neuen Specs eintragen. Den Satz „Assoziations-Ebene bleibt außerhalb" unverändert lassen — er gilt weiter.
+In `CLAUDE.md` den Abschnitt „Current State" ergänzen: die Syntaxa-Quellenumkehr ist umgesetzt, FloraVeg ist Primärquelle, der Join läuft über den EEA-Code, die Formationsebene und die Lebensform-Gruppe sind ableitbar, und das Spec vom 2026-08-30 ist durch das vom 2026-09-21 revidiert. In der Tabelle der Design-Dokumente die drei neuen Specs eintragen. Den Satz „Assoziations-Ebene bleibt außerhalb" unverändert lassen — er gilt weiter.
 
 - [ ] **Step 6: `make verify` und Mutationsgate**
 
@@ -2057,10 +2057,10 @@ git commit -m "test,docs: Hierarchie-Integritaet absichern und gemessene Werte f
 
 ## Self-Review
 
-**Spec-Abdeckung.** Abschnitt 1 (Anlass) → Referenzmesswerte und Task 9, Step 3. Abschnitt 2 (Formation im Klassencode) → Task 2 und `formationOf` in Task 5. Abschnitt 3 (Datenfluss, Ingest-Umbau, Dateibereitstellung) → Task 2, Step 3 und Task 8, Step 3. Abschnitt 4 (Domäne) → Task 3, Step 8. Abschnitt 5 (Schema) → Task 3, Step 3 und 7. Abschnitt 6 (Pipeline, inkl. `read_sheet`-Härtung) → Task 1. Abschnitt 7 (Ingest, Geschwisterkonsens, ASP-03) → Task 5–7, ASP-03 als Test in Task 6, Step 1. Abschnitt 8 (Fehlerbehandlung) → alle sieben Zeilen der Tabelle haben einen Test: fehlende Formationsdatei und fehlende Hierarchiedatei (Task 5), fehlende `alt_code`-Spalte (Task 5), Altcode-Kollision (Task 1, Report), EEA-Einheit ohne Gegenstück (Task 6), unbekannter Buchstabe (Task 5), verbleibende Waise (Task 7). Abschnitt 9 (Read-API) → Task 8. Abschnitt 10 (Tests) → über alle Tasks verteilt, der Index-Test in Task 9. Abschnitt 11 (Zusagen) → Task 9, Step 3 und 4.
+**Spec-Abdeckung.** Abschnitt 1 (Anlass) → Referenzmesswerte und Task 9, Step 3. Abschnitt 2 (Formation im Klassencode) → Task 2 und `formationOf` in Task 5. Abschnitt 3 (Datenfluss, Ingest-Umbau, Dateibereitstellung) → Task 2, Step 3 und Task 8, Step 3. Abschnitt 4 (Domäne) → Task 3, Step 8. Abschnitt 5 (Schema) → Task 3, Step 3 und 7. Abschnitt 6 (Pipeline, inkl. `read_sheet`-Härtung) → Task 1. Abschnitt 7 (Ingest, Geschwisterkonsens, ASP-03) → Task 5–7, ASP-03 als Test in Task 6, Step 1. Abschnitt 8 (Fehlerbehandlung) → alle sieben Zeilen der Tabelle haben einen Test: fehlende Formationsdatei und fehlende Hierarchiedatei (Task 5), fehlende `eea_code`-Spalte (Task 5), EEA-Code-Kollision (Task 1, Report), EEA-Einheit ohne Gegenstück (Task 6), unbekannter Buchstabe (Task 5), verbleibende Waise (Task 7). Abschnitt 9 (Read-API) → Task 8. Abschnitt 10 (Tests) → über alle Tasks verteilt, der Index-Test in Task 9. Abschnitt 11 (Zusagen) → Task 9, Step 3 und 4.
 
 **Platzhalter.** Keine „TBD"/„TODO"; jeder Code-Schritt trägt den Code; die Fehlerbehandlung ist pro Fall benannt statt als „angemessene Fehlerbehandlung".
 
-**Typkonsistenz.** `SyntaxaReport` (Task 5) trägt genau die Felder, die Task 6 (`EunisOnly`, `LinksWritten`, `LinksRemapped`, `UnknownLinkTargets`), Task 7 (`ParentsByName`, `ParentsDerived`, `Orphans`, `AmbiguousMatches`) und Task 8 (Protokollausgabe) verwenden. `SetSyntaxonParent(id, parentID, provenance string)` und `RelinkSyntaxon(from, to string)` sind in Task 4 definiert und in Task 6/7 mit derselben Signatur aufgerufen. `SyntaxonIDsByAltCode` liefert Altcode→ID und wird in Task 7, Step 3 so gelesen. Die Konstantennamen aus Task 3 werden in Task 5–8 unverändert benutzt.
+**Typkonsistenz.** `SyntaxaReport` (Task 5) trägt genau die Felder, die Task 6 (`EunisOnly`, `LinksWritten`, `LinksRemapped`, `UnknownLinkTargets`), Task 7 (`ParentsByName`, `ParentsDerived`, `Orphans`, `AmbiguousMatches`) und Task 8 (Protokollausgabe) verwenden. `SetSyntaxonParent(id, parentID, provenance string)` und `RelinkSyntaxon(from, to string)` sind in Task 4 definiert und in Task 6/7 mit derselben Signatur aufgerufen. `SyntaxonIDsByEEACode` liefert EEA-Code→ID und wird in Task 7, Step 3 so gelesen. Die Konstantennamen aus Task 3 werden in Task 5–8 unverändert benutzt.
 
 **Ein bewusster Bruch in der Mitte.** Nach Task 4 kompiliert `internal/application` nicht, weil `UpsertSyntaxonAuthor` entfällt; Task 5 stellt den Zustand wieder her. Task 4, Step 5 sagt das ausdrücklich und begrenzt den Testlauf auf die zwei betroffenen Pakete. Die Alternative — Port und Anwendungsschicht in einem Task — wäre ein Task, den ein Prüfer nicht mehr in Teilen ablehnen kann.

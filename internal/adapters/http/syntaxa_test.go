@@ -38,7 +38,7 @@ func TestSyntaxon_EingebetteteFelderStehenFlachImSelbenObjekt(t *testing.T) {
 		t.Fatalf("status = %d, want 200", code)
 	}
 	for _, key := range []string{
-		"id", "rank", "name", "author", "parent_id", "alt_code", "source",
+		"id", "rank", "name", "author", "parent_id", "eea_code", "source",
 		"parent_provenance", "life_form_group", "ancestors", "children",
 		"direct_habitat_type_count",
 	} {

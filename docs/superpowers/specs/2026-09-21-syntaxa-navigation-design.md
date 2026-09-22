@@ -69,7 +69,7 @@ type SyntaxonDetail struct {
 }
 ```
 
-`SyntaxonRef` wächst gegenüber Teilprojekt A nicht weiter — `alt_code`,
+`SyntaxonRef` wächst gegenüber Teilprojekt A nicht weiter — `eea_code`,
 `source`, `parent_provenance` und `life_form_group` sind dort schon
 eingezogen. `SyntaxonDetail` bettet `SyntaxonRef` ein, dessen Felder damit in
 dasselbe JSON-Objekt einwandern (Go promoviert eingebettete Felder). Im
@@ -145,7 +145,7 @@ WITH RECURSIVE up(id, root, steps) AS (
   SELECT u.id, s.parent_id, u.steps + 1 FROM up u JOIN syntaxon s ON s.id = u.root
   WHERE s.parent_id <> '' AND u.steps < 3
 )
-SELECT s.id, s.rank, s.name, s.author, s.parent_id, s.alt_code, s.source,
+SELECT s.id, s.rank, s.name, s.author, s.parent_id, s.eea_code, s.source,
        s.parent_provenance, s.life_form_group
 FROM syntaxon s
 JOIN up ON up.id = s.id

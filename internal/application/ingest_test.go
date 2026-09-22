@@ -443,9 +443,9 @@ type fakeRepo struct {
 		syntaxonID string
 	}
 	allSyntaxaErr error
-	// altCodesErr fails SyntaxonIDsByAltCode, exercising IngestSyntaxa's
+	// eeaCodesErr fails SyntaxonIDsByEEACode, exercising IngestSyntaxa's
 	// pre-Begin read of the index's existing state (Task 7).
-	altCodesErr   error
+	eeaCodesErr   error
 	speciesRoles  []domain.SpeciesRole
 	speciesNames  []domain.SpeciesName
 	searchErr     error
@@ -709,16 +709,16 @@ func (r *fakeRepo) RelinkSyntaxon(from, to string) error {
 	return nil
 }
 
-// SyntaxonIDsByAltCode mirrors the sqlite adapter: rows without an alt code
+// SyntaxonIDsByEEACode mirrors the sqlite adapter: rows without an eea code
 // are absent from the map.
-func (r *fakeRepo) SyntaxonIDsByAltCode(_ context.Context) (map[string]string, error) {
-	if r.altCodesErr != nil {
-		return nil, r.altCodesErr
+func (r *fakeRepo) SyntaxonIDsByEEACode(_ context.Context) (map[string]string, error) {
+	if r.eeaCodesErr != nil {
+		return nil, r.eeaCodesErr
 	}
 	out := map[string]string{}
 	for _, s := range r.syntaxa {
-		if s.AltCode != "" {
-			out[s.AltCode] = s.ID
+		if s.EEACode != "" {
+			out[s.EEACode] = s.ID
 		}
 	}
 	return out, nil

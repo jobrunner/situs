@@ -144,7 +144,7 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
    ohne Vegetationshierarchie stillschweigend zu bauen. `syntaxa.csv` und
    `habitat_type_syntaxa.csv` (aus `pipelines/eunis`) liefern noch die
    Verbände, die FloraVeg nicht führt (`source: eunis`), und die
-   Habitattyp-Kanten, deren EEA-Code über den Altcode auf FloraVegs
+   Habitattyp-Kanten, deren EEA-Code über den EEA-Code auf FloraVegs
    Primärcode aufgelöst wird. Details und gemessene Zahlen:
    `../reference/measured-index.md#syntaxa-tiefe-offener-punkt-1`. Läuft
    direkt nach `IngestCSV` und vor Artenrollen/Verbreitung/Zeigerwerten/

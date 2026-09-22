@@ -101,7 +101,7 @@ func addMissingSyntaxonColumns(ctx context.Context, db *sql.DB) error {
 	// migrated-but-not-freshly-ingested index. The CHECK therefore
 	// explicitly allows ''; the ingest sets the real values.
 	for _, c := range []struct{ name, ddl string }{
-		{"alt_code", `ALTER TABLE syntaxon ADD COLUMN alt_code TEXT NOT NULL DEFAULT ''`},
+		{"eea_code", `ALTER TABLE syntaxon ADD COLUMN eea_code TEXT NOT NULL DEFAULT ''`},
 		{"source", `ALTER TABLE syntaxon ADD COLUMN source TEXT NOT NULL DEFAULT ''
 		            CHECK (source IN ('', 'evc', 'eunis'))`},
 		{"parent_provenance", `ALTER TABLE syntaxon ADD COLUMN parent_provenance TEXT NOT NULL DEFAULT ''
@@ -117,11 +117,11 @@ func addMissingSyntaxonColumns(ctx context.Context, db *sql.DB) error {
 		}
 	}
 	// Only here, not in schema.sql: the schema is applied BEFORE this
-	// migration, and alt_code does not exist yet on an old index at that
+	// migration, and eea_code does not exist yet on an old index at that
 	// point.
 	if _, err := db.ExecContext(ctx,
-		`CREATE INDEX IF NOT EXISTS idx_syntaxon_alt_code ON syntaxon(alt_code)`); err != nil {
-		return fmt.Errorf("creating idx_syntaxon_alt_code: %w", err)
+		`CREATE INDEX IF NOT EXISTS idx_syntaxon_eea_code ON syntaxon(eea_code)`); err != nil {
+		return fmt.Errorf("creating idx_syntaxon_eea_code: %w", err)
 	}
 	return nil
 }

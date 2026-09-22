@@ -143,11 +143,11 @@ type Repository interface {
 	// HabitatTypeKeysForSyntaxon returns the habitat types a syntaxon is linked
 	// to — the m:n direction.
 	HabitatTypeKeysForSyntaxon(ctx context.Context, syntaxonID string) ([]domain.HabitatTypeKey, error)
-	// SyntaxonIDsByAltCode maps the EEA alt code to the syntaxon id. The
+	// SyntaxonIDsByEEACode maps the EEA code to the syntaxon id. The
 	// syntaxa ingest uses it to resolve the habitat-type edges of the EEA
-	// source onto the FloraVeg primary codes. Rows without an alt code are
+	// source onto the FloraVeg primary codes. Rows without an eea code are
 	// absent from the map.
-	SyntaxonIDsByAltCode(ctx context.Context) (map[string]string, error)
+	SyntaxonIDsByEEACode(ctx context.Context) (map[string]string, error)
 	// Localization returns every localization matching entityType, entityKey,
 	// lang and field — there can be more than one, one per source.
 	// Localization returns every localized field of one entity in one language.

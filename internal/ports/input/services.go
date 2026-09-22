@@ -109,9 +109,9 @@ type SyntaxonRef struct {
 	// (EUNIS alliance codes, FloraVeg class/order codes) coexist here.
 	ParentID string `json:"parent_id,omitempty"`
 
-	// AltCode is the EEA-EUNIS code of the same syntaxon — a client
+	// EEACode is the EEA-EUNIS code of the same syntaxon — a client
 	// holding an old code can switch over with it, without guessing.
-	AltCode string `json:"alt_code,omitempty"`
+	EEACode string `json:"eea_code,omitempty"`
 	// Source is "evc" or "eunis": which source this row carries.
 	Source string `json:"source,omitempty"`
 	// ParentProvenance is "official" or "derived". A derived parent is
@@ -139,7 +139,7 @@ type SyntaxonRef struct {
 // breadcrumb trail cost three requests.
 //
 // SyntaxonRef is EMBEDDED, so Go promotes its fields into this same JSON
-// object: id, rank, name, author, parent_id, alt_code, source,
+// object: id, rank, name, author, parent_id, eea_code, source,
 // parent_provenance and life_form_group are siblings of ancestors and children
 // on the wire, not a nested object. The OpenAPI schema models that as allOf and
 // a test pins it, because a nested schema and a flat wire format would be two

@@ -58,15 +58,15 @@ func (t *ingestTx) UpsertCrosswalk(c domain.Crosswalk) error {
 
 func (t *ingestTx) UpsertSyntaxon(s domain.Syntaxon) error {
 	_, err := t.tx.ExecContext(t.ctx,
-		`INSERT INTO syntaxon (id, rank, name, author, parent_id, alt_code, source,
+		`INSERT INTO syntaxon (id, rank, name, author, parent_id, eea_code, source,
 		                       parent_provenance, life_form_group)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
 		   rank = excluded.rank, name = excluded.name, author = excluded.author,
-		   parent_id = excluded.parent_id, alt_code = excluded.alt_code,
+		   parent_id = excluded.parent_id, eea_code = excluded.eea_code,
 		   source = excluded.source, parent_provenance = excluded.parent_provenance,
 		   life_form_group = excluded.life_form_group`,
-		s.ID, s.Rank, s.Name, s.Author, s.ParentID, s.AltCode, s.Source,
+		s.ID, s.Rank, s.Name, s.Author, s.ParentID, s.EEACode, s.Source,
 		s.ParentProvenance, s.LifeFormGroup)
 	if err != nil {
 		return fmt.Errorf("sqlite: upserting syntaxon %s: %w", s.ID, err)

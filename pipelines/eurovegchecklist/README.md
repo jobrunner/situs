@@ -31,11 +31,11 @@ python3 xlsx_to_csv.py \
 ```
 
 Schreibt `out/syntaxa_hierarchy.csv`
-(`code,rank,name,author,parent_code,alt_code`) und `out/report.json`
-(Klassen/Ordnungen/Verbände/übersprungene Zeilen/Altcodes/Altcode-Kollisionen).
+(`code,rank,name,author,parent_code,eea_code`) und `out/report.json`
+(Klassen/Ordnungen/Verbände/übersprungene Zeilen/EEA-Codes/EEA-Code-Kollisionen).
 Gemessen gegen die reale, am 2026-08-30 gepinnte Datei (siehe
 `manifest.yaml`): 150 Klassen, 381 Ordnungen, 1310 Verbände, 1841 Zeilen
-insgesamt, 0 übersprungene Zeilen, 1841 Altcodes, 0 Altcode-Kollisionen — deckt
+insgesamt, 0 übersprungene Zeilen, 1841 EEA-Codes, 0 EEA-Code-Kollisionen — deckt
 sich exakt mit dem Design-Spec-Spike (Zeile 20-21).
 
 `rank` und `parent_code` werden **ausschließlich** aus dem Code-Muster
@@ -49,7 +49,7 @@ Die echte Kopfzeile weicht von einem naiven `Code/Name/Author`-Schema ab:
 
 - `Code` trägt zusätzlich einen alternativen/historischen Code in Klammern,
   z. B. `AA01A (PAP-01A)`. Der Parser zerlegt die Zelle in Primärcode
-  (`AA01A`) und Altcode (`PAP-01A`) und schreibt beide in eigene CSV-Spalten —
+  (`AA01A`) und EEA-Code (`PAP-01A`) und schreibt beide in eigene CSV-Spalten —
   der Klammerteil ist das Codeschema der EEA-EUNIS-Quelle und damit der
   exakte Join-Schlüssel zwischen beiden Quellen, wird also ausgegeben statt
   verworfen.

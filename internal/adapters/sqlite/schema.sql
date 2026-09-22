@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS syntaxon (
   -- The EEA-EUNIS code of the same syntaxon, from the parenthesized part
   -- of the FloraVeg code cell. It is the join key between the two sources
   -- and stays in the index so a client can resolve an old code.
-  alt_code          TEXT NOT NULL DEFAULT '',
+  eea_code          TEXT NOT NULL DEFAULT '',
   source            TEXT NOT NULL DEFAULT 'evc'
                     CHECK (source IN ('', 'evc', 'eunis')),
   parent_provenance TEXT NOT NULL DEFAULT 'official'

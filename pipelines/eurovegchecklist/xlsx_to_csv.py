@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Convert the pinned FloraVeg.EU EuroVegChecklist XLSX into
-syntaxa_hierarchy.csv (code|rank|name|author|parent_code|alt_code).
+syntaxa_hierarchy.csv (code|rank|name|author|parent_code|eea_code).
 
 Same rationale as pipelines/eunis/xlsx_to_csv.py: an .xlsx is a zip of XML the
 stdlib reads, so no spreadsheet library joins situs' dependency list.
@@ -23,7 +23,7 @@ NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 _R_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
 
 CSV_HEADERS = {
-    "syntaxa_hierarchy.csv": ["code", "rank", "name", "author", "parent_code", "alt_code"],
+    "syntaxa_hierarchy.csv": ["code", "rank", "name", "author", "parent_code", "eea_code"],
 }
 
 # Maps a row's rank to its counter key in the report dict below. Explicit on
@@ -67,8 +67,8 @@ _CODE_CELL_RE = re.compile(r"^(\S+)\s*\(([^)]*)\)\s*$")
 
 
 def split_code(cell):
-    """Split a Code cell into (primary code, alt code). A cell with no
-    parenthesized part yields an empty alt code — not an error."""
+    """Split a Code cell into (primary code, eea code). A cell with no
+    parenthesized part yields an empty eea code — not an error."""
     cell = cell.strip()
     m = _CODE_CELL_RE.match(cell)
     if m:
@@ -81,11 +81,11 @@ class HeaderError(RuntimeError):
     of silently defaulting every cell to empty."""
 
 
-class AltCodeCollisionError(RuntimeError):
-    """Two different primary codes claim the same alt_code (the historical
+class EEACodeCollisionError(RuntimeError):
+    """Two different primary codes claim the same eea_code (the historical
     EEA-EUNIS code in parentheses). That code is the join key
-    IngestSyntaxa's byAlt map uses to resolve an EEA edge onto its FloraVeg
-    primary code and to relink a stale alt code (see syntaxa_ingest.go); a
+    IngestSyntaxa's byEEA map uses to resolve an EEA edge onto its FloraVeg
+    primary code and to relink a stale eea code (see syntaxa_ingest.go); a
     second primary code claiming the same key would make that resolution
     pick one of the two at random ("last one wins" in a Go map iteration).
     Failing here, at conversion time, is the ONE place this is checked —
@@ -205,9 +205,9 @@ def convert(xlsx_path, out_dir):
     rows_out = []
     counts = {"classes": 0, "orders": 0, "alliances": 0}
     skipped = []
-    # Tracks which primary code first claimed an alt_code, so a second,
-    # different primary code claiming the same alt_code is a real collision —
-    # not just the same row's alt_code seen twice.
+    # Tracks which primary code first claimed an eea_code, so a second,
+    # different primary code claiming the same eea_code is a real collision —
+    # not just the same row's eea_code seen twice.
     alt_seen = {}
 
     for sheet_name, sheet_path in _data_sheets(xlsx_path):
@@ -227,8 +227,8 @@ def convert(xlsx_path, out_dir):
                 continue
             if alt:
                 if alt in alt_seen and alt_seen[alt] != code:
-                    raise AltCodeCollisionError(
-                        f"{xlsx_path} [{sheet_name}]: alt_code {alt!r} is claimed by both "
+                    raise EEACodeCollisionError(
+                        f"{xlsx_path} [{sheet_name}]: eea_code {alt!r} is claimed by both "
                         f"{alt_seen[alt]!r} and {code!r}")
                 alt_seen[alt] = code
             counts[_RANK_COUNTER_KEY[rank]] += 1
@@ -238,7 +238,7 @@ def convert(xlsx_path, out_dir):
                 "name": _cell(row, idx, "Name"),
                 "author": _cell(row, idx, "Author"),
                 "parent_code": parent_code,
-                "alt_code": alt,
+                "eea_code": alt,
             })
 
     for sheet_name, code in skipped:
@@ -258,7 +258,7 @@ def convert(xlsx_path, out_dir):
         "alliances": counts["alliances"],
         "total_rows": len(rows_out),
         "skipped_rows": len(skipped),
-        "alt_codes": sum(1 for r in rows_out if r["alt_code"]),
+        "eea_codes": sum(1 for r in rows_out if r["eea_code"]),
     }
     with open(os.path.join(out_dir, "report.json"), "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False, sort_keys=True)
@@ -273,7 +273,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         report = convert(args.xlsx, args.out_dir)
-    except (HeaderError, AltCodeCollisionError) as exc:
+    except (HeaderError, EEACodeCollisionError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)
     print(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True))

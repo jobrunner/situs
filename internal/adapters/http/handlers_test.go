@@ -114,7 +114,7 @@ func TestHabitatType_SyntaxonCarriesProvenanceFields(t *testing.T) {
 	detail := q.types["eunis@2021:R22"]
 	detail.Syntaxa = []input.SyntaxonRef{
 		{ID: "CAK-01C", Rank: "alliance", Name: "Cakilion edentulae Br.-Bl. 1931",
-			AltCode: "TST-01A", Source: "evc", ParentProvenance: "official"},
+			EEACode: "TST-01A", Source: "evc", ParentProvenance: "official"},
 	}
 	q.types["eunis@2021:R22"] = detail
 	srv := newTestServer(t, q)
@@ -137,7 +137,7 @@ func TestHabitatType_SyntaxonCarriesProvenanceFields(t *testing.T) {
 	}
 	syn := got.Syntaxa[0]
 	for field, want := range map[string]any{
-		"alt_code":          "TST-01A",
+		"eea_code":          "TST-01A",
 		"source":            "evc",
 		"parent_provenance": "official",
 	} {
@@ -173,7 +173,7 @@ func TestHabitatType_SyntaxonOmitsEmptyProvenanceFields(t *testing.T) {
 		t.Fatalf("syntaxa = %+v, want 1 entry", got.Syntaxa)
 	}
 	syn := got.Syntaxa[0]
-	for _, field := range []string{"alt_code", "source", "parent_provenance", "life_form_group"} {
+	for _, field := range []string{"eea_code", "source", "parent_provenance", "life_form_group"} {
 		if _, ok := syn[field]; ok {
 			t.Errorf("%s erscheint, obwohl leer", field)
 		}
@@ -1167,7 +1167,7 @@ func seededQueryService() *fakeQueryService {
 			"BRO-01A": {
 				SyntaxonRef: input.SyntaxonRef{ID: "BRO-01A", Rank: "alliance",
 					Name: "Bromion erecti", Author: "Koch 1926", ParentID: "CA01",
-					AltCode: "BRO-01A", Source: "evc", ParentProvenance: "official",
+					EEACode: "BRO-01A", Source: "evc", ParentProvenance: "official",
 					LifeFormGroup: "phanerogam"},
 				Ancestors: []input.SyntaxonRef{
 					{ID: "C", Rank: "formation", Name: "Vegetation of the nemoral forest zone"},

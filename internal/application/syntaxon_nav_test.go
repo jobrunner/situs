@@ -21,13 +21,13 @@ func seedNavRepo(t *testing.T) *fakeRepo {
 			Source: domain.SyntaxonSourceEVC, ParentProvenance: domain.ParentProvenanceOfficial,
 			LifeFormGroup: domain.LifeFormPhanerogam},
 		{ID: "CA", Rank: domain.SyntaxonRankClass, Name: "Testklasse", Author: "Moor 1950",
-			ParentID: "C", AltCode: "TST", Source: domain.SyntaxonSourceEVC,
+			ParentID: "C", EEACode: "TST", Source: domain.SyntaxonSourceEVC,
 			ParentProvenance: domain.ParentProvenanceOfficial},
 		{ID: "CA01", Rank: domain.SyntaxonRankOrder, Name: "Testordnung", Author: "Moor 1960",
-			ParentID: "CA", AltCode: "TST-01", Source: domain.SyntaxonSourceEVC,
+			ParentID: "CA", EEACode: "TST-01", Source: domain.SyntaxonSourceEVC,
 			ParentProvenance: domain.ParentProvenanceOfficial},
 		{ID: "CA01A", Rank: domain.SyntaxonRankAlliance, Name: "Erster Verband", Author: "Moor 1970",
-			ParentID: "CA01", AltCode: "TST-01A", Source: domain.SyntaxonSourceEVC,
+			ParentID: "CA01", EEACode: "TST-01A", Source: domain.SyntaxonSourceEVC,
 			ParentProvenance: domain.ParentProvenanceOfficial},
 		{ID: "CA01B", Rank: domain.SyntaxonRankAlliance, Name: "Zweiter Verband", Author: "Moor 1975",
 			ParentID: "CA01", Source: domain.SyntaxonSourceEVC,
@@ -117,7 +117,7 @@ func TestSyntaxon_VerbandHatDreiAhnenKeineKinderUndSeineKantenzahl(t *testing.T)
 	if got.DirectHabitatTypeCount != 2 {
 		t.Errorf("DirectHabitatTypeCount = %d, erwartet 2", got.DirectHabitatTypeCount)
 	}
-	if got.AltCode != "TST-01A" || got.Source != domain.SyntaxonSourceEVC ||
+	if got.EEACode != "TST-01A" || got.Source != domain.SyntaxonSourceEVC ||
 		got.ParentProvenance != domain.ParentProvenanceOfficial || got.Author != "Moor 1970" {
 		t.Errorf("SyntaxonRef = %+v, erwartet die Herkunftsfelder aus Teilprojekt A", got.SyntaxonRef)
 	}

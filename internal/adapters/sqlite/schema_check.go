@@ -35,7 +35,7 @@ var migratedColumns = []struct {
 }{
 	{"species_role", `PRAGMA table_info(species_role)`, []string{"provenance", "derived_from"}},
 	{"habitat_description", `PRAGMA table_info(habitat_description)`, []string{"provenance"}},
-	{"syntaxon", `PRAGMA table_info(syntaxon)`, []string{"alt_code", "source", "parent_provenance", "life_form_group"}},
+	{"syntaxon", `PRAGMA table_info(syntaxon)`, []string{"eea_code", "source", "parent_provenance", "life_form_group"}},
 }
 
 // verifyServeSchema reports whether the opened file is an index this binary can

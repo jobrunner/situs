@@ -102,7 +102,7 @@ Decke, kein Versäumnis.
 
 `pipelines/eurovegchecklist/` lädt die EuroVegChecklist (Mucina et al. 2016 +
 Updates, Version 4) und liefert Klasse/Ordnung/Verband mit Codes, Autorschaft
-und Altcode. `data/syntaxa_formations.csv` liefert die 25 Formationszeilen
+und EEA-Code. `data/syntaxa_formations.csv` liefert die 25 Formationszeilen
 (Sektionen A–Y mit Lebensform-Gruppe). Beide sind seit der Quellenumkehr
 **Pflichtquellen** — ihr Fehlen bricht den Ingest ab, statt einen Index ohne
 Hierarchie stillschweigend zu bauen.
@@ -157,11 +157,11 @@ seit dieser Umkehrung das frühere Feldpaar `Syntaxa`/`SyntaxonLinks` von
 }
 ```
 
-`AltCodeCollisions`, `SkippedUnknownSection` und `SkippedPattern` sind seit
+`EEACodeCollisions`, `SkippedUnknownSection` und `SkippedPattern` sind seit
 der letzten Review-Runde entfernt: keines der drei wurde je befüllt, und für
-`AltCodeCollisions` gibt es seither eine echte Absicherung an einer anderen
+`EEACodeCollisions` gibt es seither eine echte Absicherung an einer anderen
 Stelle — `pipelines/eurovegchecklist/xlsx_to_csv.py` bricht die Konvertierung
-ab, sobald zwei Primärcodes denselben Altcode beanspruchen, statt es nur zu
+ab, sobald zwei Primärcodes denselben EEA-Code beanspruchen, statt es nur zu
 zählen.
 
 `AlliancesWritten` (1310) zählt nur die FloraVeg-Hierarchiezeilen; zusammen mit
@@ -174,17 +174,17 @@ zusammenfallen lassen (siehe die `U36`/`ASP-03`/`KC03`-Sonderfall unten); die
 
 ### Der stille Namensabgleichsfehler: `AMM-02B` → `JD02`, nicht `JE01`
 
-Der Altcode-Join löst EEA-Kanten über den Altcode auf FloraVegs Primärcode
-auf. Gemessen am Nachfolger von `alt_code='AMM-02B'`:
+Der EEA-Code-Join löst EEA-Kanten über den EEA-Code auf FloraVegs Primärcode
+auf. Gemessen am Nachfolger von `eea_code='AMM-02B'`:
 
 ```sql
-SELECT id, parent_id FROM syntaxon WHERE alt_code='AMM-02B';
+SELECT id, parent_id FROM syntaxon WHERE eea_code='AMM-02B';
 -- JD02B|JD02
 ```
 
 `JD02` ist korrekt — der alte, auf reinem Namensvergleich beruhende Abgleich
 hätte hier still `JE01` geliefert (ein Nachbarcode mit ähnlichem, aber
-falschem Namen). Der Altcode-Join über die eindeutige EEA-ID vermeidet genau
+falschem Namen). Der EEA-Code-Join über die eindeutige EEA-ID vermeidet genau
 diese Fehlklasse.
 
 ### Kryptogamen-Verbände (Sektionen R–Y)
@@ -216,7 +216,7 @@ liefert die vollen **190**.
 Keine EUNIS-Zuordnung ging verloren. Die eine dokumentierte Ausnahme der
 Zusage ist bereits in beiden Zahlen aufgegangen: `U36` verlinkte vor der
 Umkehrung sowohl auf `ASP-03` als auch (separat) auf `KC03`; nach der
-Umkehrung bildet der Altcode-Join `ASP-03` auf `KC03` ab, die beiden Kanten
+Umkehrung bildet der EEA-Code-Join `ASP-03` auf `KC03` ab, die beiden Kanten
 fallen auf eine zusammen — `U36` trägt in beiden Ständen 15 Kanten, nicht 16
 und nicht 14.
 
@@ -391,7 +391,7 @@ SELECT s.id FROM syntaxon a
 hier namentlich nur sechs Verbände (`CT06A`, `DA12A`, `DA13A`, `DD01A`,
 `DD01B`, `DD01C`). Das reale, gemessene Bild ist größer: **22**, nicht 6. Die
 16 zusätzlichen (`AMM-*`, `CRU-*`, `GER-02E`, `NAR-01E`, `QUI-01F`, `TUB-03D`)
-tragen durchweg einen EEA-eigenen Altcode-Stil statt eines FloraVeg-Primärcodes
+tragen durchweg einen EEA-eigenen EEA-Code-Stil statt eines FloraVeg-Primärcodes
 und sind plausibel Verbände, die die EVC-Verbreitungsquelle strukturell nicht
 führen kann (kein FloraVeg-Primärcode, an dem die Pipeline andocken könnte),
 nicht bloß zufällig ohne Daten geblieben. Die 6 genannten bleiben Teil der 22
@@ -412,7 +412,7 @@ Die belastbare Aussage über die Überdeckung ist nicht die Differenz der
 Versionsnummern, sondern die gemessene **1114 / 1115**: von den 1115
 Verbänden, die die Verbreitungsquelle führt, kennt die (neuere) Hierarchie
 1114 unter demselben Primärcode. Der eine fehlende ist `CI01E`
-(`Campanulo-Nardion`, Altcode `NAR-01E`) — der Ingest verwirft seine drei
+(`Campanulo-Nardion`, EEA-Code `NAR-01E`) — der Ingest verwirft seine drei
 Vorkommenszeilen und meldet ihn namentlich in `UnknownSyntaxa`, statt ihn
 stillschweigend zu verwerfen oder eine leere Liste zu melden, die die
 Fassungsdrift verschwiegen hätte.

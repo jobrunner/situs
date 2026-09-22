@@ -76,7 +76,7 @@ func seedIngestDir(t *testing.T) string {
 	writeIngestCSV(t, dir, "crosswalks.csv",
 		"from_typology,from_code,to_typology,to_code,qualifier\n")
 	writeIngestCSV(t, dir, "syntaxa_formations.csv", "letter,name_en,life_form_group\nA,Woodland,phanerogam\n")
-	writeIngestCSV(t, dir, "syntaxa_hierarchy.csv", "code,rank,name,author,parent_code,alt_code\n")
+	writeIngestCSV(t, dir, "syntaxa_hierarchy.csv", "code,rank,name,author,parent_code,eea_code\n")
 	writeIngestCSV(t, dir, "syntaxa.csv", "id,rank,name,parent_id\n")
 	writeIngestCSV(t, dir, "habitat_type_syntaxa.csv", "typology_id,code,syntaxon_id\n")
 	writeIngestCSV(t, dir, "species_roles.csv",
@@ -290,7 +290,7 @@ func TestIngestCommand_ReportsFailedConceptsFromThePacedDecorator(t *testing.T) 
 	writeIngestCSV(t, dir, "crosswalks.csv",
 		"from_typology,from_code,to_typology,to_code,qualifier\n")
 	writeIngestCSV(t, dir, "syntaxa_formations.csv", "letter,name_en,life_form_group\nA,Woodland,phanerogam\n")
-	writeIngestCSV(t, dir, "syntaxa_hierarchy.csv", "code,rank,name,author,parent_code,alt_code\n")
+	writeIngestCSV(t, dir, "syntaxa_hierarchy.csv", "code,rank,name,author,parent_code,eea_code\n")
 	writeIngestCSV(t, dir, "syntaxa.csv", "id,rank,name,parent_id\n")
 	writeIngestCSV(t, dir, "habitat_type_syntaxa.csv", "typology_id,code,syntaxon_id\n")
 	writeIngestCSV(t, dir, "species_roles.csv",
@@ -430,13 +430,13 @@ func TestIngestLeavesTheIndexAsASingleFileOutOfWAL(t *testing.T) {
 func TestIngestCommandRunsSyntaxaIngestAfterIngestCSV(t *testing.T) {
 	stubHostus(t)
 	dir := seedIngestDir(t)
-	// One real FloraVeg class/order/alliance, its alt_code being the EEA
+	// One real FloraVeg class/order/alliance, its eea_code being the EEA
 	// code the habitat type edge is written against — so the edge is
 	// remapped onto the FloraVeg primary code during this run.
 	writeIngestCSV(t, dir, "syntaxa_formations.csv",
 		"letter,name_en,life_form_group\nC,Vegetation of the nemoral forest zone,phanerogam\n")
 	writeIngestCSV(t, dir, "syntaxa_hierarchy.csv",
-		"code,rank,name,author,parent_code,alt_code\n"+
+		"code,rank,name,author,parent_code,eea_code\n"+
 			"CA,class,Testklasse,Moor 1950,,\n"+
 			"CA01,order,Testordnung,Moor 1960,CA,\n"+
 			"CA01A,alliance,Testverband,Moor 1970,CA01,TST-01A\n")
@@ -467,7 +467,7 @@ func TestIngestCommandRunsSyntaxaIngestAfterIngestCSV(t *testing.T) {
 		t.Errorf("Syntaxa.OrdersWritten = %v, want 1", got)
 	}
 	if got := syntaxa["LinksRemapped"]; got != float64(1) {
-		t.Errorf("Syntaxa.LinksRemapped = %v, want 1 (the edge onto the EEA alt code)", got)
+		t.Errorf("Syntaxa.LinksRemapped = %v, want 1 (the edge onto the EEA code)", got)
 	}
 }
 
@@ -827,7 +827,7 @@ func TestIngestBerichtetTerritorienUndSyntaxaVerbreitung(t *testing.T) {
 	writeIngestCSV(t, dir, "syntaxa_formations.csv",
 		"letter,name_en,life_form_group\nC,Vegetation of the nemoral forest zone,phanerogam\n")
 	writeIngestCSV(t, dir, "syntaxa_hierarchy.csv",
-		"code,rank,name,author,parent_code,alt_code\n"+
+		"code,rank,name,author,parent_code,eea_code\n"+
 			"CA,class,Testklasse,Moor 1950,,\n"+
 			"CA01,order,Testordnung,Moor 1960,CA,\n"+
 			"CA01A,alliance,Testverband,Moor 1970,CA01,\n")

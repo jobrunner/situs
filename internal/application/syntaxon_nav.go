@@ -116,7 +116,7 @@ func syntaxonRef(s domain.Syntaxon) input.SyntaxonRef {
 		Name:             s.Name,
 		Author:           s.Author,
 		ParentID:         s.ParentID,
-		AltCode:          s.AltCode,
+		EEACode:          s.EEACode,
 		Source:           s.Source,
 		ParentProvenance: s.ParentProvenance,
 		LifeFormGroup:    s.LifeFormGroup,

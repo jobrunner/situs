@@ -77,7 +77,7 @@ const syntaxaByRankRowsWithGroupSQL = `WITH RECURSIVE up(id, root, steps) AS (
 	   FROM up u JOIN syntaxon s ON s.id = u.root
 	   WHERE s.parent_id <> '' AND u.steps < 3
 	 )
-	 SELECT s.id, s.rank, s.name, s.author, s.parent_id, s.alt_code, s.source,
+	 SELECT s.id, s.rank, s.name, s.author, s.parent_id, s.eea_code, s.source,
 	        s.parent_provenance, s.life_form_group
 	 FROM syntaxon s
 	 JOIN up ON up.id = s.id
@@ -91,7 +91,7 @@ const syntaxaByRankRowsWithGroupSQL = `WITH RECURSIVE up(id, root, steps) AS (
 func (d *DB) syntaxaByRankRows(ctx context.Context, rank, lifeFormGroup string) (*sql.Rows, error) {
 	if lifeFormGroup == "" {
 		return d.QueryContext(ctx,
-			`SELECT id, rank, name, author, parent_id, alt_code, source, parent_provenance,
+			`SELECT id, rank, name, author, parent_id, eea_code, source, parent_provenance,
 			        life_form_group
 			 FROM syntaxon WHERE rank = ? ORDER BY id`, rank)
 	}

@@ -62,7 +62,7 @@ func TestIngestSyntaxaHierarchieMitBaumelndemParentWirdAbgelehnt(t *testing.T) {
 	repo := openIntegrityDB(t)
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations,
-		hierarchy: "code,rank,name,author,parent_code,alt_code\n" +
+		hierarchy: "code,rank,name,author,parent_code,eea_code\n" +
 			"CA,class,Testklasse,Moor 1950,,TST\n" +
 			"CA01,order,Testordnung,Moor 1960,CA99,TST-01\n",
 		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.26 (stdlib, `modernc.org/sqlite`, `gorilla/mux`, `cobra`, `viper`). Keine Pipeline-Änderung, kein Python, keine neue Abhängigkeit.
 
-**Spec:** `docs/superpowers/specs/2026-09-21-syntaxa-navigation-design.md` (autoritativ). Setzt `docs/superpowers/specs/2026-09-21-syntaxa-quellenumkehr-design.md` und dessen Plan (`docs/superpowers/plans/2026-09-21-syntaxa-quellenumkehr.md`) als **abgeschlossen** voraus: ohne die Spalten `alt_code`, `source`, `parent_provenance`, `life_form_group`, ohne die Formationsebene und ohne die lückenlose `parent_id`-Kette hat dieser Plan nichts zu navigieren.
+**Spec:** `docs/superpowers/specs/2026-09-21-syntaxa-navigation-design.md` (autoritativ). Setzt `docs/superpowers/specs/2026-09-21-syntaxa-quellenumkehr-design.md` und dessen Plan (`docs/superpowers/plans/2026-09-21-syntaxa-quellenumkehr.md`) als **abgeschlossen** voraus: ohne die Spalten `eea_code`, `source`, `parent_provenance`, `life_form_group`, ohne die Formationsebene und ohne die lückenlose `parent_id`-Kette hat dieser Plan nichts zu navigieren.
 
 ## Global Constraints
 
@@ -58,7 +58,7 @@ Anders als in Teilprojekt A ist hier **kein** bewusster Bruch in der Mitte vorge
 - Test: `internal/application/query_test.go` (fakeRepo-Lesehälfte), `internal/application/ingest_test.go` (fakeRepo-Felder)
 
 **Interfaces:**
-- Consumes: `domain.Syntaxon` mit `AltCode`, `Source`, `ParentProvenance`, `LifeFormGroup` und die Konstanten `domain.SyntaxonRankFormation` / `…Class` / `…Order` / `…Alliance`, `domain.LifeFormPhanerogam` / `…BryophyteLichen` / `…Algae` (alle aus Teilprojekt A).
+- Consumes: `domain.Syntaxon` mit `EEACode`, `Source`, `ParentProvenance`, `LifeFormGroup` und die Konstanten `domain.SyntaxonRankFormation` / `…Class` / `…Order` / `…Alliance`, `domain.LifeFormPhanerogam` / `…BryophyteLichen` / `…Algae` (alle aus Teilprojekt A).
 - Produces:
   - `Repository.SyntaxonChildren(ctx context.Context, parentID string) ([]domain.Syntaxon, error)`
   - `Repository.SyntaxonAncestors(ctx context.Context, id string) ([]domain.Syntaxon, error)`
@@ -84,16 +84,16 @@ func seedSyntaxaHierarchy(t *testing.T, db *DB) {
 	// not come from the insertion order.
 	for _, s := range []domain.Syntaxon{
 		{ID: "CA01B", Rank: domain.SyntaxonRankAlliance, Name: "Zweiter Verband",
-			Author: "Autor 1975", ParentID: "CA01", AltCode: "TST-01B",
+			Author: "Autor 1975", ParentID: "CA01", EEACode: "TST-01B",
 			Source: domain.SyntaxonSourceEVC, ParentProvenance: domain.ParentProvenanceOfficial},
 		{ID: "CA01A", Rank: domain.SyntaxonRankAlliance, Name: "Erster Verband",
-			Author: "Autor 1970", ParentID: "CA01", AltCode: "TST-01A",
+			Author: "Autor 1970", ParentID: "CA01", EEACode: "TST-01A",
 			Source: domain.SyntaxonSourceEVC, ParentProvenance: domain.ParentProvenanceOfficial},
 		{ID: "CA01", Rank: domain.SyntaxonRankOrder, Name: "Testordnung",
-			Author: "Autor 1960", ParentID: "CA", AltCode: "TST-01",
+			Author: "Autor 1960", ParentID: "CA", EEACode: "TST-01",
 			Source: domain.SyntaxonSourceEVC, ParentProvenance: domain.ParentProvenanceOfficial},
 		{ID: "CA", Rank: domain.SyntaxonRankClass, Name: "Testklasse",
-			Author: "Autor 1950", ParentID: "C", AltCode: "TST",
+			Author: "Autor 1950", ParentID: "C", EEACode: "TST",
 			Source: domain.SyntaxonSourceEVC, ParentProvenance: domain.ParentProvenanceOfficial},
 		{ID: "C", Rank: domain.SyntaxonRankFormation, Name: "Vegetation of the nemoral forest zone",
 			Source: domain.SyntaxonSourceEVC, ParentProvenance: domain.ParentProvenanceOfficial,
@@ -165,9 +165,9 @@ func TestSyntaxonChildrenSindNachIDSortiert(t *testing.T) {
 	}
 	// Subproject A's extra columns have to travel along, otherwise the API
 	// withholds what the index knows.
-	if got[0].AltCode != "TST-01A" || got[0].Source != domain.SyntaxonSourceEVC ||
+	if got[0].EEACode != "TST-01A" || got[0].Source != domain.SyntaxonSourceEVC ||
 		got[0].ParentProvenance != domain.ParentProvenanceOfficial {
-		t.Errorf("CA01A = %+v, erwartet Altcode, Quelle und Elternteil-Provenienz", got[0])
+		t.Errorf("CA01A = %+v, erwartet EEA-Code, Quelle und Elternteil-Provenienz", got[0])
 	}
 }
 
@@ -237,7 +237,7 @@ func scanSyntaxa(rows *sql.Rows) ([]domain.Syntaxon, error) {
 	for rows.Next() {
 		var s domain.Syntaxon
 		if err := rows.Scan(&s.ID, &s.Rank, &s.Name, &s.Author, &s.ParentID,
-			&s.AltCode, &s.Source, &s.ParentProvenance, &s.LifeFormGroup); err != nil {
+			&s.EEACode, &s.Source, &s.ParentProvenance, &s.LifeFormGroup); err != nil {
 			return nil, err
 		}
 		out = append(out, s)
@@ -253,7 +253,7 @@ func scanSyntaxa(rows *sql.Rows) ([]domain.Syntaxon, error) {
 // the formations — that is what GET /v1/syntaxa answers, through SyntaxaByRank.
 func (d *DB) SyntaxonChildren(ctx context.Context, parentID string) ([]domain.Syntaxon, error) {
 	rows, err := d.QueryContext(ctx,
-		`SELECT id, rank, name, author, parent_id, alt_code, source, parent_provenance,
+		`SELECT id, rank, name, author, parent_id, eea_code, source, parent_provenance,
 		        life_form_group
 		 FROM syntaxon WHERE parent_id = ? ORDER BY id`, parentID)
 	if err != nil {
@@ -735,7 +735,7 @@ func (d *DB) SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string) ([]d
 func (d *DB) syntaxaByRankRows(ctx context.Context, rank, lifeFormGroup string) (*sql.Rows, error) {
 	if lifeFormGroup == "" {
 		return d.QueryContext(ctx,
-			`SELECT id, rank, name, author, parent_id, alt_code, source, parent_provenance,
+			`SELECT id, rank, name, author, parent_id, eea_code, source, parent_provenance,
 			        life_form_group
 			 FROM syntaxon WHERE rank = ? ORDER BY id`, rank)
 	}
@@ -747,7 +747,7 @@ func (d *DB) syntaxaByRankRows(ctx context.Context, rank, lifeFormGroup string) 
 		   FROM up u JOIN syntaxon s ON s.id = u.root
 		   WHERE s.parent_id <> '' AND u.steps < ?
 		 )
-		 SELECT s.id, s.rank, s.name, s.author, s.parent_id, s.alt_code, s.source,
+		 SELECT s.id, s.rank, s.name, s.author, s.parent_id, s.eea_code, s.source,
 		        s.parent_provenance, s.life_form_group
 		 FROM syntaxon s
 		 JOIN up ON up.id = s.id
@@ -925,13 +925,13 @@ func seedNavRepo(t *testing.T) *fakeRepo {
 			Source: domain.SyntaxonSourceEVC, ParentProvenance: domain.ParentProvenanceOfficial,
 			LifeFormGroup: domain.LifeFormPhanerogam},
 		{ID: "CA", Rank: domain.SyntaxonRankClass, Name: "Testklasse", Author: "Autor 1950",
-			ParentID: "C", AltCode: "TST", Source: domain.SyntaxonSourceEVC,
+			ParentID: "C", EEACode: "TST", Source: domain.SyntaxonSourceEVC,
 			ParentProvenance: domain.ParentProvenanceOfficial},
 		{ID: "CA01", Rank: domain.SyntaxonRankOrder, Name: "Testordnung", Author: "Autor 1960",
-			ParentID: "CA", AltCode: "TST-01", Source: domain.SyntaxonSourceEVC,
+			ParentID: "CA", EEACode: "TST-01", Source: domain.SyntaxonSourceEVC,
 			ParentProvenance: domain.ParentProvenanceOfficial},
 		{ID: "CA01A", Rank: domain.SyntaxonRankAlliance, Name: "Erster Verband", Author: "Autor 1970",
-			ParentID: "CA01", AltCode: "TST-01A", Source: domain.SyntaxonSourceEVC,
+			ParentID: "CA01", EEACode: "TST-01A", Source: domain.SyntaxonSourceEVC,
 			ParentProvenance: domain.ParentProvenanceOfficial},
 		{ID: "CA01B", Rank: domain.SyntaxonRankAlliance, Name: "Zweiter Verband", Author: "Autor 1975",
 			ParentID: "CA01", Source: domain.SyntaxonSourceEVC,
@@ -1021,7 +1021,7 @@ func TestSyntaxon_VerbandHatDreiAhnenKeineKinderUndSeineKantenzahl(t *testing.T)
 	if got.DirectHabitatTypeCount != 2 {
 		t.Errorf("DirectHabitatTypeCount = %d, erwartet 2", got.DirectHabitatTypeCount)
 	}
-	if got.AltCode != "TST-01A" || got.Source != domain.SyntaxonSourceEVC ||
+	if got.EEACode != "TST-01A" || got.Source != domain.SyntaxonSourceEVC ||
 		got.ParentProvenance != domain.ParentProvenanceOfficial || got.Author != "Autor 1970" {
 		t.Errorf("SyntaxonRef = %+v, erwartet die Herkunftsfelder aus Teilprojekt A", got.SyntaxonRef)
 	}
@@ -1168,7 +1168,7 @@ In `internal/ports/input/services.go`, direkt nach `SyntaxonRef`:
 // breadcrumb trail cost three requests.
 //
 // SyntaxonRef is EMBEDDED, so Go promotes its fields into this same JSON
-// object: id, rank, name, author, parent_id, alt_code, source,
+// object: id, rank, name, author, parent_id, eea_code, source,
 // parent_provenance and life_form_group are siblings of ancestors and children
 // on the wire, not a nested object. The OpenAPI schema models that as allOf and
 // a test pins it, because a nested schema and a flat wire format would be two
@@ -1339,7 +1339,7 @@ func syntaxonRef(s domain.Syntaxon) input.SyntaxonRef {
 		Name:             s.Name,
 		Author:           s.Author,
 		ParentID:         s.ParentID,
-		AltCode:          s.AltCode,
+		EEACode:          s.EEACode,
 		Source:           s.Source,
 		ParentProvenance: s.ParentProvenance,
 		LifeFormGroup:    s.LifeFormGroup,
@@ -1458,7 +1458,7 @@ In `seededQueryService()` die beiden Karten ergänzen:
 			"BRO-01A": {
 				SyntaxonRef: input.SyntaxonRef{ID: "BRO-01A", Rank: "alliance",
 					Name: "Bromion erecti", Author: "Koch 1926", ParentID: "CA01",
-					AltCode: "BRO-01A", Source: "evc", ParentProvenance: "official",
+					EEACode: "BRO-01A", Source: "evc", ParentProvenance: "official",
 					LifeFormGroup: "phanerogam"},
 				Ancestors: []input.SyntaxonRef{
 					{ID: "C", Rank: "formation", Name: "Vegetation of the nemoral forest zone"},
@@ -1545,7 +1545,7 @@ func TestSyntaxon_EingebetteteFelderStehenFlachImSelbenObjekt(t *testing.T) {
 		t.Fatalf("status = %d, want 200", code)
 	}
 	for _, key := range []string{
-		"id", "rank", "name", "author", "parent_id", "alt_code", "source",
+		"id", "rank", "name", "author", "parent_id", "eea_code", "source",
 		"parent_provenance", "life_form_group", "ancestors", "children",
 		"direct_habitat_type_count",
 	} {

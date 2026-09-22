@@ -10,7 +10,7 @@ import (
 	"github.com/jobrunner/situs/internal/ports/output"
 )
 
-func TestSyntaxonIDsByAltCode(t *testing.T) {
+func TestSyntaxonIDsByEEACode(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
 	tx, err := db.Begin(ctx)
@@ -18,7 +18,7 @@ func TestSyntaxonIDsByAltCode(t *testing.T) {
 		t.Fatalf("Begin: %v", err)
 	}
 	if err := tx.UpsertSyntaxon(domain.Syntaxon{ID: "AA01A", Rank: domain.SyntaxonRankAlliance,
-		Name: "X", AltCode: "PAP-01A", Source: domain.SyntaxonSourceEVC,
+		Name: "X", EEACode: "PAP-01A", Source: domain.SyntaxonSourceEVC,
 		ParentProvenance: domain.ParentProvenanceOfficial}); err != nil {
 		t.Fatalf("UpsertSyntaxon(AA01A): %v", err)
 	}
@@ -31,9 +31,9 @@ func TestSyntaxonIDsByAltCode(t *testing.T) {
 		t.Fatalf("Commit: %v", err)
 	}
 
-	got, err := db.SyntaxonIDsByAltCode(ctx)
+	got, err := db.SyntaxonIDsByEEACode(ctx)
 	if err != nil {
-		t.Fatalf("SyntaxonIDsByAltCode: %v", err)
+		t.Fatalf("SyntaxonIDsByEEACode: %v", err)
 	}
 	if len(got) != 1 || got["PAP-01A"] != "AA01A" {
 		t.Errorf("Karte = %v, erwartet genau PAP-01A->AA01A", got)
@@ -54,16 +54,16 @@ func seedSyntaxaHierarchy(t *testing.T, db *DB) {
 	// not come from the insertion order.
 	for _, s := range []domain.Syntaxon{
 		{ID: "CA01B", Rank: domain.SyntaxonRankAlliance, Name: "Zweiter Verband",
-			Author: "Moor 1975", ParentID: "CA01", AltCode: "TST-01B",
+			Author: "Moor 1975", ParentID: "CA01", EEACode: "TST-01B",
 			Source: domain.SyntaxonSourceEVC, ParentProvenance: domain.ParentProvenanceOfficial},
 		{ID: "CA01A", Rank: domain.SyntaxonRankAlliance, Name: "Erster Verband",
-			Author: "Moor 1970", ParentID: "CA01", AltCode: "TST-01A",
+			Author: "Moor 1970", ParentID: "CA01", EEACode: "TST-01A",
 			Source: domain.SyntaxonSourceEVC, ParentProvenance: domain.ParentProvenanceOfficial},
 		{ID: "CA01", Rank: domain.SyntaxonRankOrder, Name: "Testordnung",
-			Author: "Moor 1960", ParentID: "CA", AltCode: "TST-01",
+			Author: "Moor 1960", ParentID: "CA", EEACode: "TST-01",
 			Source: domain.SyntaxonSourceEVC, ParentProvenance: domain.ParentProvenanceOfficial},
 		{ID: "CA", Rank: domain.SyntaxonRankClass, Name: "Testklasse",
-			Author: "Moor 1950", ParentID: "C", AltCode: "TST",
+			Author: "Moor 1950", ParentID: "C", EEACode: "TST",
 			Source: domain.SyntaxonSourceEVC, ParentProvenance: domain.ParentProvenanceOfficial},
 		{ID: "C", Rank: domain.SyntaxonRankFormation, Name: "Vegetation of the nemoral forest zone",
 			Source: domain.SyntaxonSourceEVC, ParentProvenance: domain.ParentProvenanceOfficial,
@@ -135,9 +135,9 @@ func TestSyntaxonChildrenSindNachIDSortiert(t *testing.T) {
 	}
 	// Subproject A's extra columns have to travel along, otherwise the API
 	// withholds what the index knows.
-	if got[0].AltCode != "TST-01A" || got[0].Source != domain.SyntaxonSourceEVC ||
+	if got[0].EEACode != "TST-01A" || got[0].Source != domain.SyntaxonSourceEVC ||
 		got[0].ParentProvenance != domain.ParentProvenanceOfficial {
-		t.Errorf("CA01A = %+v, erwartet Altcode, Quelle und Elternteil-Provenienz", got[0])
+		t.Errorf("CA01A = %+v, erwartet EEA-Code, Quelle und Elternteil-Provenienz", got[0])
 	}
 }
 

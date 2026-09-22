@@ -13,7 +13,7 @@ func TestIngestSyntaxaFindetElternteilPerNamensabgleich(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations, hierarchy: minimalHierarchy,
-		// Name matches FloraVeg's "Testverband", alt code does not.
+		// Name matches FloraVeg's "Testverband", eea code does not.
 		eunis: "id,rank,name,parent_id\nAND-01A,alliance,Testverband Morariu 1957,\n",
 		links: "typology_id,code,syntaxon_id\n",
 	})
@@ -39,7 +39,7 @@ func TestIngestSyntaxaLeitetElternteilAusGeschwisterkonsensAb(t *testing.T) {
 			"CA02A,alliance,Nachbarverband eins,A 1,CA02,NAR-01A\n" +
 			"CA02B,alliance,Nachbarverband zwei,A 2,CA02,NAR-01B\n" +
 			"CA02,order,Nachbarordnung,A 0,CA,NAR-01\n",
-		// NAR-01E has no alt-code partner and no name match, but siblings
+		// NAR-01E has no eea-code partner and no name match, but siblings
 		// NAR-01A/B unanimously point at CA02.
 		eunis: "id,rank,name,parent_id\n" +
 			"NAR-01A,alliance,Nachbarverband eins A 1,\n" +
@@ -72,8 +72,8 @@ func TestIngestSyntaxaLeitetGeschwisterkonsensAbUnabhaengigVonDerDateireihenfolg
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations,
-		// ZZZ-01A's own alt code (not "NAR-01A") keeps it out of the
-		// alt-code join — NAR-01A must resolve purely via the name match,
+		// ZZZ-01A's own eea code (not "NAR-01A") keeps it out of the
+		// eea-code join — NAR-01A must resolve purely via the name match,
 		// the path this test exercises.
 		hierarchy: minimalHierarchy +
 			"CA02,order,Nachbarordnung,A 0,CA,ZZZ-01\n" +
@@ -135,7 +135,7 @@ func TestIngestSyntaxaScheitertAnVerbleibenderWaise(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations, hierarchy: minimalHierarchy,
-		// No alt-code partner, no name match, no sibling.
+		// No eea-code partner, no name match, no sibling.
 		eunis: "id,rank,name,parent_id\nEIN-09Z,alliance,Voellig Unbekanntes 1900,\n",
 		links: "typology_id,code,syntaxon_id\n",
 	})
@@ -185,7 +185,7 @@ func TestIngestSyntaxaMeldetMehrdeutigenNamensabgleich(t *testing.T) {
 
 // --- Fix-Runde 1: an ambiguous name match no longer blocks the sibling
 // try — the two are independent paths (siblings find each other over the
-// alt code, not the name), and a real unanimous answer must win over an
+// eea code, not the name), and a real unanimous answer must win over an
 // avoidable orphan. Both tests call assignRemainingParents directly
 // because IngestSyntaxa discards its SyntaxaReport on a failed run, and
 // the second case needs to inspect AmbiguousMatches and Orphans on exactly
@@ -198,10 +198,10 @@ func TestAssignRemainingParentsLoestMehrdeutigenNamensabgleichUeberGeschwisterko
 	repo.syntaxa = append(repo.syntaxa, domain.Syntaxon{ID: "SIB-01E", Rank: domain.SyntaxonRankAlliance})
 	rows := []hierarchyRow{
 		// Two FloraVeg alliances share the name "Testverband": the name
-		// match is ambiguous. Their alt codes are SIB-01E's siblings
+		// match is ambiguous. Their eea codes are SIB-01E's siblings
 		// (SIB-01) and unanimously point at CA02.
-		{code: "CA02A", rank: domain.SyntaxonRankAlliance, name: "Testverband", parentCode: "CA02", altCode: "SIB-01A"},
-		{code: "CA02B", rank: domain.SyntaxonRankAlliance, name: "Testverband", parentCode: "CA02", altCode: "SIB-01B"},
+		{code: "CA02A", rank: domain.SyntaxonRankAlliance, name: "Testverband", parentCode: "CA02", eeaCode: "SIB-01A"},
+		{code: "CA02B", rank: domain.SyntaxonRankAlliance, name: "Testverband", parentCode: "CA02", eeaCode: "SIB-01B"},
 	}
 	rep := &SyntaxaReport{}
 	eunisOnly := []eunisOnlyRow{{id: "SIB-01E", name: "Testverband Dritter 1980"}}
@@ -227,7 +227,7 @@ func TestAssignRemainingParentsLoestMehrdeutigenNamensabgleichUeberGeschwisterko
 func TestAssignRemainingParentsBleibtWaiseBeiMehrdeutigemNamensabgleichOhneKonsens(t *testing.T) {
 	repo := newFakeRepo()
 	rows := []hierarchyRow{
-		// Same ambiguous name collision, but this time without alt codes:
+		// Same ambiguous name collision, but this time without eea codes:
 		// no siblings exist for MEH-02Z's group at all.
 		{code: "CA02A", rank: domain.SyntaxonRankAlliance, name: "Testverband", parentCode: "CA02"},
 		{code: "CA03A", rank: domain.SyntaxonRankAlliance, name: "Testverband", parentCode: "CA03"},
@@ -256,7 +256,7 @@ func TestAssignRemainingParentsMeldetFehlerBeimSetzenDesElternteilsUeberGeschwis
 	repo.failOn = "SetSyntaxonParent"
 	repo.syntaxa = append(repo.syntaxa, domain.Syntaxon{ID: "NAR-01E", Rank: domain.SyntaxonRankAlliance})
 	rows := []hierarchyRow{
-		{code: "CA02A", rank: domain.SyntaxonRankAlliance, name: "Nachbarverband eins", parentCode: "CA02", altCode: "NAR-01A"},
+		{code: "CA02A", rank: domain.SyntaxonRankAlliance, name: "Nachbarverband eins", parentCode: "CA02", eeaCode: "NAR-01A"},
 	}
 	rep := &SyntaxaReport{}
 	eunisOnly := []eunisOnlyRow{{id: "NAR-01E", name: "Voellig anderer Name ohne Treffer"}}
@@ -271,7 +271,7 @@ func TestAssignRemainingParentsMeldetFehlerBeimSetzenDesElternteilsUeberGeschwis
 }
 
 // --- Coverage for the paths the six brief tests do not reach: error
-// wrapping from SetSyntaxonParent, the pre-Begin altcode read, and the
+// wrapping from SetSyntaxonParent, the pre-Begin eea code read, and the
 // idempotent RelinkSyntaxon nachlauf. ---
 
 func TestIngestSyntaxaMeldetFehlerBeimSetzenDesElternteils(t *testing.T) {
@@ -291,32 +291,32 @@ func TestIngestSyntaxaMeldetFehlerBeimSetzenDesElternteils(t *testing.T) {
 	}
 }
 
-func TestIngestSyntaxaMeldetFehlerBeimLesenDerAltcodes(t *testing.T) {
+func TestIngestSyntaxaMeldetFehlerBeimLesenDerEEACodes(t *testing.T) {
 	repo := newFakeRepo()
-	repo.altCodesErr = fmt.Errorf("boom")
+	repo.eeaCodesErr = fmt.Errorf("boom")
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations, hierarchy: minimalHierarchy,
 		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
 	})
 	_, err := IngestSyntaxa(context.Background(), repo, dir)
 	if err == nil {
-		t.Fatal("IngestSyntaxa lief trotz Fehler beim Altcode-Lesen durch")
+		t.Fatal("IngestSyntaxa lief trotz Fehler beim EEA-Code-Lesen durch")
 	}
-	if !strings.Contains(err.Error(), "reading existing syntaxon alt codes") {
-		t.Errorf("Fehler = %v, erwartet Altcode-Kontext", err)
+	if !strings.Contains(err.Error(), "reading existing syntaxon eea codes") {
+		t.Errorf("Fehler = %v, erwartet EEA-Code-Kontext", err)
 	}
 }
 
-func TestIngestSyntaxaVerknuepftAltenAltcodeMitDemNeuenPrimaercode(t *testing.T) {
+func TestIngestSyntaxaVerknuepftAltenEEACodeMitDemNeuenPrimaercode(t *testing.T) {
 	repo := newFakeRepo()
 	// OLD-01A carries an edge from a run before FloraVeg claimed TST-01A —
 	// the repeat-ingest case the nachlauf repairs. NOPE-01A has no
 	// counterpart in this run's hierarchy at all: present in the index's
-	// existing state, but not a key of this run's byAlt map, so it must be
-	// left alone (the !ok branch of relinkStaleAltCodes).
+	// existing state, but not a key of this run's byEEA map, so it must be
+	// left alone (the !ok branch of relinkStaleEEACodes).
 	repo.syntaxa = append(repo.syntaxa,
-		domain.Syntaxon{ID: "OLD-01A", Rank: domain.SyntaxonRankAlliance, AltCode: "TST-01A"},
-		domain.Syntaxon{ID: "ZZZ", Rank: domain.SyntaxonRankAlliance, AltCode: "NOPE-01A"},
+		domain.Syntaxon{ID: "OLD-01A", Rank: domain.SyntaxonRankAlliance, EEACode: "TST-01A"},
+		domain.Syntaxon{ID: "ZZZ", Rank: domain.SyntaxonRankAlliance, EEACode: "NOPE-01A"},
 	)
 	repo.syntaxaLinks = append(repo.syntaxaLinks, struct {
 		key        domain.HabitatTypeKey
@@ -337,7 +337,7 @@ func TestIngestSyntaxaVerknuepftAltenAltcodeMitDemNeuenPrimaercode(t *testing.T)
 func TestIngestSyntaxaMeldetFehlerBeimRelinkNachlauf(t *testing.T) {
 	repo := newFakeRepo()
 	repo.syntaxa = append(repo.syntaxa,
-		domain.Syntaxon{ID: "OLD-01A", Rank: domain.SyntaxonRankAlliance, AltCode: "TST-01A"},
+		domain.Syntaxon{ID: "OLD-01A", Rank: domain.SyntaxonRankAlliance, EEACode: "TST-01A"},
 	)
 	repo.failOn = "RelinkSyntaxon"
 	dir := writeSyntaxaDir(t, syntaxaFiles{

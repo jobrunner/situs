@@ -344,13 +344,13 @@ abfragt, will seine Beschreibung im selben Aufruf.
 **Der Identifikator hat mit der Quellenumkehr gewechselt.** `syntaxon.id`
 folgt jetzt dem EVC-Primärcode (`AA01A`), nicht mehr dem EEA-EUNIS-Code
 (`PAP-01A`). Rund 1310 vormals gültige EEA-Codes stehen nicht mehr in `id`,
-sondern ausschließlich im neuen Feld `alt_code`. `GET
+sondern ausschließlich im neuen Feld `eea_code`. `GET
 /v1/syntaxon/{id}/habitat-types` nimmt **nur** den Primärcode entgegen — eine
 alte EEA-ID beantwortet die Route mit `NOT_FOUND`. Es gibt **keine**
 serverseitige Auflösung alter IDs auf die neuen: ein Client, der eine
-gespeicherte alte ID hat, muss sie selbst über `alt_code` nachschlagen (z. B.
+gespeicherte alte ID hat, muss sie selbst über `eea_code` nachschlagen (z. B.
 indem er die Hierarchie über `GET /v1/syntaxa` durchläuft und dort nach dem
-`alt_code` filtert); der Dienst hält dafür keinen eigenen Endpunkt vor.
+`eea_code` filtert); der Dienst hält dafür keinen eigenen Endpunkt vor.
 
 Jede Syntaxon-Referenz — im `syntaxa`-Feld von `GET /v1/habitat-type/{typology}/{code}`
 ebenso wie in der Antwort von `GET /v1/syntaxon/{id}/habitat-types` — trägt seit
@@ -364,7 +364,7 @@ Felder:
   "name": "Arrhenatherion",
   "author": "Koch 1926",
   "parent_id": "CA01",
-  "alt_code": "TST-01A",
+  "eea_code": "TST-01A",
   "source": "evc",
   "parent_provenance": "official",
   "life_form_group": "phanerogam"
@@ -373,7 +373,7 @@ Felder:
 
 | Feld | Bedeutung |
 |---|---|
-| `alt_code` | der EEA-EUNIS-Code desselben Syntaxons; fehlt bei Formationen und bei Einheiten, die nur eine der beiden Quellen kennt |
+| `eea_code` | der EEA-EUNIS-Code desselben Syntaxons; fehlt bei Formationen und bei Einheiten, die nur eine der beiden Quellen kennt |
 | `source` | welche Quelle diese Zeile führt: `evc` (EuroVegChecklist) oder `eunis` (nur die EEA-EUNIS-Zuordnung kennt sie) |
 | `parent_provenance` | ob `parent_id` aus der Quelle selbst stammt (`official`) oder aus dem Geschwisterkonsens abgeleitet wurde (`derived`) |
 | `life_form_group` | die Lebensform-Gruppe (`phanerogam`, `bryophyte_lichen`, `algae`); nur auf Formationszeilen gesetzt |

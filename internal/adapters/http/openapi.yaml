@@ -787,7 +787,7 @@ components:
             Verweist auf den übergeordneten Syntaxon (reine String-Referenz,
             kein Fremdschlüssel). Fehlt nur bei einer Formation — sie ist die
             Wurzel der Hierarchie.
-        alt_code:
+        eea_code:
           type: string
           description: >-
             Der EEA-EUNIS-Code desselben Syntaxons; fehlt bei Formationen und

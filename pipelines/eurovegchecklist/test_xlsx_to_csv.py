@@ -5,7 +5,7 @@ import unittest
 import zipfile
 
 import xlsx_to_csv
-from xlsx_to_csv import AltCodeCollisionError, HeaderError, col_index, convert, rank_and_parent, split_code
+from xlsx_to_csv import EEACodeCollisionError, HeaderError, col_index, convert, rank_and_parent, split_code
 
 
 def _xml_escape(value):
@@ -64,14 +64,14 @@ class RankAndParentTest(unittest.TestCase):
 
 
 class SplitCodeTest(unittest.TestCase):
-    def test_split_code_trennt_primaercode_und_altcode(self):
+    def test_split_code_trennt_primaercode_und_eea_code(self):
         self.assertEqual(split_code("AA01A (PAP-01A)"), ("AA01A", "PAP-01A"))
         self.assertEqual(split_code("  AA01 (PAP-01)  "), ("AA01", "PAP-01"))
 
     def test_strips_a_legacy_code_with_no_space_before_the_paren(self):
         self.assertEqual(split_code("AA01A(KOB-01A)"), ("AA01A", "KOB-01A"))
 
-    def test_split_code_ohne_klammer_liefert_leeren_altcode(self):
+    def test_split_code_ohne_klammer_liefert_leeren_eea_code(self):
         self.assertEqual(split_code("AA01A"), ("AA01A", ""))
 
 
@@ -224,26 +224,26 @@ class ConvertTest(unittest.TestCase):
             os.makedirs(out_dir)
             return convert(xlsx, out_dir)
 
-    def test_report_zaehlt_altcodes(self):
+    def test_report_zaehlt_eea_codes(self):
         rows = [
             {"Code": "AA (PAP)", "Name": "K", "Author": ""},
             {"Code": "AA01 (PAP-01)", "Name": "O", "Author": ""},
         ]
         report = self._convert_rows(rows)
-        self.assertEqual(report["alt_codes"], 2)
-        self.assertNotIn("alt_code_collisions", report)
+        self.assertEqual(report["eea_codes"], 2)
+        self.assertNotIn("eea_code_collisions", report)
 
-    def test_kollidierender_altcode_bricht_die_konvertierung_ab(self):
+    def test_kollidierender_eea_code_bricht_die_konvertierung_ab(self):
         # AA01 and AB01 are two different primary codes both claiming the
-        # alt_code PAP-01 — the join key IngestSyntaxa's byAlt map uses.
+        # eea_code PAP-01 — the join key IngestSyntaxa's byEEA map uses.
         # Silently picking one (as the old "last one wins" report used to)
-        # would resolve an EEA edge or a stale-alt-code relink onto an
+        # would resolve an EEA edge or a stale-eea-code relink onto an
         # arbitrary one of the two; this must fail instead.
         rows = [
             {"Code": "AA01 (PAP-01)", "Name": "O", "Author": ""},
             {"Code": "AB01 (PAP-01)", "Name": "O2", "Author": ""},
         ]
-        with self.assertRaises(AltCodeCollisionError) as ctx:
+        with self.assertRaises(EEACodeCollisionError) as ctx:
             self._convert_rows(rows)
         self.assertIn("PAP-01", str(ctx.exception))
 

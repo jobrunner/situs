@@ -48,7 +48,7 @@ type eunisOnlyRow struct {
 // name match against the FloraVeg alliance rows, then unanimous sibling
 // consensus within its EEA order group, then giving up and recording an
 // orphan. parents maps EEA id -> parent id, seeded from every hierarchy
-// row's alt code.
+// row's eea code.
 //
 // Name matching runs as its OWN first pass, over every row, before any
 // sibling consensus is attempted. eunisOnly's order is the source CSV's
@@ -65,8 +65,8 @@ func assignRemainingParents(tx output.IngestTx, eunisOnly []eunisOnlyRow, rows [
 		if r.rank == domain.SyntaxonRankAlliance {
 			allianceRows = append(allianceRows, r)
 		}
-		if r.altCode != "" {
-			parents[r.altCode] = r.parentCode
+		if r.eeaCode != "" {
+			parents[r.eeaCode] = r.parentCode
 		}
 	}
 
@@ -173,7 +173,7 @@ func longestPrefixMatch(eunisName string, candidates []hierarchyRow) (match *hie
 //
 // Measured over all 287 EEA order groups: 285 consistent, one
 // contradictory (QUI-01, without an orphan), one with no parent set at
-// all (THE-01, whose orphan the alt-code join resolves). The derivation
+// all (THE-01, whose orphan the eea-code join resolves). The derivation
 // is thus the tightest rule that closes the ten open cases without
 // guessing.
 func siblingConsensus(id string, parents map[string]string) string {

@@ -64,9 +64,9 @@ type Syntaxon struct {
 	Author   string // author citation; "" if no clean split is known
 	ParentID string
 
-	// AltCode is the EEA-EUNIS code of the same syntaxon. Empty for
+	// EEACode is the EEA-EUNIS code of the same syntaxon. Empty for
 	// formations and for units known to only one of the two sources.
-	AltCode string
+	EEACode string
 
 	// Source names the source of the row: SyntaxonSourceEVC or
 	// SyntaxonSourceEUNIS.

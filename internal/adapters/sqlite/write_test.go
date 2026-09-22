@@ -273,7 +273,7 @@ func TestUpsertSyntaxonSchreibtAlleFelder(t *testing.T) {
 	}
 	want := domain.Syntaxon{
 		ID: "CA01A", Rank: domain.SyntaxonRankAlliance, Name: "Test-Verband",
-		Author: "Koch 1970", ParentID: "CA01", AltCode: "TST-01A",
+		Author: "Koch 1970", ParentID: "CA01", EEACode: "TST-01A",
 		Source: domain.SyntaxonSourceEVC, ParentProvenance: domain.ParentProvenanceOfficial,
 	}
 	if err := tx.UpsertSyntaxon(want); err != nil {

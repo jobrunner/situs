@@ -46,8 +46,8 @@ type SyntaxaReport struct {
 
 	// AmbiguousMatches, UnknownLinkTargets and SkippedRows are the only
 	// counters left of the "collected but never enforced" kind this report
-	// used to carry three of (AltCodeCollisions, SkippedUnknownSection,
-	// SkippedPattern, all removed): an alt_code collision is now impossible
+	// used to carry three of (EEACodeCollisions, SkippedUnknownSection,
+	// SkippedPattern, all removed): an eea_code collision is now impossible
 	// to ingest at all, because pipelines/eurovegchecklist/xlsx_to_csv.py
 	// aborts the conversion the moment it finds one — the ONE place that
 	// invariant is enforced, not a second, silently-vacuous check here. A
@@ -89,18 +89,18 @@ func IngestSyntaxa(ctx context.Context, repo output.Repository, dir string) (Syn
 		return SyntaxaReport{}, err
 	}
 	// Read before Begin: this is the index's state from BEFORE this run's
-	// own writes, needed to tell a truly stale alt code (Task 7's
+	// own writes, needed to tell a truly stale eea code (Task 7's
 	// idempotent relink) from what this very transaction is about to write.
-	existingAltCodes, err := repo.SyntaxonIDsByAltCode(ctx)
+	existingEEACodes, err := repo.SyntaxonIDsByEEACode(ctx)
 	if err != nil {
-		return SyntaxaReport{}, fmt.Errorf("reading existing syntaxon alt codes: %w", err)
+		return SyntaxaReport{}, fmt.Errorf("reading existing syntaxon eea codes: %w", err)
 	}
 
 	tx, err := repo.Begin(ctx)
 	if err != nil {
 		return SyntaxaReport{}, fmt.Errorf("beginning syntaxa ingest transaction: %w", err)
 	}
-	if err := writeSyntaxa(ctx, tx, dir, formations, rows, existingAltCodes, &rep); err != nil {
+	if err := writeSyntaxa(ctx, tx, dir, formations, rows, existingEEACodes, &rep); err != nil {
 		if rbErr := tx.Rollback(); rbErr != nil {
 			return SyntaxaReport{}, fmt.Errorf("%w (rollback also failed: %w)", err, rbErr)
 		}
@@ -119,7 +119,7 @@ func IngestSyntaxa(ctx context.Context, repo output.Repository, dir string) (Syn
 // id this transaction wrote so writeLinks can tell an edge to a real
 // syntaxon from one to nothing at all.
 func writeSyntaxa(ctx context.Context, tx output.IngestTx, dir string,
-	formations map[string]domain.Syntaxon, rows []hierarchyRow, existingAltCodes map[string]string, rep *SyntaxaReport) error {
+	formations map[string]domain.Syntaxon, rows []hierarchyRow, existingEEACodes map[string]string, rep *SyntaxaReport) error {
 	written := map[string]bool{}
 	if err := writeFormations(tx, formations, written, rep); err != nil {
 		return err
@@ -139,19 +139,19 @@ func writeSyntaxa(ctx context.Context, tx output.IngestTx, dir string,
 	// unit is already represented by its FloraVeg row — writing it a
 	// second time would put the same syntaxon into the index under two
 	// ids.
-	byAlt := map[string]string{}
+	byEEA := map[string]string{}
 	for _, r := range rows {
-		if r.altCode != "" {
-			byAlt[r.altCode] = r.code
+		if r.eeaCode != "" {
+			byEEA[r.eeaCode] = r.code
 		}
 	}
-	eunisOnly, err := writeEunisOnly(ctx, tx, dir, byAlt, written, rep)
+	eunisOnly, err := writeEunisOnly(ctx, tx, dir, byEEA, written, rep)
 	if err != nil {
 		return err
 	}
 	// Step 4: the edges. An EEA syntaxon id with a FloraVeg counterpart
 	// gets resolved to the primary code; one without stays as it is.
-	if err := writeLinks(ctx, tx, dir, byAlt, written, rep); err != nil {
+	if err := writeLinks(ctx, tx, dir, byEEA, written, rep); err != nil {
 		return err
 	}
 	// Step 5: the remaining EEA-only rows' parents — name match, then
@@ -167,18 +167,18 @@ func writeSyntaxa(ctx context.Context, tx output.IngestTx, dir string,
 		return fmt.Errorf("%d syntaxa have no parent after every step: %s",
 			len(rep.Orphans), strings.Join(rep.Orphans, ", "))
 	}
-	return relinkStaleAltCodes(tx, existingAltCodes, byAlt)
+	return relinkStaleEEACodes(tx, existingEEACodes, byEEA)
 }
 
-// relinkStaleAltCodes repairs a repeat ingest onto an already-filled index:
-// an alt code that used to BE a syntaxon's own primary id (from a run
+// relinkStaleEEACodes repairs a repeat ingest onto an already-filled index:
+// an eea code that used to BE a syntaxon's own primary id (from a run
 // before FloraVeg carried it) still has habitat-type edges under that old
 // id. existing was read before Begin, so it is the index's state before
 // this run's own writes; without that, a fresh row this very run wrote
 // under the primary code would look "stale" too.
-func relinkStaleAltCodes(tx output.IngestTx, existing, byAlt map[string]string) error {
-	for altCode, oldID := range existing {
-		primary, ok := byAlt[altCode]
+func relinkStaleEEACodes(tx output.IngestTx, existing, byEEA map[string]string) error {
+	for eeaCode, oldID := range existing {
+		primary, ok := byEEA[eeaCode]
 		if !ok || oldID == primary {
 			continue
 		}
@@ -230,7 +230,7 @@ func writeHierarchy(tx output.IngestTx, rows []hierarchyRow, formations map[stri
 			Name:             r.name,
 			Author:           r.author,
 			ParentID:         parentID,
-			AltCode:          r.altCode,
+			EEACode:          r.eeaCode,
 			Source:           domain.SyntaxonSourceEVC,
 			ParentProvenance: domain.ParentProvenanceOfficial,
 		}
@@ -250,19 +250,19 @@ func writeHierarchy(tx output.IngestTx, rows []hierarchyRow, formations map[stri
 	return nil
 }
 
-// writeEunisOnly writes syntaxa.csv's rows whose id is not a key of byAlt —
+// writeEunisOnly writes syntaxa.csv's rows whose id is not a key of byEEA —
 // an EEA unit FloraVeg already carries under its own primary code is not
 // written a second time. ParentID stays empty; Task 7 sets it by name and
 // sibling consensus. Name is kept exactly as the file has it: the historical
 // EUNIS combi-string with embedded authorship, never split heuristically.
 func writeEunisOnly(ctx context.Context, tx output.IngestTx, dir string,
-	byAlt map[string]string, written map[string]bool, rep *SyntaxaReport) ([]eunisOnlyRow, error) {
+	byEEA map[string]string, written map[string]bool, rep *SyntaxaReport) ([]eunisOnlyRow, error) {
 	var eunisOnly []eunisOnlyRow
 	skip := newRowSkipper(&rep.SkippedRows, fileEunisSyntaxa, "eunis-only syntaxon")
 	err := readAll(ctx, dir, fileEunisSyntaxa, ',', []string{"id", colRank, colName, "parent_id"}, skip,
 		func(idx map[string]int, row []string, _ int) error {
 			id := row[idx["id"]]
-			if _, ok := byAlt[id]; ok {
+			if _, ok := byEEA[id]; ok {
 				return nil
 			}
 			name := row[idx[colName]]
@@ -287,14 +287,14 @@ func writeEunisOnly(ctx context.Context, tx output.IngestTx, dir string,
 }
 
 // writeLinks writes habitat_type_syntaxa.csv's edges. A target that is a key
-// of byAlt is resolved to its FloraVeg primary code before writing — the
+// of byEEA is resolved to its FloraVeg primary code before writing — the
 // edge is written for the first time in this same transaction, so there is
 // no separate relink step here (RelinkSyntaxon is for a repeat ingest onto
 // an already-filled index, Task 7). A target this ingest never wrote, under
 // either id, is dropped and reported instead of linking to a syntaxon that
 // does not exist.
 func writeLinks(ctx context.Context, tx output.IngestTx, dir string,
-	byAlt map[string]string, written map[string]bool, rep *SyntaxaReport) error {
+	byEEA map[string]string, written map[string]bool, rep *SyntaxaReport) error {
 	skip := newRowSkipper(&rep.SkippedRows, fileSyntaxonLinks, "syntaxon link")
 	return readAll(ctx, dir, fileSyntaxonLinks, ',', []string{colTypologyID, colCode, "syntaxon_id"}, skip,
 		func(idx map[string]int, row []string, line int) error {
@@ -304,7 +304,7 @@ func writeLinks(ctx context.Context, tx output.IngestTx, dir string,
 				return nil
 			}
 			target := row[idx["syntaxon_id"]]
-			if primary, ok := byAlt[target]; ok {
+			if primary, ok := byEEA[target]; ok {
 				target = primary
 				rep.LinksRemapped++
 			}

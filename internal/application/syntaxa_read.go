@@ -9,7 +9,7 @@ import (
 
 // hierarchyRow is one parsed line of syntaxa_hierarchy.csv.
 type hierarchyRow struct {
-	code, rank, name, author, parentCode, altCode string
+	code, rank, name, author, parentCode, eeaCode string
 }
 
 // readFormations parses syntaxa_formations.csv (letter,name_en,
@@ -40,17 +40,17 @@ func readFormations(ctx context.Context, dir string, rep *SyntaxaReport) (map[st
 }
 
 // readHierarchy parses syntaxa_hierarchy.csv (code,rank,name,author,
-// parent_code,alt_code, produced by pipelines/eurovegchecklist since
+// parent_code,eea_code, produced by pipelines/eurovegchecklist since
 // Task 1) into hierarchyRows. A row with a rank other than class/order/
 // alliance is skipped and counted, same tolerance as every other ingest
-// file in this package. A missing file, or one missing the alt_code
+// file in this package. A missing file, or one missing the eea_code
 // column, is an error: the column is what later resolves the EEA-only
 // links onto FloraVeg's primary codes.
 func readHierarchy(ctx context.Context, dir string, rep *SyntaxaReport) ([]hierarchyRow, error) {
 	var rows []hierarchyRow
 	skip := newRowSkipper(&rep.SkippedRows, fileHierarchy, "syntaxon hierarchy")
 	err := readAll(ctx, dir, fileHierarchy, ',',
-		[]string{colCode, colRank, colName, "author", "parent_code", "alt_code"}, skip,
+		[]string{colCode, colRank, colName, "author", "parent_code", "eea_code"}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			rank := row[idx[colRank]]
 			switch rank {
@@ -65,7 +65,7 @@ func readHierarchy(ctx context.Context, dir string, rep *SyntaxaReport) ([]hiera
 				name:       row[idx[colName]],
 				author:     row[idx["author"]],
 				parentCode: row[idx["parent_code"]],
-				altCode:    row[idx["alt_code"]],
+				eeaCode:    row[idx["eea_code"]],
 			})
 			return nil
 		})

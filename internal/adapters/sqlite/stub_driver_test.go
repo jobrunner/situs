@@ -119,17 +119,17 @@ var stubColumnRules = []stubQueryRule{
 	{"FROM species_role", []string{"concept_id", "verbatim_name", "role", "fidelity", "constancy"}},
 	{"JOIN syntaxon", []string{"id", "rank", "name", "author", "parent_id"}},
 	{"WHERE parent_id = ?", []string{
-		"id", "rank", "name", "author", "parent_id", "alt_code", "source", "parent_provenance", "life_form_group",
+		"id", "rank", "name", "author", "parent_id", "eea_code", "source", "parent_provenance", "life_form_group",
 	}},
 	// "WHERE rank = ?" is SyntaxaByRank's unfiltered statement; the group-filtered
 	// recursive CTE already matches the "JOIN syntaxon" rule above, and its final
 	// SELECT reads "WHERE s.rank = ?" — a different string, no collision.
 	{"WHERE rank = ?", []string{
-		"id", "rank", "name", "author", "parent_id", "alt_code", "source", "parent_provenance", "life_form_group",
+		"id", "rank", "name", "author", "parent_id", "eea_code", "source", "parent_provenance", "life_form_group",
 	}},
 	{"DISTINCT rank FROM syntaxon", []string{"rank"}},
 	{"FROM syntaxon ORDER BY id", []string{"id", "rank", "name", "author", "parent_id"}},
-	{"alt_code, id FROM syntaxon", []string{"alt_code", "id"}},
+	{"eea_code, id FROM syntaxon", []string{"eea_code", "id"}},
 	{"FROM habitat_type_syntaxon", []string{"typology_id", "code"}},
 	{"concept_id, area_code FROM species_distribution", []string{"concept_id", "area_code"}},
 	{"DISTINCT area_code FROM species_distribution", []string{"area_code"}},
@@ -272,7 +272,7 @@ var errStubSyntaxonWalk = errors.New("stub: syntaxon lookup failed")
 type stubSyntaxonRow struct{ done bool }
 
 func (r *stubSyntaxonRow) Columns() []string {
-	return []string{"rank", "name", "author", "parent_id", "alt_code", "source", "parent_provenance", "life_form_group"}
+	return []string{"rank", "name", "author", "parent_id", "eea_code", "source", "parent_provenance", "life_form_group"}
 }
 func (r *stubSyntaxonRow) Close() error { return nil }
 func (r *stubSyntaxonRow) Next(dest []driver.Value) error {

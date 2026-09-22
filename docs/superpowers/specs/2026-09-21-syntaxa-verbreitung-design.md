@@ -33,7 +33,7 @@ Die Datei trägt drei Blätter. Datenblatt ist **„European alliances“**:
 | Spalte | Inhalt |
 |---|---|
 | `Code 1` | EVC-Primärcode, z. B. `AA01A` |
-| `Code 2` | derselbe EEA-Altcode wie in der FloraVeg-XLSX, z. B. `PAP-01A` |
+| `Code 2` | derselbe EEA-EEA-Code wie in der FloraVeg-XLSX, z. B. `PAP-01A` |
 | `Name` | Verbandsname ohne Autorschaft |
 | `Name with author citation` | Name mit Autorschaft |
 | 136 weitere | je ein Territorium |

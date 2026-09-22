@@ -58,7 +58,7 @@ const (
 	// (surname + year); the German word for "author" misspell-lints as a
 	// typo of "Author", so the fixture uses the surnames "Moor"/"Braun"
 	// instead — the brief's own values, only the placeholder changed.
-	minimalHierarchy = "code,rank,name,author,parent_code,alt_code\n" +
+	minimalHierarchy = "code,rank,name,author,parent_code,eea_code\n" +
 		"CA,class,Testklasse,Moor 1950,,TST\n" +
 		"CA01,order,Testordnung,Moor 1960,CA,TST-01\n" +
 		"CA01A,alliance,Testverband,Moor 1970,CA01,TST-01A\n" +
@@ -112,7 +112,7 @@ func TestIngestSyntaxaHaengtKlassenAnIhreFormation(t *testing.T) {
 			t.Errorf("%s.ParentID = %q, erwartet %q", id, got, wantParent)
 		}
 	}
-	if got := repo.syntaxonByID("CA01A"); got.AltCode != "TST-01A" ||
+	if got := repo.syntaxonByID("CA01A"); got.EEACode != "TST-01A" ||
 		got.Source != domain.SyntaxonSourceEVC ||
 		got.ParentProvenance != domain.ParentProvenanceOfficial {
 		t.Errorf("Verband = %+v", got)
@@ -164,7 +164,7 @@ func TestIngestSyntaxaBrichtOhneHierarchiedateiAb(t *testing.T) {
 	}
 }
 
-func TestIngestSyntaxaBrichtBeiFehlenderAltcodeSpalteAb(t *testing.T) {
+func TestIngestSyntaxaBrichtBeiFehlenderEEACodeSpalteAb(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations,
@@ -172,7 +172,7 @@ func TestIngestSyntaxaBrichtBeiFehlenderAltcodeSpalteAb(t *testing.T) {
 		eunis:      "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
 	})
 	if _, err := IngestSyntaxa(context.Background(), repo, dir); err == nil {
-		t.Fatal("IngestSyntaxa akzeptierte eine CSV ohne alt_code")
+		t.Fatal("IngestSyntaxa akzeptierte eine CSV ohne eea_code")
 	}
 }
 
@@ -180,7 +180,7 @@ func TestIngestSyntaxaUeberspringtKlasseMitUnbekanntemBuchstaben(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations,
-		hierarchy: "code,rank,name,author,parent_code,alt_code\n" +
+		hierarchy: "code,rank,name,author,parent_code,eea_code\n" +
 			"ZA,class,Klasse ohne Formation,,,ZZZ\n",
 		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
 	})
@@ -201,7 +201,7 @@ func TestIngestSyntaxaBrichtBeiBaumelndemParentCodeAb(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations,
-		hierarchy: "code,rank,name,author,parent_code,alt_code\n" +
+		hierarchy: "code,rank,name,author,parent_code,eea_code\n" +
 			"CA,class,Testklasse,Moor 1950,,TST\n" +
 			// CA99 does not exist anywhere in this file: a stale parent_code,
 			// not a skipped class.
@@ -221,7 +221,7 @@ func TestIngestSyntaxaBrichtAbWennOrdnungAnUebersprungenerKlasseHaengt(t *testin
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations,
-		hierarchy: "code,rank,name,author,parent_code,alt_code\n" +
+		hierarchy: "code,rank,name,author,parent_code,eea_code\n" +
 			// ZA's formation letter Z is unknown -> ZA is skipped
 			// (SkippedRows), but its order ZA01 is written regardless and
 			// must not be allowed to dangle.
@@ -248,7 +248,7 @@ func TestIngestSyntaxaUeberspringtUnbekanntenRang(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations,
-		hierarchy: "code,rank,name,author,parent_code,alt_code\n" +
+		hierarchy: "code,rank,name,author,parent_code,eea_code\n" +
 			"CF,family,Unbekannter Rang,,,CFX\n",
 		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
 	})
@@ -285,7 +285,7 @@ func TestIngestSyntaxaRollbackBeiFehlerhaftemUpsertFormation(t *testing.T) {
 	repo.failOn = "UpsertSyntaxon"
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations,
-		hierarchy:  "code,rank,name,author,parent_code,alt_code\n",
+		hierarchy:  "code,rank,name,author,parent_code,eea_code\n",
 		eunis:      "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
 	})
 	_, err := IngestSyntaxa(context.Background(), repo, dir)
@@ -308,7 +308,7 @@ func TestIngestSyntaxaRollbackBeiFehlerhaftemUpsertHierarchie(t *testing.T) {
 	repo.failOn = "UpsertSyntaxon"
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: "letter,name_en,life_form_group\n",
-		hierarchy: "code,rank,name,author,parent_code,alt_code\n" +
+		hierarchy: "code,rank,name,author,parent_code,eea_code\n" +
 			"CA01A,alliance,Testverband,Moor 1970,CA01,TST-01A\n",
 		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
 	})
@@ -330,7 +330,7 @@ func TestIngestSyntaxaMeldetFehlgeschlagenesRollback(t *testing.T) {
 	repo.rollbackErr = fmt.Errorf("rollback boom")
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations,
-		hierarchy:  "code,rank,name,author,parent_code,alt_code\n",
+		hierarchy:  "code,rank,name,author,parent_code,eea_code\n",
 		eunis:      "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
 	})
 	_, err := IngestSyntaxa(context.Background(), repo, dir)
@@ -367,15 +367,15 @@ func TestIngestSyntaxaSchreibtNurEeaEinheitenOhneFloraVegGegenstueck(t *testing.
 		t.Error("TST-01A wurde als eigene Zeile geschrieben, obwohl CA01A sie vertritt")
 	}
 	eig := repo.syntaxonByID("EIG-01A")
-	if eig.Source != domain.SyntaxonSourceEUNIS || eig.AltCode != "" {
-		t.Errorf("EIG-01A = %+v, erwartet source=eunis und leeren AltCode", eig)
+	if eig.Source != domain.SyntaxonSourceEUNIS || eig.EEACode != "" {
+		t.Errorf("EIG-01A = %+v, erwartet source=eunis und leeren EEACode", eig)
 	}
 	if eig.Name != "Eigenverband Moor 1990" {
 		t.Errorf("Name = %q, erwartet den EUNIS-Kombistring unveraendert", eig.Name)
 	}
 }
 
-func TestIngestSyntaxaLoestKantenUeberDenAltcodeAuf(t *testing.T) {
+func TestIngestSyntaxaLoestKantenUeberDenEEACodeAuf(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations, hierarchy: minimalHierarchy,
@@ -467,7 +467,7 @@ func TestIngestSyntaxaRollbackBeiFehlerhaftemUpsertEunisOnly(t *testing.T) {
 	repo.failOn = "UpsertSyntaxon"
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: "letter,name_en,life_form_group\n",
-		hierarchy:  "code,rank,name,author,parent_code,alt_code\n",
+		hierarchy:  "code,rank,name,author,parent_code,eea_code\n",
 		eunis:      "id,rank,name,parent_id\nEIG-01A,alliance,Eigenverband Moor 1990,\n",
 		links:      "typology_id,code,syntaxon_id\n",
 	})
@@ -488,7 +488,7 @@ func TestIngestSyntaxaRollbackBeiFehlerhaftemLinkSyntaxon(t *testing.T) {
 	repo.failOn = "LinkSyntaxon"
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: "letter,name_en,life_form_group\n",
-		hierarchy:  "code,rank,name,author,parent_code,alt_code\n",
+		hierarchy:  "code,rank,name,author,parent_code,eea_code\n",
 		eunis:      "id,rank,name,parent_id\nEIG-01A,alliance,Eigenverband Moor 1990,\n",
 		links:      "typology_id,code,syntaxon_id\neunis@2021,T11,EIG-01A\n",
 	})
