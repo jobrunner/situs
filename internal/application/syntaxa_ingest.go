@@ -91,19 +91,12 @@ func IngestSyntaxa(ctx context.Context, repo output.Repository, dir string) (Syn
 	if err != nil {
 		return SyntaxaReport{}, err
 	}
-	// Read before Begin: this is the index's state from BEFORE this run's
-	// own writes, needed to tell a truly stale eea code (Task 7's
-	// idempotent relink) from what this very transaction is about to write.
-	existingEEACodes, err := repo.SyntaxonIDsByEEACode(ctx)
-	if err != nil {
-		return SyntaxaReport{}, fmt.Errorf("reading existing syntaxon eea codes: %w", err)
-	}
 
 	tx, err := repo.Begin(ctx)
 	if err != nil {
 		return SyntaxaReport{}, fmt.Errorf("beginning syntaxa ingest transaction: %w", err)
 	}
-	if err := writeSyntaxa(ctx, tx, dir, formations, rows, existingEEACodes, &rep); err != nil {
+	if err := writeSyntaxa(ctx, tx, dir, formations, rows, &rep); err != nil {
 		if rbErr := tx.Rollback(); rbErr != nil {
 			return SyntaxaReport{}, fmt.Errorf("%w (rollback also failed: %w)", err, rbErr)
 		}
@@ -117,12 +110,22 @@ func IngestSyntaxa(ctx context.Context, repo output.Repository, dir string) (Syn
 
 // writeSyntaxa runs the ingest steps in order, each through its own
 // function so the file's per-function complexity ratchet stays clear of
-// its per-file sum: formations, the FloraVeg hierarchy, the EEA-only
+// its per-file sum: clear, formations, the FloraVeg hierarchy, the EEA-only
 // remainder, then the habitat-type edges. written collects every syntaxon
 // id this transaction wrote so writeLinks can tell an edge to a real
 // syntaxon from one to nothing at all.
+//
+// Clearing first, not last: the two source files are the complete truth
+// about the hierarchy, so a row absent from them this run must not survive
+// it (see output.IngestTx.ClearSyntaxa). Doing it inside this same
+// transaction, before any write, keeps the replacement atomic — a failure
+// anywhere below (a dangling parent, a cycle, an orphan) rolls the delete
+// back too, leaving the index exactly as it was.
 func writeSyntaxa(ctx context.Context, tx output.IngestTx, dir string,
-	formations map[string]domain.Syntaxon, rows []hierarchyRow, existingEEACodes map[string]string, rep *SyntaxaReport) error {
+	formations map[string]domain.Syntaxon, rows []hierarchyRow, rep *SyntaxaReport) error {
+	if err := tx.ClearSyntaxa(); err != nil {
+		return fmt.Errorf("clearing syntaxa before ingest: %w", err)
+	}
 	written := map[string]bool{}
 	if err := writeFormations(tx, formations, written, rep); err != nil {
 		return err
@@ -170,25 +173,6 @@ func writeSyntaxa(ctx context.Context, tx output.IngestTx, dir string,
 		sort.Strings(rep.Orphans)
 		return fmt.Errorf("%d syntaxa have no parent after every step: %s",
 			len(rep.Orphans), strings.Join(rep.Orphans, ", "))
-	}
-	return relinkStaleEEACodes(tx, existingEEACodes, byEEA)
-}
-
-// relinkStaleEEACodes repairs a repeat ingest onto an already-filled index:
-// an eea code that used to BE a syntaxon's own primary id (from a run
-// before FloraVeg carried it) still has habitat-type edges under that old
-// id. existing was read before Begin, so it is the index's state before
-// this run's own writes; without that, a fresh row this very run wrote
-// under the primary code would look "stale" too.
-func relinkStaleEEACodes(tx output.IngestTx, existing, byEEA map[string]string) error {
-	for eeaCode, oldID := range existing {
-		primary, ok := byEEA[eeaCode]
-		if !ok || oldID == primary {
-			continue
-		}
-		if err := tx.RelinkSyntaxon(oldID, primary); err != nil {
-			return fmt.Errorf("relinking %s to %s: %w", oldID, primary, err)
-		}
 	}
 	return nil
 }
@@ -291,12 +275,12 @@ func writeEunisOnly(ctx context.Context, tx output.IngestTx, dir string,
 }
 
 // writeLinks writes habitat_type_syntaxa.csv's edges. A target that is a key
-// of byEEA is resolved to its FloraVeg primary code before writing — the
-// edge is written for the first time in this same transaction, so there is
-// no separate relink step here (RelinkSyntaxon is for a repeat ingest onto
-// an already-filled index, Task 7). A target this ingest never wrote, under
-// either id, is dropped and reported instead of linking to a syntaxon that
-// does not exist.
+// of byEEA is resolved to its FloraVeg primary code before writing — every
+// edge in the index is written fresh in this same transaction (ClearSyntaxa
+// emptied habitat_type_syntaxon first), so there is no separate relink step
+// for a repeat ingest to worry about. A target this ingest never wrote,
+// under either id, is dropped and reported instead of linking to a syntaxon
+// that does not exist.
 func writeLinks(ctx context.Context, tx output.IngestTx, dir string,
 	byEEA map[string]string, written map[string]bool, rep *SyntaxaReport) error {
 	skip := newRowSkipper(&rep.SkippedRows, fileSyntaxonLinks, "syntaxon link")

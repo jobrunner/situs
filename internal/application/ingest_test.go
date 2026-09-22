@@ -443,9 +443,6 @@ type fakeRepo struct {
 		syntaxonID string
 	}
 	allSyntaxaErr error
-	// eeaCodesErr fails SyntaxonIDsByEEACode, exercising IngestSyntaxa's
-	// pre-Begin read of the index's existing state (Task 7).
-	eeaCodesErr   error
 	speciesRoles  []domain.SpeciesRole
 	speciesNames  []domain.SpeciesName
 	searchErr     error
@@ -684,48 +681,16 @@ func (r *fakeRepo) SetSyntaxonParent(id, parentID, provenance string) error {
 	return fmt.Errorf("fakeRepo: kein Syntaxon %q", id)
 }
 
-// RelinkSyntaxon rewrites every habitat_type_syntaxon edge from from to to,
-// dropping the from edge instead of duplicating it if to is already linked
-// to the same habitat type.
-func (r *fakeRepo) RelinkSyntaxon(from, to string) error {
-	if err := r.failIfNamed("RelinkSyntaxon"); err != nil {
+// ClearSyntaxa empties both tables, mirroring the sqlite adapter: every
+// syntaxon and every habitat_type_syntaxon edge is dropped before the run's
+// own writes begin.
+func (r *fakeRepo) ClearSyntaxa() error {
+	if err := r.failIfNamed("ClearSyntaxa"); err != nil {
 		return err
 	}
-	linked := map[domain.HabitatTypeKey]bool{}
-	for _, l := range r.syntaxaLinks {
-		if l.syntaxonID == to {
-			linked[l.key] = true
-		}
-	}
-	kept := r.syntaxaLinks[:0]
-	for _, l := range r.syntaxaLinks {
-		switch {
-		case l.syntaxonID != from:
-			kept = append(kept, l)
-		case linked[l.key]:
-			// drop: to already carries this edge
-		default:
-			l.syntaxonID = to
-			kept = append(kept, l)
-		}
-	}
-	r.syntaxaLinks = kept
+	r.syntaxa = nil
+	r.syntaxaLinks = nil
 	return nil
-}
-
-// SyntaxonIDsByEEACode mirrors the sqlite adapter: rows without an eea code
-// are absent from the map.
-func (r *fakeRepo) SyntaxonIDsByEEACode(_ context.Context) (map[string]string, error) {
-	if r.eeaCodesErr != nil {
-		return nil, r.eeaCodesErr
-	}
-	out := map[string]string{}
-	for _, s := range r.syntaxa {
-		if s.EEACode != "" {
-			out[s.EEACode] = s.ID
-		}
-	}
-	return out, nil
 }
 
 // syntaxonByID is a test helper returning the zero value when id is unknown

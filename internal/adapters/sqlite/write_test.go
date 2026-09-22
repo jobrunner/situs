@@ -323,87 +323,70 @@ func TestSetSyntaxonParentSetztNurElternteilUndProvenienz(t *testing.T) {
 	}
 }
 
-func TestRelinkSyntaxonSchreibtKanteUm(t *testing.T) {
+// ClearSyntaxa empties both tables, in the order the edges reference the
+// rows: habitat_type_syntaxon first, then syntaxon.
+func TestClearSyntaxaLeertBeideTabellen(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
 	tx, err := db.Begin(ctx)
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertSyntaxon(domain.Syntaxon{ID: "ASP-03", Rank: domain.SyntaxonRankAlliance,
+		Name: "X", Source: domain.SyntaxonSourceEUNIS, ParentProvenance: domain.ParentProvenanceOfficial}); err != nil {
+		t.Fatalf("UpsertSyntaxon: %v", err)
 	}
 	key := domain.HabitatTypeKey{Typology: domain.DefaultTypologyID, Code: "U36"}
 	if err := tx.LinkSyntaxon(key, "ASP-03"); err != nil {
 		t.Fatalf("LinkSyntaxon: %v", err)
 	}
-	if err := tx.RelinkSyntaxon("ASP-03", "KC03"); err != nil {
-		t.Fatalf("RelinkSyntaxon: %v", err)
-	}
 	if err := tx.Commit(); err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
 
-	keys, err := db.HabitatTypeKeysForSyntaxon(ctx, "KC03")
-	if err != nil {
-		t.Fatalf("HabitatTypeKeysForSyntaxon: %v", err)
-	}
-	if len(keys) != 1 || keys[0] != key {
-		t.Errorf("KC03 traegt %v, erwartet genau %v", keys, key)
-	}
-	alt, err := db.HabitatTypeKeysForSyntaxon(ctx, "ASP-03")
-	if err != nil {
-		t.Fatalf("HabitatTypeKeysForSyntaxon(ASP-03): %v", err)
-	}
-	if len(alt) != 0 {
-		t.Errorf("ASP-03 traegt noch Kanten: %v", alt)
-	}
-}
-
-// Both edges already exist: U36 -> ASP-03 AND U36 -> KC03. The rewrite must
-// not fail on the primary key — it must simply remove the source edge.
-func TestRelinkSyntaxonIstIdempotentBeiBestehenderZielkante(t *testing.T) {
-	db := openTestDB(t)
-	ctx := t.Context()
-	tx, err := db.Begin(ctx)
+	tx, err = db.Begin(ctx)
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	key := domain.HabitatTypeKey{Typology: domain.DefaultTypologyID, Code: "U36"}
-	if err := tx.LinkSyntaxon(key, "ASP-03"); err != nil {
-		t.Fatalf("LinkSyntaxon(ASP-03): %v", err)
-	}
-	if err := tx.LinkSyntaxon(key, "KC03"); err != nil {
-		t.Fatalf("LinkSyntaxon(KC03): %v", err)
-	}
-	if err := tx.RelinkSyntaxon("ASP-03", "KC03"); err != nil {
-		t.Fatalf("RelinkSyntaxon: %v", err)
+	if err := tx.ClearSyntaxa(); err != nil {
+		t.Fatalf("ClearSyntaxa: %v", err)
 	}
 	if err := tx.Commit(); err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
 
-	keys, err := db.HabitatTypeKeysForSyntaxon(ctx, "KC03")
+	all, err := db.AllSyntaxa(ctx)
+	if err != nil {
+		t.Fatalf("AllSyntaxa: %v", err)
+	}
+	if len(all) != 0 {
+		t.Errorf("syntaxon nach ClearSyntaxa = %v, erwartet leer", all)
+	}
+	keys, err := db.HabitatTypeKeysForSyntaxon(ctx, "ASP-03")
 	if err != nil {
 		t.Fatalf("HabitatTypeKeysForSyntaxon: %v", err)
 	}
-	if len(keys) != 1 {
-		t.Errorf("KC03 traegt %d Kanten, erwartet 1", len(keys))
-	}
-	alt, err := db.HabitatTypeKeysForSyntaxon(ctx, "ASP-03")
-	if err != nil {
-		t.Fatalf("HabitatTypeKeysForSyntaxon(ASP-03): %v", err)
-	}
-	if len(alt) != 0 {
-		t.Errorf("ASP-03 traegt noch Kanten: %v", alt)
+	if len(keys) != 0 {
+		t.Errorf("habitat_type_syntaxon nach ClearSyntaxa = %v, erwartet leer", keys)
 	}
 }
 
-// RelinkSyntaxon's two statements have separate error-wrap branches — pin the
-// second one (the DELETE) with a trigger that blocks only deletes, so the
-// leading INSERT OR IGNORE succeeds and only the second statement fails.
-func TestRelinkSyntaxonWrapsAnErrorFromTheDeleteStatement(t *testing.T) {
+// ClearSyntaxa's two statements have separate error-wrap branches — pin the
+// second one (DELETE FROM syntaxon) with a trigger that blocks only that
+// table, so the leading DELETE FROM habitat_type_syntaxon succeeds and only
+// the second statement fails.
+func TestClearSyntaxaWrapsAnErrorFromTheSyntaxonDelete(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
+	// A trigger only fires for a row it actually deletes: seed one syntaxon
+	// row first, or the DELETE affects nothing and the trigger never runs.
 	if _, err := db.ExecContext(ctx,
-		`CREATE TRIGGER block_delete BEFORE DELETE ON habitat_type_syntaxon
+		`INSERT INTO syntaxon (id, rank, name, source, parent_provenance)
+		 VALUES ('ASP-03', 'alliance', 'X', 'eunis', 'official')`); err != nil {
+		t.Fatalf("seeding syntaxon: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`CREATE TRIGGER block_delete BEFORE DELETE ON syntaxon
 		 BEGIN SELECT RAISE(ABORT, 'blocked'); END`); err != nil {
 		t.Fatalf("creating trigger: %v", err)
 	}
@@ -412,16 +395,12 @@ func TestRelinkSyntaxonWrapsAnErrorFromTheDeleteStatement(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	key := domain.HabitatTypeKey{Typology: domain.DefaultTypologyID, Code: "U36"}
-	if err := tx.LinkSyntaxon(key, "ASP-03"); err != nil {
-		t.Fatalf("LinkSyntaxon: %v", err)
-	}
-	err = tx.RelinkSyntaxon("ASP-03", "KC03")
+	err = tx.ClearSyntaxa()
 	if err == nil {
-		t.Fatal("RelinkSyntaxon with a blocked DELETE = nil error, want an error")
+		t.Fatal("ClearSyntaxa with a blocked syntaxon DELETE = nil error, want an error")
 	}
-	if !strings.Contains(err.Error(), "removing relinked syntaxon") {
-		t.Errorf("error = %q, want it to name the DELETE failure", err)
+	if !strings.Contains(err.Error(), "clearing syntaxon") {
+		t.Errorf("error = %q, want it to name the syntaxon DELETE failure", err)
 	}
 	if err := tx.Rollback(); err != nil {
 		t.Fatalf("Rollback: %v", err)
@@ -751,8 +730,8 @@ func TestIngestTx_MethodsWrapErrorsOnAClosedTransaction(t *testing.T) {
 		"SetSyntaxonParent": func() error {
 			return tx.SetSyntaxonParent("x", "AA01", domain.ParentProvenanceDerived)
 		},
-		"RelinkSyntaxon": func() error { return tx.RelinkSyntaxon("x", "y") },
-		"LinkSyntaxon":   func() error { return tx.LinkSyntaxon(key, "x") },
+		"ClearSyntaxa": func() error { return tx.ClearSyntaxa() },
+		"LinkSyntaxon": func() error { return tx.LinkSyntaxon(key, "x") },
 		"UpsertSpeciesRole": func() error {
 			return tx.UpsertSpeciesRole(domain.SpeciesRole{Key: key, VerbatimName: "x", Role: "diagnostic"})
 		},

@@ -23,11 +23,18 @@ type IngestTx interface {
 	// 16 EEA-only units is only known once the FloraVeg rows and their
 	// siblings are in the index.
 	SetSyntaxonParent(id, parentID, provenance string) error
-	// RelinkSyntaxon rewrites every habitat_type_syntaxon edge from
-	// syntaxon id from to to. If a habitat type already carries both
-	// edges, the from edge is removed instead of duplicating the target
-	// edge.
-	RelinkSyntaxon(from, to string) error
+	// ClearSyntaxa empties habitat_type_syntaxon and syntaxon, in that
+	// order, before IngestSyntaxa writes the current run's rows. The
+	// hierarchy comes entirely from two pinned source files, so a row
+	// absent from this run's files must not survive it — an Upsert can only
+	// add or overwrite, never remove a row the source dropped, and the
+	// syntaxa quellenumkehr made dropped rows the normal case: about 1310
+	// ids changed identity in one run. Same reasoning as
+	// DeleteTraitValuesForVocab in internal/adapters/sqlite/trait.go, one
+	// level up: there a stale vocab_version could linger next to the new
+	// one; here a stale EEA-style syntaxon id lingers next to its FloraVeg
+	// replacement unless every prior row is gone before the new ones land.
+	ClearSyntaxa() error
 	LinkSyntaxon(key domain.HabitatTypeKey, syntaxonID string) error
 	UpsertSpeciesRole(r domain.SpeciesRole) error
 	// UpsertDerivedSpeciesRole writes a species role derived from an aggregate's
@@ -150,11 +157,6 @@ type Repository interface {
 	// HabitatTypeKeysForSyntaxon returns the habitat types a syntaxon is linked
 	// to — the m:n direction.
 	HabitatTypeKeysForSyntaxon(ctx context.Context, syntaxonID string) ([]domain.HabitatTypeKey, error)
-	// SyntaxonIDsByEEACode maps the EEA code to the syntaxon id. The
-	// syntaxa ingest uses it to resolve the habitat-type edges of the EEA
-	// source onto the FloraVeg primary codes. Rows without an eea code are
-	// absent from the map.
-	SyntaxonIDsByEEACode(ctx context.Context) (map[string]string, error)
 	// Localization returns every localization matching entityType, entityKey,
 	// lang and field — there can be more than one, one per source.
 	// Localization returns every localized field of one entity in one language.

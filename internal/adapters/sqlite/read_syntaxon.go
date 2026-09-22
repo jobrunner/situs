@@ -207,30 +207,6 @@ func (d *DB) SyntaxonAncestors(ctx context.Context, id string) ([]domain.Syntaxo
 	return out, nil
 }
 
-// SyntaxonIDsByEEACode maps the EEA code to the syntaxon id. The syntaxa
-// ingest uses it to resolve the habitat-type edges of the EEA source onto
-// the FloraVeg primary codes. Rows without an eea code are absent from the
-// map.
-func (d *DB) SyntaxonIDsByEEACode(ctx context.Context) (map[string]string, error) {
-	rows, err := d.QueryContext(ctx, `SELECT eea_code, id FROM syntaxon WHERE eea_code <> ''`)
-	if err != nil {
-		return nil, fmt.Errorf("sqlite: reading syntaxon eea codes: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	out := map[string]string{}
-	for rows.Next() {
-		var alt, id string
-		if err := rows.Scan(&alt, &id); err != nil {
-			return nil, fmt.Errorf("sqlite: scanning syntaxon eea code: %w", err)
-		}
-		out[alt] = id
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("sqlite: reading syntaxon eea codes: %w", err)
-	}
-	return out, nil
-}
-
 // HabitatTypeKeysForSyntaxon returns the habitat types a syntaxon is linked to.
 func (d *DB) HabitatTypeKeysForSyntaxon(ctx context.Context, syntaxonID string) ([]domain.HabitatTypeKey, error) {
 	rows, err := d.QueryContext(ctx,

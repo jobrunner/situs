@@ -79,8 +79,13 @@ Der Weg für einen neuen Index steht in `deploy.md`: neu bauen, fertig an seinen
 Platz ziehen, Container ersetzen.
 
 Ein Index, der vor der Syntaxa-Hierarchie-Erweiterung gebaut wurde (ohne die
-Spalte `syntaxon.author`), muss gelöscht und per frischem `situs ingest` neu
-aufgebaut werden; ein erneuter Ingest in einen alten Index ist nicht sicher.
+Spalte `syntaxon.author`), braucht die fehlenden Spalten aus `Migrate` — die
+liefert `situs ingest` von selbst, ein Löschen ist dafür **nicht** nötig. Das
+gilt seit dem Fix des gemessenen Doppel-Bestückungs-Befunds auch für einen
+Altindex aus der Zeit vor der Syntaxa-Quellenumkehr: `IngestSyntaxa` leert
+`syntaxon` und `habitat_type_syntaxon` vor jedem Schreiben (siehe Schritt 2
+unten), also ersetzt ein erneuter Ingest die alten Zeilen statt sie neben den
+neuen stehen zu lassen.
 
 !!! warning "Vor dem Ausrollen ingestieren, nicht danach"
 
@@ -149,6 +154,19 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
    `../reference/measured-index.md#syntaxa-tiefe-offener-punkt-1`. Läuft
    direkt nach `IngestCSV` und vor Artenrollen/Verbreitung/Zeigerwerten/
    Label-Overlay, von denen keiner davon abhängt.
+
+   **`IngestSyntaxa` ersetzt die Hierarchie, statt sie zu ergänzen:** als
+   allererster Schritt der Transaktion leert es `habitat_type_syntaxon` und
+   danach `syntaxon` komplett, bevor es die aktuellen Dateien schreibt. Die
+   beiden Quelldateien sind die vollständige Wahrheit über die Hierarchie —
+   ein Upsert kann eine Zeile, die aus der Quelle verschwunden ist, nicht
+   entfernen, und genau das ist seit der Quellenumkehr der Normalfall (rund
+   1310 Identifikatoren haben dabei die Seite gewechselt). Ein Leser muss
+   also wissen: ein zweiter Ingest **ersetzt** den Syntaxa-Teil des Index,
+   er hängt nichts an. Da das Leeren und jedes folgende Schreiben in
+   derselben Transaktion laufen, ist ein fehlschlagender Ingest (etwa eine
+   verbleibende Waise) atomar — der Index bleibt unverändert, statt leer
+   dazustehen.
 3. `IngestAreas` — liest **zwei** Dateien über denselben Code-Pfad, je einmal
    aufgerufen: `wgsrpd_areas.csv` (`pipelines/wgsrpd`, aus der gepinnten
    TDWG-Tabelle, Report-Zweig `AreaNames`) und `evc_territories.csv`

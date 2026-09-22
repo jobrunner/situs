@@ -442,9 +442,8 @@ func TestReads_QueryErrorsAreReturned(t *testing.T) {
 			_, err := db.SyntaxaWithCoverage(ctx, domain.SchemeEVCTerritory)
 			return err
 		},
-		"AllSyntaxa":           func() error { _, err := db.AllSyntaxa(ctx); return err },
-		"SyntaxonIDsByEEACode": func() error { _, err := db.SyntaxonIDsByEEACode(ctx); return err },
-		"SyntaxaByRank":        func() error { _, err := db.SyntaxaByRank(ctx, "alliance", ""); return err },
+		"AllSyntaxa":    func() error { _, err := db.AllSyntaxa(ctx); return err },
+		"SyntaxaByRank": func() error { _, err := db.SyntaxaByRank(ctx, "alliance", ""); return err },
 		"SyntaxaByRankWithGroup": func() error {
 			_, err := db.SyntaxaByRank(ctx, "alliance", domain.LifeFormPhanerogam)
 			return err
@@ -542,10 +541,6 @@ func TestReads_RowsIterationAndScanErrorsAreReturned(t *testing.T) {
 		"AllSyntaxa": {
 			call: func(db *DB) error { _, err := db.AllSyntaxa(ctx); return err },
 			rows: "reading all syntaxa", scan: "scanning syntaxon",
-		},
-		"SyntaxonIDsByEEACode": {
-			call: func(db *DB) error { _, err := db.SyntaxonIDsByEEACode(ctx); return err },
-			rows: "reading syntaxon eea codes", scan: "scanning syntaxon eea code",
 		},
 		"SyntaxaByRank": {
 			call: func(db *DB) error { _, err := db.SyntaxaByRank(ctx, "alliance", ""); return err },

@@ -87,21 +87,17 @@ func (t *ingestTx) SetSyntaxonParent(id, parentID, provenance string) error {
 	return nil
 }
 
-// RelinkSyntaxon rewrites every habitat_type_syntaxon edge from syntaxon id
-// from to to. Two statements, not one: an UPDATE would fail on the primary
-// key if the habitat type already carries both edges (exactly the case for
-// ASP-03/KC03). First add the target edges where they are missing, then
-// remove the source edges.
-func (t *ingestTx) RelinkSyntaxon(from, to string) error {
-	if _, err := t.tx.ExecContext(t.ctx,
-		`INSERT OR IGNORE INTO habitat_type_syntaxon (typology_id, code, syntaxon_id)
-		 SELECT typology_id, code, ? FROM habitat_type_syntaxon WHERE syntaxon_id = ?`,
-		to, from); err != nil {
-		return fmt.Errorf("sqlite: relinking syntaxon %s to %s: %w", from, to, err)
+// ClearSyntaxa empties habitat_type_syntaxon and syntaxon, in that order (the
+// edges reference syntaxon rows, so the FK-shaped direction goes first). See
+// the ClearSyntaxa doc comment on output.IngestTx for why a delete-then-write
+// step replaces an upsert here, same reasoning as DeleteTraitValuesForVocab
+// in trait.go.
+func (t *ingestTx) ClearSyntaxa() error {
+	if _, err := t.tx.ExecContext(t.ctx, `DELETE FROM habitat_type_syntaxon`); err != nil {
+		return fmt.Errorf("sqlite: clearing habitat_type_syntaxon: %w", err)
 	}
-	if _, err := t.tx.ExecContext(t.ctx,
-		`DELETE FROM habitat_type_syntaxon WHERE syntaxon_id = ?`, from); err != nil {
-		return fmt.Errorf("sqlite: removing relinked syntaxon %s edges: %w", from, err)
+	if _, err := t.tx.ExecContext(t.ctx, `DELETE FROM syntaxon`); err != nil {
+		return fmt.Errorf("sqlite: clearing syntaxon: %w", err)
 	}
 	return nil
 }

@@ -2,7 +2,6 @@ package application
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -271,8 +270,7 @@ func TestAssignRemainingParentsMeldetFehlerBeimSetzenDesElternteilsUeberGeschwis
 }
 
 // --- Coverage for the paths the six brief tests do not reach: error
-// wrapping from SetSyntaxonParent, the pre-Begin eea code read, and the
-// idempotent RelinkSyntaxon nachlauf. ---
+// wrapping from SetSyntaxonParent. ---
 
 func TestIngestSyntaxaMeldetFehlerBeimSetzenDesElternteils(t *testing.T) {
 	repo := newFakeRepo()
@@ -291,65 +289,19 @@ func TestIngestSyntaxaMeldetFehlerBeimSetzenDesElternteils(t *testing.T) {
 	}
 }
 
-func TestIngestSyntaxaMeldetFehlerBeimLesenDerEEACodes(t *testing.T) {
+func TestIngestSyntaxaMeldetFehlerBeimLeerenDerSyntaxa(t *testing.T) {
 	repo := newFakeRepo()
-	repo.eeaCodesErr = fmt.Errorf("boom")
+	repo.failOn = "ClearSyntaxa"
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations, hierarchy: minimalHierarchy,
 		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
 	})
 	_, err := IngestSyntaxa(context.Background(), repo, dir)
 	if err == nil {
-		t.Fatal("IngestSyntaxa lief trotz Fehler beim EEA-Code-Lesen durch")
+		t.Fatal("IngestSyntaxa lief trotz fehlschlagendem ClearSyntaxa durch")
 	}
-	if !strings.Contains(err.Error(), "reading existing syntaxon eea codes") {
-		t.Errorf("Fehler = %v, erwartet EEA-Code-Kontext", err)
-	}
-}
-
-func TestIngestSyntaxaVerknuepftAltenEEACodeMitDemNeuenPrimaercode(t *testing.T) {
-	repo := newFakeRepo()
-	// OLD-01A carries an edge from a run before FloraVeg claimed TST-01A —
-	// the repeat-ingest case the nachlauf repairs. NOPE-01A has no
-	// counterpart in this run's hierarchy at all: present in the index's
-	// existing state, but not a key of this run's byEEA map, so it must be
-	// left alone (the !ok branch of relinkStaleEEACodes).
-	repo.syntaxa = append(repo.syntaxa,
-		domain.Syntaxon{ID: "OLD-01A", Rank: domain.SyntaxonRankAlliance, EEACode: "TST-01A"},
-		domain.Syntaxon{ID: "ZZZ", Rank: domain.SyntaxonRankAlliance, EEACode: "NOPE-01A"},
-	)
-	repo.syntaxaLinks = append(repo.syntaxaLinks, struct {
-		key        domain.HabitatTypeKey
-		syntaxonID string
-	}{key: domain.HabitatTypeKey{Typology: "eunis@2021", Code: "T11"}, syntaxonID: "OLD-01A"})
-	dir := writeSyntaxaDir(t, syntaxaFiles{
-		formations: minimalFormations, hierarchy: minimalHierarchy,
-		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
-	})
-	if _, err := IngestSyntaxa(context.Background(), repo, dir); err != nil {
-		t.Fatalf("IngestSyntaxa: %v", err)
-	}
-	if len(repo.syntaxaLinks) != 1 || repo.syntaxaLinks[0].syntaxonID != "CA01A" {
-		t.Errorf("syntaxaLinks = %+v, erwartet genau eine Kante auf CA01A nach dem Relink-Nachlauf", repo.syntaxaLinks)
-	}
-}
-
-func TestIngestSyntaxaMeldetFehlerBeimRelinkNachlauf(t *testing.T) {
-	repo := newFakeRepo()
-	repo.syntaxa = append(repo.syntaxa,
-		domain.Syntaxon{ID: "OLD-01A", Rank: domain.SyntaxonRankAlliance, EEACode: "TST-01A"},
-	)
-	repo.failOn = "RelinkSyntaxon"
-	dir := writeSyntaxaDir(t, syntaxaFiles{
-		formations: minimalFormations, hierarchy: minimalHierarchy,
-		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
-	})
-	_, err := IngestSyntaxa(context.Background(), repo, dir)
-	if err == nil {
-		t.Fatal("IngestSyntaxa lief trotz fehlschlagendem RelinkSyntaxon durch")
-	}
-	if !strings.Contains(err.Error(), "relinking OLD-01A to CA01A") {
-		t.Errorf("Fehler = %v, erwartet Relink-Kontext", err)
+	if !strings.Contains(err.Error(), "clearing syntaxa before ingest") {
+		t.Errorf("Fehler = %v, erwartet ClearSyntaxa-Kontext", err)
 	}
 }
 
