@@ -30,6 +30,18 @@ python3 xlsx_to_csv.py \
   --out-dir out
 ```
 
+Der Lauf **leert zuerst seine eigenen Ausgaben** (`syntaxa_hierarchy.csv`,
+`report.json`) und schreibt sie danach neu. Grund:
+`scripts/collect-ingest-input.sh` sammelt die Hierarchie allein nach
+Dateipräsenz ein — ein Lauf, der an einer EEA-Code-Kollision oder an einer
+fehlenden Spalte scheitert, würde sonst die Datei von gestern als aktuelle in
+den nächsten Ingest schieben. Nach dem Start gilt: `out/` trägt das Ergebnis
+**dieses** Laufs oder gar nichts. Dieselbe Haltung wie in
+`pipelines/evc-distribution/build.sh`, dort in der `build.sh`, hier im
+Konverter, weil diese Pipeline keine `build.sh` hat und jeder Lauf durch
+`convert()` geht. `artifacts/` bleibt unangetastet — der Download-Cache ist
+absichtlich dauerhaft.
+
 Schreibt `out/syntaxa_hierarchy.csv`
 (`code,rank,name,author,parent_code,eea_code`) und `out/report.json`
 (Klassen/Ordnungen/Verbände/übersprungene Zeilen/EEA-Codes/EEA-Code-Kollisionen).

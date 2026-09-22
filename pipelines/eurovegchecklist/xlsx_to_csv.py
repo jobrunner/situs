@@ -26,6 +26,9 @@ CSV_HEADERS = {
     "syntaxa_hierarchy.csv": ["code", "rank", "name", "author", "parent_code", "eea_code"],
 }
 
+# Every file convert() writes, cleared before the run — see clear_outputs.
+OUTPUT_FILES = ["syntaxa_hierarchy.csv", "report.json"]
+
 # Maps a row's rank to its counter key in the report dict below. Explicit on
 # purpose: string-arithmetic pluralization ("class" -> "classes" vs. plain
 # "+s") would silently misname a future rank instead of failing loudly.
@@ -201,7 +204,30 @@ def rank_and_parent(code):
     return "", ""
 
 
+def clear_outputs(out_dir):
+    """Remove this pipeline's own outputs before the run.
+
+    Same rule as pipelines/evc-distribution/build.sh: scripts/collect-ingest-
+    input.sh goes by file presence, so a run that fails in the parser would
+    otherwise publish the previous run's CSV into the next ingest as if it
+    were current. After this point out/ holds the result of this run or
+    nothing at all.
+
+    It lives in the converter, not in a build.sh, because this pipeline has
+    none — the documented invocation is python3 xlsx_to_csv.py, so this is the
+    one place every run passes through. Only the files listed below are
+    touched; anything else in out_dir, and artifacts/ in particular, is not
+    this function's business.
+    """
+    for name in OUTPUT_FILES:
+        try:
+            os.remove(os.path.join(out_dir, name))
+        except FileNotFoundError:
+            pass
+
+
 def convert(xlsx_path, out_dir):
+    clear_outputs(out_dir)
     rows_out = []
     counts = {"classes": 0, "orders": 0, "alliances": 0}
     skipped = []

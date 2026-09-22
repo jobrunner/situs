@@ -248,5 +248,57 @@ class ConvertTest(unittest.TestCase):
         self.assertIn("PAP-01", str(ctx.exception))
 
 
+class StaleOutputTest(unittest.TestCase):
+    """scripts/collect-ingest-input.sh collects out/syntaxa_hierarchy.csv by
+    mere file presence. A failed conversion must therefore leave no
+    consumable output behind, or the next ingest silently gets yesterday's
+    hierarchy — same rule as pipelines/evc-distribution/build.sh, which
+    clears its out/ before the run for exactly this reason."""
+
+    def _stale_out_dir(self, tmp):
+        out_dir = os.path.join(tmp, "out")
+        os.makedirs(out_dir)
+        for name in ("syntaxa_hierarchy.csv", "report.json"):
+            with open(os.path.join(out_dir, name), "w", encoding="utf-8") as f:
+                f.write("stale from the previous run\n")
+        return out_dir
+
+    def _assert_no_outputs(self, out_dir):
+        for name in ("syntaxa_hierarchy.csv", "report.json"):
+            self.assertFalse(
+                os.path.exists(os.path.join(out_dir, name)),
+                f"{name} survived a failed conversion and would be ingested as current",
+            )
+
+    def test_eea_code_collision_leaves_no_stale_csv(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            xlsx = os.path.join(tmp, "floraveg.xlsx")
+            header = ["Code", "Name", "Author"]
+            make_workbook([header, ["AA01 (PAP-01)", "O", ""], ["AB01 (PAP-01)", "O2", ""]], xlsx)
+            out_dir = self._stale_out_dir(tmp)
+            with self.assertRaises(EEACodeCollisionError):
+                convert(xlsx, out_dir)
+            self._assert_no_outputs(out_dir)
+
+    def test_missing_header_leaves_no_stale_csv(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            xlsx = os.path.join(tmp, "floraveg.xlsx")
+            make_workbook([["Code", "Name"]], xlsx)  # no "Author" column
+            out_dir = self._stale_out_dir(tmp)
+            with self.assertRaises(HeaderError):
+                convert(xlsx, out_dir)
+            self._assert_no_outputs(out_dir)
+
+    def test_successful_run_writes_both_outputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            xlsx = os.path.join(tmp, "floraveg.xlsx")
+            header = ["Code", "Name", "Author"]
+            make_workbook([header, ["AA (PAP)", "K", ""]], xlsx)
+            out_dir = self._stale_out_dir(tmp)
+            convert(xlsx, out_dir)
+            for name in ("syntaxa_hierarchy.csv", "report.json"):
+                self.assertTrue(os.path.exists(os.path.join(out_dir, name)))
+
+
 if __name__ == "__main__":
     unittest.main()
