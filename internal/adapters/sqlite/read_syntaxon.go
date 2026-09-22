@@ -51,22 +51,50 @@ func (d *DB) Syntaxon(ctx context.Context, id string) (domain.Syntaxon, error) {
 }
 
 // SyntaxonByEEACode returns the vegetation unit whose eea_code equals code, or
-// output.ErrNotFound. eea_code is unique among the rows that carry one
-// (measured: no collisions, no duplicates — see
-// docs/reference/http-api.md), so this never has more than one row to return.
+// output.ErrNotFound when no row carries it. It serves the migration path from
+// the pre-reversal ids, so an ambiguous answer here would silently hand a
+// client the wrong syntaxon together with its habitat-type edges.
+//
+// Two rows on one code are therefore an error, not a coin toss — and NOT
+// output.ErrNotFound, which would pass for a clean 404 and hide the defect.
+// The ingest refuses to build such an index (checkEEACodeCollisions in
+// internal/application), but an index from an older release or from another
+// builder can carry one, so the read side checks for itself rather than
+// inheriting a promise from a file it did not write.
+//
+// The empty code is the absence of a code, never a search term that matches:
+// the rows without an eea_code (measured: 41 of 1882) would otherwise all be
+// candidates. It is unreachable from HTTP — neither /v1/syntaxon/{id} nor
+// /v1/syntaxon/{id}/habitat-types matches a blank path segment — and guarded
+// regardless, since the port is callable without a router in front of it.
 func (d *DB) SyntaxonByEEACode(ctx context.Context, code string) (domain.Syntaxon, error) {
-	var s domain.Syntaxon
-	row := d.QueryRowContext(ctx,
+	if code == "" {
+		return domain.Syntaxon{}, fmt.Errorf("sqlite: syntaxon with empty eea_code: %w", output.ErrNotFound)
+	}
+	// LIMIT 2: enough to tell "one" from "more than one" without reading a
+	// whole broken column.
+	rows, err := d.QueryContext(ctx,
 		`SELECT id, rank, name, author, parent_id, eea_code, source, parent_provenance, life_form_group
-		 FROM syntaxon WHERE eea_code = ?`, code)
-	if err := row.Scan(&s.ID, &s.Rank, &s.Name, &s.Author, &s.ParentID, &s.EEACode, &s.Source,
-		&s.ParentProvenance, &s.LifeFormGroup); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return domain.Syntaxon{}, fmt.Errorf("sqlite: syntaxon with eea_code %q: %w", code, output.ErrNotFound)
-		}
+		 FROM syntaxon WHERE eea_code = ? LIMIT 2`, code)
+	if err != nil {
 		return domain.Syntaxon{}, fmt.Errorf("sqlite: querying syntaxon by eea_code %q: %w", code, err)
 	}
-	return s, nil
+	defer func() { _ = rows.Close() }()
+
+	found, err := scanSyntaxa(rows)
+	if err != nil {
+		return domain.Syntaxon{}, fmt.Errorf("sqlite: reading syntaxon by eea_code %q: %w", code, err)
+	}
+	switch len(found) {
+	case 0:
+		return domain.Syntaxon{}, fmt.Errorf("sqlite: syntaxon with eea_code %q: %w", code, output.ErrNotFound)
+	case 1:
+		return found[0], nil
+	default:
+		return domain.Syntaxon{}, fmt.Errorf(
+			"sqlite: eea_code %q is carried by more than one syntaxon (%s, %s): the index is ambiguous",
+			code, found[0].ID, found[1].ID)
+	}
 }
 
 // Syntaxa returns the vegetation units linked to a habitat type.

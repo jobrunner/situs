@@ -542,6 +542,12 @@ func TestReads_RowsIterationAndScanErrorsAreReturned(t *testing.T) {
 			call: func(db *DB) error { _, err := db.AllSyntaxa(ctx); return err },
 			rows: "reading all syntaxa", scan: "scanning syntaxon",
 		},
+		// SyntaxonByEEACode reads rows rather than a single row since it has to
+		// tell one match from several, so it has these two paths at all.
+		"SyntaxonByEEACode": {
+			call: func(db *DB) error { _, err := db.SyntaxonByEEACode(ctx, "PAP-01A"); return err },
+			rows: "reading syntaxon by eea_code", scan: "reading syntaxon by eea_code",
+		},
 		"SyntaxaByRank": {
 			call: func(db *DB) error { _, err := db.SyntaxaByRank(ctx, "alliance", ""); return err },
 			rows: "reading syntaxa of rank", scan: "reading syntaxa of rank",

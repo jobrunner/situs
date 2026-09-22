@@ -354,10 +354,13 @@ gespeicherte alte EEA-ID also nutzbar, ohne dass ein Client sie selbst
 nachschlagen müsste. `GET /v1/syntaxon/{id}/habitat-types` sucht dabei die
 Habitattyp-Kanten der über `eea_code` **aufgelösten** ID, nicht der alten —
 wer die Kanten unter der ehemaligen `PAP-01A` abfragt, bekommt dieselbe
-Antwort wie unter der aktuellen `AA01A`. Der Fallback ist eindeutig (gemessen:
+Antwort wie unter der aktuellen `AA01A`. Eine ID-Zeile hat immer Vorrang, ohne
+dass es dafür eine Vorrangregel bräuchte. Der Fallback ist eindeutig (gemessen:
 kein `eea_code` kollidiert mit einer fremden `id`, kein `eea_code` ist doppelt
-vergeben), eine ID-Zeile hat also immer Vorrang, ohne dass es dafür eine
-Vorrangregel bräuchte.
+vergeben) — und das bleibt er auch dann, wenn ein Index diese Eigenschaft
+verletzt: Der Ingest bricht bei doppeltem `eea_code` ab, und trägt ein anders
+gebauter oder älterer Index den Code doch doppelt, antwortet die Route
+`INTERNAL_ERROR` statt eines geratenen Syntaxons. Der leere Code trifft nie.
 
 Jede Syntaxon-Referenz — im `syntaxa`-Feld von `GET /v1/habitat-type/{typology}/{code}`
 ebenso wie in der Antwort von `GET /v1/syntaxon/{id}/habitat-types` — trägt seit

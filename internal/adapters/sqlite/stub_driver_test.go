@@ -128,6 +128,9 @@ var stubColumnRules = []stubQueryRule{
 		"id", "rank", "name", "author", "parent_id", "eea_code", "source", "parent_provenance", "life_form_group",
 	}},
 	{"DISTINCT rank FROM syntaxon", []string{"rank"}},
+	{"WHERE eea_code = ?", []string{
+		"id", "rank", "name", "author", "parent_id", "eea_code", "source", "parent_provenance", "life_form_group",
+	}},
 	{"FROM syntaxon ORDER BY id", []string{"id", "rank", "name", "author", "parent_id"}},
 	{"eea_code, id FROM syntaxon", []string{"eea_code", "id"}},
 	{"FROM habitat_type_syntaxon", []string{"typology_id", "code"}},

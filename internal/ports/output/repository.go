@@ -141,9 +141,10 @@ type Repository interface {
 	// SyntaxonByEEACode returns the vegetation unit whose eea_code equals code,
 	// or ErrNotFound. Used as a fallback for a syntaxon id that changed to the
 	// EVC primary code: the old EEA-style id (e.g. PAP-01A) is looked up here
-	// once the primary lookup by id has failed. Measured unique (no eea_code
-	// collides with another syntaxon's id, no eea_code is duplicated), so this
-	// never has more than one candidate row.
+	// once the primary lookup by id has failed. An empty code never matches,
+	// and a code more than one row carries is an error that does NOT wrap
+	// ErrNotFound: the implementation must report the ambiguity instead of
+	// returning an arbitrary one of the candidates.
 	SyntaxonByEEACode(ctx context.Context, code string) (domain.Syntaxon, error)
 	// Syntaxa returns the vegetation units linked to a habitat type.
 	Syntaxa(ctx context.Context, key domain.HabitatTypeKey) ([]domain.Syntaxon, error)

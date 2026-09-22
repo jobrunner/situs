@@ -70,10 +70,10 @@ func (q *QueryService) Syntaxon(ctx context.Context, id string, _ string) (input
 // lookup by eea_code when that fails: FloraVeg became the primary source and
 // syntaxon ids changed from the EEA-EUNIS code (e.g. PAP-01A) to the EVC
 // primary code (e.g. AA01A), and a client holding the old code must still
-// find the same unit. The fallback is unambiguous — no eea_code collides with
-// another syntaxon's id, and no eea_code is duplicated (measured, see
-// docs/reference/http-api.md) — so an id match, when there is one, always
-// wins without needing a precedence rule to explain it. Returns the resolved
+// find the same unit. An id match, when there is one, always wins, so no
+// precedence rule is needed to explain the order; and an eea_code more than
+// one row carries does not produce a guessed winner either — the repository
+// reports that as an index defect (INTERNAL_ERROR), not as a hit. Returns the resolved
 // syntaxon and its real (primary) id, so callers navigate from there onward.
 func (q *QueryService) syntaxonByIDOrEEACode(ctx context.Context, id string) (domain.Syntaxon, string, error) {
 	self, err := q.repo.Syntaxon(ctx, id)

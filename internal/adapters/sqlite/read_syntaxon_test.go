@@ -43,6 +43,65 @@ func TestSyntaxonByEEACodeOhneTrefferIstErrNotFound(t *testing.T) {
 	}
 }
 
+// Two rows on one eea_code are written straight into the index here: since
+// checkEEACodeCollisions the ingest refuses to build such a file, but an index
+// from an older release or from another builder can carry one, and then the
+// lookup must not crown whichever row the query happens to return first.
+func TestSyntaxonByEEACodeMitMehrerenTreffernIstInternerFehler(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	for _, id := range []string{"AA01A", "BB02A"} {
+		if err := tx.UpsertSyntaxon(domain.Syntaxon{ID: id, Rank: domain.SyntaxonRankAlliance,
+			Name: "X", EEACode: "PAP-01A", Source: domain.SyntaxonSourceEVC,
+			ParentProvenance: domain.ParentProvenanceOfficial}); err != nil {
+			t.Fatalf("UpsertSyntaxon(%s): %v", id, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.SyntaxonByEEACode(ctx, "PAP-01A")
+	if err == nil {
+		t.Fatalf("SyntaxonByEEACode lieferte %q, erwartet einen internen Fehler", got.ID)
+	}
+	if errors.Is(err, output.ErrNotFound) {
+		t.Errorf("Fehler = %v, erwartet KEIN ErrNotFound — ein sauberes 404 wuerde den Defekt verstecken", err)
+	}
+	if !strings.Contains(err.Error(), "PAP-01A") {
+		t.Errorf("Fehler = %v, erwartet den mehrdeutigen Code PAP-01A", err)
+	}
+}
+
+// The empty eea_code is the absence of one, not a code: 41 of the measured
+// index' 1882 syntaxon rows carry it, so a blank search term would otherwise
+// return an arbitrary one of them — the same guessing.
+func TestSyntaxonByEEACodeMitLeeremCodeTrifftNie(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertSyntaxon(domain.Syntaxon{ID: "A", Rank: domain.SyntaxonRankFormation,
+		Name: "Formation ohne EEA-Code", Source: domain.SyntaxonSourceEVC,
+		ParentProvenance: domain.ParentProvenanceOfficial}); err != nil {
+		t.Fatalf("UpsertSyntaxon(A): %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.SyntaxonByEEACode(ctx, "")
+	if !errors.Is(err, output.ErrNotFound) {
+		t.Errorf("Syntaxon = %q, Fehler = %v, erwartet output.ErrNotFound", got.ID, err)
+	}
+}
+
 // seedSyntaxaHierarchy fills the small world every navigation test asks about:
 // two complete chains formation -> class -> order -> alliance, one phanerogam
 // and one cryptogam, plus two alliances under the same order so the ordering
