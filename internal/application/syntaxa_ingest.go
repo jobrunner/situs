@@ -303,8 +303,17 @@ func writeEunisOnly(ctx context.Context, tx output.IngestTx, dir string,
 	var eunisOnly []eunisOnlyRow
 	skip := newRowSkipper(&rep.SkippedRows, fileEunisSyntaxa, "eunis-only syntaxon")
 	err := readAll(ctx, dir, fileEunisSyntaxa, ',', []string{"id", colRank, colName, "parent_id"}, skip,
-		func(idx map[string]int, row []string, _ int) error {
+		func(idx map[string]int, row []string, line int) error {
 			id := row[idx["id"]]
+			// The id is this row's key, checked like the distribution readers
+			// check theirs: written as it stands, an empty one becomes a
+			// syntaxon with the id "", and a name matching a FloraVeg alliance
+			// even resolves its parent, so the run commits an invalid
+			// navigation target.
+			if id == "" {
+				skip(line, fmt.Errorf("eunis-only row without an id"))
+				return nil
+			}
 			if _, ok := byEEA[id]; ok {
 				return nil
 			}

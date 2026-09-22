@@ -535,6 +535,37 @@ func TestIngestSyntaxaSchreibtNurEeaEinheitenOhneFloraVegGegenstueck(t *testing.
 	}
 }
 
+func TestIngestSyntaxaUeberspringtEeaZeileOhneId(t *testing.T) {
+	// An EEA-only row without an id is written as a syntaxon with the id "";
+	// a name matching a FloraVeg alliance even resolves its parent, so the
+	// whole run commits with an invalid navigation target in it. Same
+	// treatment as the distribution readers give a row without its key:
+	// skipped, counted and named.
+	buf := captureSlog(t)
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations, hierarchy: minimalHierarchy,
+		eunis: "id,rank,name,parent_id\n,alliance,Testverband Moor 1970,\n",
+		links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if repo.has("") {
+		t.Error("eine EEA-Zeile ohne id wurde als Syntaxon mit der ID \"\" geschrieben")
+	}
+	if rep.EunisOnly != 0 {
+		t.Errorf("EunisOnly = %d, erwartet 0", rep.EunisOnly)
+	}
+	if rep.SkippedRows != 1 {
+		t.Errorf("SkippedRows = %d, erwartet 1", rep.SkippedRows)
+	}
+	if !strings.Contains(buf.String(), fileEunisSyntaxa) || !strings.Contains(buf.String(), "line=2") {
+		t.Errorf("Warnung nennt Datei und Zeile nicht: %s", buf.String())
+	}
+}
+
 func TestIngestSyntaxaLoestKantenUeberDenEEACodeAuf(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{

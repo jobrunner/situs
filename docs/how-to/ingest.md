@@ -213,7 +213,11 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
    auf sie zeigen, und geschrieben würde sie ein namenloses Syntaxon mit der
    ID `""` ergeben, das Waisen-, Zyklus- und Rangprüfung anstandslos passiert,
    sofern Rang und Elternteil stimmen. Sie wird übersprungen, in `SkippedRows`
-   gezählt und mit Datei, Zeile und Grund als Warnung protokolliert.
+   gezählt und mit Datei, Zeile und Grund als Warnung protokolliert. Dasselbe
+   gilt für eine Zeile in `syntaxa.csv` **ohne `id`** — trifft ihr Name einen
+   FloraVeg-Verband, löst sogar der Namensabgleich einen Elternteil auf, und
+   der Lauf committet ein unerreichbares Syntaxon. Beide Schlüssel werden
+   geprüft wie die Verbreitungsleser ihre prüfen.
 3. `IngestAreas` — liest **zwei** Dateien über denselben Code-Pfad, je einmal
    aufgerufen: `wgsrpd_areas.csv` (`pipelines/wgsrpd`, aus der gepinnten
    TDWG-Tabelle, Report-Zweig `AreaNames`) und `evc_territories.csv`
