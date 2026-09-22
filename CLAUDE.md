@@ -122,7 +122,7 @@ loads both `wgsrpd_areas.csv` and `evc_territories.csv` through one loader).
 Task 12 measured the whole pipeline against the real pinned artifact: **1114**
 of 1326 alliances carry a distribution statement, **none** of the 190
 bryophyte/lichen/algae alliances (sections R–Y) does — held by
-`internal/adapters/sqlite/distribution_integrity_test.go` — and the one
+`internal/application/distribution_integrity_test.go` — and the one
 alliance the distribution source names but the hierarchy does not,
 `CI01E`, is reported by id in `UnknownSyntaxa` rather than silently dropped or
 silently swallowed. See `docs/reference/measured-index.md` for every figure
@@ -312,7 +312,7 @@ remain stdlib-only.
   `IngestSyntaxa` tries a FloraVeg name match, then unanimous sibling
   consensus within the EEA order group; a row neither resolves is reported
   as an orphan and the whole ingest fails, not just a warning.
-  `internal/adapters/sqlite/hierarchy_integrity_test.go` pins both halves of
+  `internal/application/hierarchy_integrity_test.go` pins both halves of
   the promise against a fixture index: no orphans, and every row reaches a
   formation in at most three steps.
 - **Measure, do not assume.** The pipeline emits a `report.json` (syntaxa depth,
