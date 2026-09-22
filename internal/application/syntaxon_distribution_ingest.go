@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/jobrunner/situs/internal/domain"
 	"github.com/jobrunner/situs/internal/ports/output"
@@ -168,14 +169,18 @@ func (u *unknownTracker) add(id string) {
 func writeSyntaxonDistribution(ctx context.Context, tx output.IngestTx, csvPath, coveragePath string, known map[string]bool) (SyntaxonDistributionReport, error) {
 	var rep SyntaxonDistributionReport
 	unknown := &unknownTracker{seen: map[string]bool{}}
+	ids := &writtenDistributionIDs{occurrence: map[string]bool{}, coverage: map[string]bool{}}
 
 	if err := tx.ClearSyntaxonDistribution(); err != nil {
 		return SyntaxonDistributionReport{}, fmt.Errorf("clearing syntaxon distribution before ingest: %w", err)
 	}
-	if err := readOccurrenceRows(ctx, tx, csvPath, known, unknown, &rep); err != nil {
+	if err := readOccurrenceRows(ctx, tx, csvPath, known, unknown, ids, &rep); err != nil {
 		return SyntaxonDistributionReport{}, err
 	}
-	if err := readCoverageRows(ctx, tx, coveragePath, known, unknown, &rep); err != nil {
+	if err := readCoverageRows(ctx, tx, coveragePath, known, unknown, ids, &rep); err != nil {
+		return SyntaxonDistributionReport{}, err
+	}
+	if err := checkCoverageComplete(ids); err != nil {
 		return SyntaxonDistributionReport{}, err
 	}
 
@@ -184,8 +189,48 @@ func writeSyntaxonDistribution(ctx context.Context, tx output.IngestTx, csvPath,
 	return rep, nil
 }
 
+// writtenDistributionIDs collects the syntaxon ids this run actually wrote a
+// row for, per table — not what the files named: a row dropped as unknown,
+// malformed or foreign-schema must not count as coverage for anything.
+type writtenDistributionIDs struct {
+	occurrence, coverage map[string]bool
+}
+
+// checkCoverageComplete fails the whole ingest when an occurrence row was
+// written for a syntaxon the coverage table has no row for. That pair is a
+// state the four-valued model does not have: SyntaxonDistribution reads the
+// syntaxon as `unknown` (no coverage row), while KnownAreaCodes/AreasWithData
+// keep offering the territories the occurrence rows name — absence and
+// unknown, conflated, for exactly the syntaxa that do have data.
+//
+// Failing, not dropping-and-reporting like UnknownSyntaxa: an id the
+// hierarchy does not carry (CI01E) is real fassung drift between two
+// INDEPENDENT sources and cannot be fixed here, so it is named and the run
+// goes on. These two files, in contrast, come out of one
+// pipelines/evc-distribution run over one artifact; they can only disagree if
+// the pair is mismatched or hand-edited, and then neither file can be trusted
+// to say what was assessed. Dropping the occurrence would be worse than
+// useless: it would claim `unknown` for a syntaxon the source demonstrably
+// measured. Same reasoning as checkDistributionFiles one level up — half of
+// this source is worse than none of it.
+func checkCoverageComplete(ids *writtenDistributionIDs) error {
+	var uncovered []string
+	for id := range ids.occurrence {
+		if !ids.coverage[id] {
+			uncovered = append(uncovered, id)
+		}
+	}
+	if len(uncovered) == 0 {
+		return nil
+	}
+	slices.Sort(uncovered)
+	return fmt.Errorf(
+		"%d syntaxa have distribution rows but no row in %s, so an absence could not be told from an unknown: %s",
+		len(uncovered), fileSyntaxonDistributionCoverage, strings.Join(uncovered, ", "))
+}
+
 func readOccurrenceRows(ctx context.Context, tx output.IngestTx, csvPath string,
-	known map[string]bool, unknown *unknownTracker, rep *SyntaxonDistributionReport) error {
+	known map[string]bool, unknown *unknownTracker, ids *writtenDistributionIDs, rep *SyntaxonDistributionReport) error {
 	// splitCSVPath, not filepath.Split: a bare relative filename splits to
 	// dir="", which os.OpenRoot does not read as the current directory.
 	dir, file := splitCSVPath(csvPath)
@@ -229,6 +274,7 @@ func readOccurrenceRows(ctx context.Context, tx output.IngestTx, csvPath string,
 			if err := tx.UpsertSyntaxonDistribution(id, a.Scheme, a.Code, occurrence); err != nil {
 				return fmt.Errorf("%s:%d: %w", file, line, err)
 			}
+			ids.occurrence[id] = true
 			rep.Written++
 			if occurrence == domain.OccurrenceUncertain {
 				rep.Uncertain++
@@ -240,7 +286,7 @@ func readOccurrenceRows(ctx context.Context, tx output.IngestTx, csvPath string,
 }
 
 func readCoverageRows(ctx context.Context, tx output.IngestTx, coveragePath string,
-	known map[string]bool, unknown *unknownTracker, rep *SyntaxonDistributionReport) error {
+	known map[string]bool, unknown *unknownTracker, ids *writtenDistributionIDs, rep *SyntaxonDistributionReport) error {
 	dir, file := splitCSVPath(coveragePath)
 	skip := newRowSkipper(&rep.SkippedRows, file, "syntaxon distribution coverage")
 
@@ -265,6 +311,7 @@ func readCoverageRows(ctx context.Context, tx output.IngestTx, coveragePath stri
 			if err := tx.UpsertSyntaxonDistributionCoverage(id, scheme); err != nil {
 				return fmt.Errorf("%s:%d: %w", file, line, err)
 			}
+			ids.coverage[id] = true
 			rep.Covered++
 			return nil
 		})

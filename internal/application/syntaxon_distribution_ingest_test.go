@@ -26,6 +26,11 @@ const (
 	minimalDistribution = "syntaxon_id,area_scheme,area_code,occurrence\n" +
 		"CA01A,evc_territory,austria-alps,verified\n" +
 		"CA01A,evc_territory,czech-republic,uncertain\n"
+	// headerOnlyDistribution is what a test about the COVERAGE reader pairs
+	// its file with: an occurrence row would demand a coverage row of its own
+	// (checkCoverageComplete), which is exactly what those tests are making
+	// the reader skip.
+	headerOnlyDistribution = "syntaxon_id,area_scheme,area_code,occurrence\n"
 )
 
 // seedSyntaxa puts the ids the distribution rows refer to into the fake repo,
@@ -151,6 +156,48 @@ func TestIngestSyntaxonDistributionBehaeltCoverageOhneVorkommen(t *testing.T) {
 	}
 	if n := repo.occurrenceCount("CA01B"); n != 0 {
 		t.Errorf("CA01B traegt %d Vorkommen, erwartet 0", n)
+	}
+}
+
+func TestIngestSyntaxonDistributionBrichtBeiVorkommenOhneCoverageAb(t *testing.T) {
+	// The counterpart of the missing-coverage-file case, one syntaxon at a
+	// time: both files are there, but the coverage file does not name a
+	// syntaxon the distribution file has rows for. The written occurrence
+	// would then sit in an index where SyntaxonDistribution reads the
+	// syntaxon as unknown while AreasWithData still counts its territory.
+	repo := newFakeRepo()
+	seedSyntaxa(repo, "CA01A", "CA01B")
+	dist, cov := writeDistFiles(t, minimalDistribution, "syntaxon_id,area_scheme\nCA01B,evc_territory\n")
+
+	_, err := IngestSyntaxonDistribution(context.Background(), repo, dist, cov)
+	if err == nil {
+		t.Fatal("IngestSyntaxonDistribution lief mit einer Verbreitungszeile ohne Coverage-Zeile durch")
+	}
+	if !strings.Contains(err.Error(), "CA01A") {
+		t.Errorf("Fehler benennt das betroffene Syntaxon nicht: %v", err)
+	}
+	if !repo.rolledBack || repo.committed {
+		t.Errorf("erwartet ein Rollback ohne Commit, rolledBack=%v committed=%v", repo.rolledBack, repo.committed)
+	}
+}
+
+func TestIngestSyntaxonDistributionNenntJedesUngedeckteSyntaxonGenauEinmal(t *testing.T) {
+	repo := newFakeRepo()
+	seedSyntaxa(repo, "CA01A", "CA01B")
+	dist, cov := writeDistFiles(t,
+		"syntaxon_id,area_scheme,area_code,occurrence\n"+
+			"CA01B,evc_territory,albania,verified\n"+
+			"CA01A,evc_territory,austria-alps,verified\n"+
+			"CA01A,evc_territory,czech-republic,uncertain\n",
+		"syntaxon_id,area_scheme\n")
+
+	_, err := IngestSyntaxonDistribution(context.Background(), repo, dist, cov)
+	if err == nil {
+		t.Fatal("IngestSyntaxonDistribution lief ohne jede Coverage-Zeile durch")
+	}
+	// Sorted, each id once, however many rows it had.
+	if !strings.Contains(err.Error(), "CA01A, CA01B") {
+		t.Errorf("Fehler listet die Syntaxa nicht sortiert und je einmal: %v", err)
 	}
 }
 
@@ -332,7 +379,7 @@ func TestIngestSyntaxonDistributionUeberspringtWgsrpdSchema(t *testing.T) {
 func TestIngestSyntaxonDistributionUeberspringtCoverageMitWgsrpdSchema(t *testing.T) {
 	repo := newFakeRepo()
 	seedSyntaxa(repo, "CA01A")
-	dist, cov := writeDistFiles(t, minimalDistribution,
+	dist, cov := writeDistFiles(t, headerOnlyDistribution,
 		"syntaxon_id,area_scheme\nCA01A,wgsrpd_l3\n")
 
 	rep, err := IngestSyntaxonDistribution(context.Background(), repo, dist, cov)
@@ -499,7 +546,7 @@ func TestIngestSyntaxonDistributionGibtLesefehlerDerCoverageDateiWeiter(t *testi
 func TestIngestSyntaxonDistributionUeberspringtUnvollstaendigeCoverageZeile(t *testing.T) {
 	repo := newFakeRepo()
 	seedSyntaxa(repo, "CA01A")
-	dist, cov := writeDistFiles(t, minimalDistribution,
+	dist, cov := writeDistFiles(t, headerOnlyDistribution,
 		"syntaxon_id,area_scheme\n,evc_territory\nCA01A,\n")
 
 	rep, err := IngestSyntaxonDistribution(context.Background(), repo, dist, cov)
@@ -514,7 +561,7 @@ func TestIngestSyntaxonDistributionUeberspringtUnvollstaendigeCoverageZeile(t *t
 func TestIngestSyntaxonDistributionUeberspringtCoverageMitFremdemSchema(t *testing.T) {
 	repo := newFakeRepo()
 	seedSyntaxa(repo, "CA01A")
-	dist, cov := writeDistFiles(t, minimalDistribution,
+	dist, cov := writeDistFiles(t, headerOnlyDistribution,
 		"syntaxon_id,area_scheme\nCA01A,evc-territory\n")
 
 	rep, err := IngestSyntaxonDistribution(context.Background(), repo, dist, cov)
