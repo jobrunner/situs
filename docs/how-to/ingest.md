@@ -207,6 +207,13 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
      Hierarchie mit. Auch das wird beim Lesen geprüft, also vor der
      Transaktion. Eine **leere `syntaxa_hierarchy.csv` bleibt erlaubt**: die
      Formationen allein sind eine karge, aber gültige Hierarchie.
+
+   Eine Zeile in `syntaxa_hierarchy.csv` **ohne `code`** ist dagegen kein
+   Abbruchgrund: der Code ist die Identität der Zeile, ohne ihn kann niemand
+   auf sie zeigen, und geschrieben würde sie ein namenloses Syntaxon mit der
+   ID `""` ergeben, das Waisen-, Zyklus- und Rangprüfung anstandslos passiert,
+   sofern Rang und Elternteil stimmen. Sie wird übersprungen, in `SkippedRows`
+   gezählt und mit Datei, Zeile und Grund als Warnung protokolliert.
 3. `IngestAreas` — liest **zwei** Dateien über denselben Code-Pfad, je einmal
    aufgerufen: `wgsrpd_areas.csv` (`pipelines/wgsrpd`, aus der gepinnten
    TDWG-Tabelle, Report-Zweig `AreaNames`) und `evc_territories.csv`

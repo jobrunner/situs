@@ -92,6 +92,16 @@ func readHierarchy(ctx context.Context, dir string, rep *SyntaxaReport) ([]hiera
 				skip(line, fmt.Errorf("unknown rank %q", rank))
 				return nil
 			}
+			// The primary code is the row's identity: written as it stands, an
+			// empty one becomes a syntaxon with the id "" that nothing can
+			// reach, while a valid rank and a valid parent carry it past the
+			// dangling-parent, cycle and rank checks unnoticed. Skipped and
+			// counted, not fatal: the row has no key anything else could point
+			// at, so dropping it loses nothing but itself.
+			if row[idx[colCode]] == "" {
+				skip(line, fmt.Errorf("%s row without a code", rank))
+				return nil
+			}
 			rows = append(rows, hierarchyRow{
 				code:       row[idx[colCode]],
 				rank:       rank,

@@ -299,6 +299,39 @@ func TestIngestSyntaxaUeberspringtKlasseMitUnbekanntemBuchstaben(t *testing.T) {
 	}
 }
 
+func TestIngestSyntaxaUeberspringtHierarchiezeileOhneCode(t *testing.T) {
+	// A row with a valid rank and a valid parent passes the dangling-parent,
+	// cycle and rank checks — and lands in the index as a syntaxon with the id
+	// "": nameless, unreachable, and a hole in the navigation tree. Skipped and
+	// counted like every other malformed row, not fatal: the row carries no key
+	// anything else could point at, so dropping it costs nothing else.
+	buf := captureSlog(t)
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy:  minimalHierarchy + ",alliance,Verband ohne Code,Moor 1990,CA01,XYZ-01A\n",
+		eunis:      "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if repo.has("") {
+		t.Error("eine Zeile ohne Code wurde als Syntaxon mit der ID \"\" geschrieben")
+	}
+	if rep.AlliancesWritten != 2 {
+		t.Errorf("AlliancesWritten = %d, erwartet 2", rep.AlliancesWritten)
+	}
+	if rep.SkippedRows != 1 {
+		t.Errorf("SkippedRows = %d, erwartet 1", rep.SkippedRows)
+	}
+	// Eine Zahl ohne Grund ist nur halb gemeldet: die Warnung nennt Datei,
+	// Zeile und Ursache.
+	if !strings.Contains(buf.String(), fileHierarchy) || !strings.Contains(buf.String(), "line=8") {
+		t.Errorf("Warnung nennt Datei und Zeile nicht: %s", buf.String())
+	}
+}
+
 func TestIngestSyntaxaBrichtBeiBaumelndemParentCodeAb(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
