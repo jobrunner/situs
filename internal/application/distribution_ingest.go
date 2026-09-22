@@ -28,6 +28,15 @@ type DistributionReport struct {
 // information and an index without it is usable, only unfiltered. This is
 // deliberately unlike IngestSpeciesRoles, where a resolver failure aborts so
 // that every name is not booked as unresolvable.
+//
+// That tolerance is also why species_distribution is upserted and never
+// cleared first, unlike the syntaxa distribution IngestSyntaxonDistribution
+// replaces wholesale: its rows come one hostus request per concept, so an
+// outage halfway through a cleared table would leave the index with the areas
+// of the concepts fetched so far and nothing for the rest. Not updating a row
+// is a smaller lie than deleting it. A row the source dropped therefore does
+// outlive its artifact here — a known, accepted difference, recorded in
+// docs/how-to/ingest.md.
 func IngestDistribution(ctx context.Context, repo output.Repository, src output.DistributionSource) (DistributionReport, error) {
 	ids, err := indexedConceptIDs(ctx, repo)
 	if err != nil {

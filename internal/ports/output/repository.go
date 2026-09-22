@@ -62,6 +62,25 @@ type IngestTx interface {
 	// statement about this syntaxon at all. Without it "occurs in no
 	// territory" is indistinguishable from "nobody looked".
 	UpsertSyntaxonDistributionCoverage(syntaxonID, scheme string) error
+	// ClearSyntaxonDistribution empties syntaxon_distribution and
+	// syntaxon_distribution_coverage before IngestSyntaxonDistribution writes
+	// the current run's rows, same reasoning as ClearSyntaxa: both tables come
+	// entirely from one pinned artifact, so a row absent from this run's files
+	// must not survive it, and an Upsert can only add or overwrite.
+	//
+	// It matters more here than anywhere else because the ABSENCE of a row is
+	// itself a statement: a coverage row without occurrence rows means
+	// "checked, occurs in no territory", no coverage row at all means "nobody
+	// looked". A stale coverage row does not merely age — it turns unknown
+	// into absence, the exact inversion of what the coverage table exists for.
+	//
+	// species_distribution is deliberately NOT replaced this way. It is
+	// fetched per concept from hostus, and an outage mid-run is warned about
+	// and tolerated on purpose, because the species distribution is extra
+	// information a five-minute ingest must not die over. Clearing it up front
+	// would turn such an outage from "not updated this run" into "every area
+	// every species was known from is gone".
+	ClearSyntaxonDistribution() error
 	// UpsertDescription writes one habitat type's prose description.
 	UpsertDescription(d domain.HabitatDescription) error
 	// UpsertTraitValue writes one trait_value row for conceptID. Idempotent

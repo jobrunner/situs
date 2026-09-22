@@ -253,6 +253,19 @@ offline.
 `IngestTx` bekommt `UpsertSyntaxonDistribution(syntaxonID string, scheme, code, occurrence string) error` und
 `UpsertSyntaxonDistributionCoverage(syntaxonID, scheme string) error`.
 
+Dazu `ClearSyntaxonDistribution() error`: beide Tabellen werden **ersetzt**,
+nicht ergänzt — als erstes in derselben Transaktion, in der die neuen Zeilen
+entstehen, und erst nachdem die Übersprung-Entscheidung („keine
+Verbreitungsdatei gepinnt") gefallen ist. Ein Upsert allein kann eine Zeile,
+die aus dem neu gepinnten Artefakt verschwunden ist, nicht entfernen, und eine
+stehengebliebene Coverage-Zeile veraltet hier nicht bloß: sie macht aus
+`unknown` ein `absence` und kehrt damit genau die Zusage um, für die die
+Coverage-Tabelle existiert (Abschnitt „Vier Zustände, nicht drei").
+Die Artenverbreitung (`species_distribution`) wird bewusst **nicht** so
+behandelt — sie kommt eine hostus-Anfrage je Konzept, und ein tolerierter
+Quellenausfall mittendrin würde bei vorherigem Leeren sämtliche Gebietsdaten
+vernichten statt sie nur nicht zu aktualisieren.
+
 Der zweite Parameter heißt `coveragePath`, **nicht** `areaCSVPath`: die
 Gebietsnamen lädt `IngestAreas` (Abschnitt 2, Punkt 1), diese Funktion hat
 keinen zweiten Gebietslader. Sie liest die Verbreitungszeilen und die

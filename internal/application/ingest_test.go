@@ -693,6 +693,18 @@ func (r *fakeRepo) ClearSyntaxa() error {
 	return nil
 }
 
+// ClearSyntaxonDistribution empties both distribution tables, mirroring the
+// sqlite adapter: the pinned artifact is the complete truth about them, and a
+// stale coverage row would read as "checked, occurs nowhere".
+func (r *fakeRepo) ClearSyntaxonDistribution() error {
+	if err := r.failIfNamed("ClearSyntaxonDistribution"); err != nil {
+		return err
+	}
+	r.syntaxonDistribution = nil
+	r.syntaxonCoverage = nil
+	return nil
+}
+
 // syntaxonByID is a test helper returning the zero value when id is unknown
 // — callers assert on the fields they care about, which fail loudly enough.
 func (r *fakeRepo) syntaxonByID(id string) domain.Syntaxon {

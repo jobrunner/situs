@@ -407,6 +407,76 @@ func TestClearSyntaxaWrapsAnErrorFromTheSyntaxonDelete(t *testing.T) {
 	}
 }
 
+// ClearSyntaxonDistribution empties both distribution tables. Neither hangs
+// off a foreign key, so ClearSyntaxa does not reach them — this is the only
+// thing that keeps a repinned artifact from leaving stale rows behind.
+func TestClearSyntaxonDistributionLeertBeideTabellen(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertSyntaxonDistribution("CA01A", domain.SchemeEVCTerritory, "austria-alps", domain.OccurrenceVerified); err != nil {
+		t.Fatalf("UpsertSyntaxonDistribution: %v", err)
+	}
+	if err := tx.UpsertSyntaxonDistributionCoverage("CA01A", domain.SchemeEVCTerritory); err != nil {
+		t.Fatalf("UpsertSyntaxonDistributionCoverage: %v", err)
+	}
+	if err := tx.ClearSyntaxonDistribution(); err != nil {
+		t.Fatalf("ClearSyntaxonDistribution: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.SyntaxonDistribution(ctx, "CA01A", domain.SchemeEVCTerritory)
+	if err != nil {
+		t.Fatalf("SyntaxonDistribution: %v", err)
+	}
+	if len(got.Verified) != 0 || len(got.Uncertain) != 0 {
+		t.Errorf("syntaxon_distribution nach ClearSyntaxonDistribution = %+v, erwartet leer", got)
+	}
+	if got.Covered {
+		t.Error("syntaxon_distribution_coverage nach ClearSyntaxonDistribution nicht leer")
+	}
+}
+
+// The two statements have separate error-wrap branches. The closed-transaction
+// table above pins the first; this pins the second (the coverage DELETE) with
+// a trigger that blocks only that table, so the leading DELETE succeeds.
+func TestClearSyntaxonDistributionWrapsAnErrorFromTheCoverageDelete(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	// A trigger only fires for a row it actually deletes: seed one coverage
+	// row first, or the DELETE affects nothing and the trigger never runs.
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO syntaxon_distribution_coverage (syntaxon_id, area_scheme)
+		 VALUES ('CA01A', 'evc_territory')`); err != nil {
+		t.Fatalf("seeding coverage: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`CREATE TRIGGER block_coverage_delete BEFORE DELETE ON syntaxon_distribution_coverage
+		 BEGIN SELECT RAISE(ABORT, 'blocked'); END`); err != nil {
+		t.Fatalf("creating trigger: %v", err)
+	}
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	err = tx.ClearSyntaxonDistribution()
+	if err == nil {
+		t.Fatal("ClearSyntaxonDistribution with a blocked coverage DELETE = nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "clearing syntaxon_distribution_coverage") {
+		t.Errorf("error = %q, want it to name the coverage DELETE failure", err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+}
+
 func TestCrosswalksTo_ReturnsOnlyCrosswalksToTheGivenTypology(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
@@ -730,7 +800,14 @@ func TestIngestTx_MethodsWrapErrorsOnAClosedTransaction(t *testing.T) {
 		"SetSyntaxonParent": func() error {
 			return tx.SetSyntaxonParent("x", "AA01", domain.ParentProvenanceDerived)
 		},
-		"ClearSyntaxa": func() error { return tx.ClearSyntaxa() },
+		"ClearSyntaxa":              func() error { return tx.ClearSyntaxa() },
+		"ClearSyntaxonDistribution": func() error { return tx.ClearSyntaxonDistribution() },
+		"UpsertSyntaxonDistribution": func() error {
+			return tx.UpsertSyntaxonDistribution("CA01A", domain.SchemeEVCTerritory, "austria-alps", domain.OccurrenceVerified)
+		},
+		"UpsertSyntaxonDistributionCoverage": func() error {
+			return tx.UpsertSyntaxonDistributionCoverage("CA01A", domain.SchemeEVCTerritory)
+		},
 		"LinkSyntaxon": func() error { return tx.LinkSyntaxon(key, "x") },
 		"UpsertSpeciesRole": func() error {
 			return tx.UpsertSpeciesRole(domain.SpeciesRole{Key: key, VerbatimName: "x", Role: "diagnostic"})

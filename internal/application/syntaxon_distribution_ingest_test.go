@@ -651,3 +651,21 @@ func TestFakeRepoSyntaxonOccurrencesInAreaFiltertNachGebiet(t *testing.T) {
 		t.Errorf("SyntaxonOccurrencesInArea(austria-alps) = %v, erwartet CA01A verified / CA01B uncertain, kein czech-republic-Eintrag", occ)
 	}
 }
+
+func TestIngestSyntaxonDistributionMeldetFehlerBeimLeeren(t *testing.T) {
+	repo := newFakeRepo()
+	seedSyntaxa(repo, "CA01A", "CA01B")
+	repo.failOn = "ClearSyntaxonDistribution"
+	dist, cov := writeDistFiles(t, minimalDistribution, minimalCoverage)
+
+	_, err := IngestSyntaxonDistribution(context.Background(), repo, dist, cov)
+	if err == nil {
+		t.Fatal("IngestSyntaxonDistribution lief trotz fehlschlagendem ClearSyntaxonDistribution durch")
+	}
+	if !strings.Contains(err.Error(), "clearing syntaxon distribution before ingest") {
+		t.Errorf("Fehler = %v, erwartet den Leer-Kontext", err)
+	}
+	if !repo.rolledBack {
+		t.Error("erwartet ein Rollback nach dem fehlgeschlagenen Leeren")
+	}
+}

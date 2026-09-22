@@ -202,6 +202,22 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
    sobald die Syntaxa selbst im Index stehen. Die Coverage-Datei trennt eine
    echte „kommt hier nicht vor"-Aussage von einem bloß fehlenden Datenpunkt;
    siehe `../reference/http-api.md` für die Dreiwertigkeit auf der Leseseite.
+
+   **Auch dieser Schritt ersetzt, statt zu ergänzen** (wie `IngestSyntaxa`):
+   als erstes in derselben Transaktion leert er `syntaxon_distribution` und
+   `syntaxon_distribution_coverage`, bevor er die aktuellen Dateien schreibt.
+   Beide Tabellen hängen an keinem Fremdschlüssel, das Leeren der Syntaxa
+   erreicht sie also nicht. Nötig ist es, weil hier die **Abwesenheit einer
+   Zeile Bedeutung trägt**: eine Coverage-Zeile ohne Verbreitungszeile heißt
+   „geprüft, kommt nirgends vor", gar keine Coverage-Zeile heißt „niemand hat
+   nachgesehen". Eine stehengebliebene Coverage-Zeile veraltet also nicht bloß,
+   sie verwandelt `unknown` in `absence` — die Umkehrung dessen, wofür die
+   Tabelle existiert. Leeren und Schreiben laufen in derselben Transaktion:
+   schlägt der Lauf fehl, bleibt der Altstand unverändert stehen.
+
+   Fehlt `syntaxon_distribution.csv` ganz, wird der Schritt **übersprungen**,
+   bevor überhaupt eine Transaktion aufgeht — „noch nichts gepinnt" löscht
+   nichts.
 6. `IngestSpeciesRoles` — Artenrollen, aufgelöst gegen eine lokale
    Crosswalk-Datei (`eurosl_crosswalk.csv`), plus abgeleitete
    Mitgliedsarten-Zeilen für Sammelarten (`aggregate_members.csv`). Kein
@@ -328,6 +344,14 @@ als `in_area: true` — hier ist eine veraltete Zeile eine **falsche Antwort**,
 nicht bloß ein veraltetes Label. Eine **schrumpfende** Verbreitung braucht
 deshalb einen frischen Index (neue Datei, voller Ingest), keinen Re-Ingest auf
 den bestehenden.
+
+Das ist eine bewusste Abweichung von der Syntaxa-Verbreitung (Schritt 5), die
+ihre beiden Tabellen vorab leert. Die Artenverbreitung kommt **eine
+hostus-Anfrage je Konzept**, und ein Ausfall mitten im Lauf bricht den Ingest
+absichtlich nicht ab (siehe oben). Würde hier vorab geleert, machte genau
+dieser tolerierte Ausfall aus „diesmal nicht aktualisiert" ein „sämtliche
+Gebiete sämtlicher Arten sind weg". Eine Zeile nicht zu aktualisieren ist die
+kleinere Unwahrheit als sie zu löschen.
 
 Wie viele Gebiete am Ende tatsächlich im Index stehen, sagt `areas_with_data` in
 `GET /v1/info`.

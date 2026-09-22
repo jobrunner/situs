@@ -215,6 +215,22 @@ func (t *ingestTx) UpsertSyntaxonDistributionCoverage(syntaxonID, scheme string)
 	return nil
 }
 
+// ClearSyntaxonDistribution empties syntaxon_distribution and
+// syntaxon_distribution_coverage. Neither table hangs off a foreign key, so
+// ClearSyntaxa does not reach them and the order between the two is free. See
+// the ClearSyntaxonDistribution doc comment on output.IngestTx for why a stale
+// coverage row is worse than a stale occurrence row — and why
+// species_distribution is not treated the same way.
+func (t *ingestTx) ClearSyntaxonDistribution() error {
+	if _, err := t.tx.ExecContext(t.ctx, `DELETE FROM syntaxon_distribution`); err != nil {
+		return fmt.Errorf("sqlite: clearing syntaxon_distribution: %w", err)
+	}
+	if _, err := t.tx.ExecContext(t.ctx, `DELETE FROM syntaxon_distribution_coverage`); err != nil {
+		return fmt.Errorf("sqlite: clearing syntaxon_distribution_coverage: %w", err)
+	}
+	return nil
+}
+
 // UpsertArea writes one area name. Idempotent like every other Upsert here,
 // and a repinned artifact whose name changed replaces the old one.
 func (t *ingestTx) UpsertArea(a domain.NamedArea) error {

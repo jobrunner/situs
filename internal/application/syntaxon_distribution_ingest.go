@@ -158,10 +158,20 @@ func (u *unknownTracker) add(id string) {
 	u.ids = append(u.ids, id)
 }
 
+// writeSyntaxonDistribution replaces both distribution tables with what this
+// run's files say. Clearing happens here, INSIDE the transaction and AFTER
+// checkDistributionFiles decided the run is not skipped: a missing
+// distribution file is "nothing pinned yet", and clearing on that path would
+// let an ingest without the file delete the distribution an earlier run wrote.
+// Keeping the delete in the same transaction as the writes makes the
+// replacement atomic — a failure below rolls the delete back too.
 func writeSyntaxonDistribution(ctx context.Context, tx output.IngestTx, csvPath, coveragePath string, known map[string]bool) (SyntaxonDistributionReport, error) {
 	var rep SyntaxonDistributionReport
 	unknown := &unknownTracker{seen: map[string]bool{}}
 
+	if err := tx.ClearSyntaxonDistribution(); err != nil {
+		return SyntaxonDistributionReport{}, fmt.Errorf("clearing syntaxon distribution before ingest: %w", err)
+	}
 	if err := readOccurrenceRows(ctx, tx, csvPath, known, unknown, &rep); err != nil {
 		return SyntaxonDistributionReport{}, err
 	}
