@@ -10,12 +10,14 @@ package application
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/jobrunner/situs/internal/domain"
 	"github.com/jobrunner/situs/internal/ports/input"
+	"github.com/jobrunner/situs/internal/ports/output"
 )
 
 // Syntaxon answers one navigation step: the unit itself, the way up and the way
@@ -25,9 +27,9 @@ import (
 // no German labels yet (design, section 10) — and is therefore named "_" here
 // rather than pretending to be read.
 func (q *QueryService) Syntaxon(ctx context.Context, id string, _ string) (input.SyntaxonDetail, error) {
-	self, err := q.repo.Syntaxon(ctx, id)
+	self, id, err := q.syntaxonByIDOrEEACode(ctx, id)
 	if err != nil {
-		return input.SyntaxonDetail{}, translateNotFound(err, fmt.Sprintf("syntaxon %q", id))
+		return input.SyntaxonDetail{}, err
 	}
 	// A dangling parent_id or a cycle gets the same treatment as a dangling
 	// habitat-type edge in SyntaxonHabitatTypes: an index defect is reported,
@@ -62,6 +64,29 @@ func (q *QueryService) Syntaxon(ctx context.Context, id string, _ string) (input
 		DirectHabitatTypeCount: count,
 		Distribution:           dist,
 	}, nil
+}
+
+// syntaxonByIDOrEEACode resolves id as a syntaxon id, and falls back to a
+// lookup by eea_code when that fails: FloraVeg became the primary source and
+// syntaxon ids changed from the EEA-EUNIS code (e.g. PAP-01A) to the EVC
+// primary code (e.g. AA01A), and a client holding the old code must still
+// find the same unit. The fallback is unambiguous — no eea_code collides with
+// another syntaxon's id, and no eea_code is duplicated (measured, see
+// docs/reference/http-api.md) — so an id match, when there is one, always
+// wins without needing a precedence rule to explain it. Returns the resolved
+// syntaxon and its real (primary) id, so callers navigate from there onward.
+func (q *QueryService) syntaxonByIDOrEEACode(ctx context.Context, id string) (domain.Syntaxon, string, error) {
+	self, err := q.repo.Syntaxon(ctx, id)
+	if err == nil {
+		return self, id, nil
+	}
+	if !errors.Is(err, output.ErrNotFound) {
+		return domain.Syntaxon{}, "", translateNotFound(err, fmt.Sprintf("syntaxon %q", id))
+	}
+	if self, eeaErr := q.repo.SyntaxonByEEACode(ctx, id); eeaErr == nil {
+		return self, self.ID, nil
+	}
+	return domain.Syntaxon{}, "", translateNotFound(err, fmt.Sprintf("syntaxon %q", id))
 }
 
 // SyntaxaByRank lists one rank's syntaxa, optionally narrowed to a life-form

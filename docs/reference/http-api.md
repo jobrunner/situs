@@ -344,13 +344,22 @@ abfragt, will seine Beschreibung im selben Aufruf.
 **Der Identifikator hat mit der Quellenumkehr gewechselt.** `syntaxon.id`
 folgt jetzt dem EVC-Primärcode (`AA01A`), nicht mehr dem EEA-EUNIS-Code
 (`PAP-01A`). Rund 1310 vormals gültige EEA-Codes stehen nicht mehr in `id`,
-sondern ausschließlich im neuen Feld `eea_code`. `GET
-/v1/syntaxon/{id}/habitat-types` nimmt **nur** den Primärcode entgegen — eine
-alte EEA-ID beantwortet die Route mit `NOT_FOUND`. Es gibt **keine**
-serverseitige Auflösung alter IDs auf die neuen: ein Client, der eine
-gespeicherte alte ID hat, muss sie selbst über `eea_code` nachschlagen (z. B.
-indem er die Hierarchie über `GET /v1/syntaxa` durchläuft und dort nach dem
-`eea_code` filtert); der Dienst hält dafür keinen eigenen Endpunkt vor.
+sondern im Feld `eea_code`.
+
+**`GET /v1/syntaxon/{id}` nimmt die alte ID trotzdem weiterhin an.** Findet
+sich zum übergebenen Pfadsegment keine `id`, sucht die Route zusätzlich über
+`eea_code` — anders als zunächst dokumentiert bleibt eine gespeicherte alte
+EEA-ID also nutzbar, ohne dass ein Client sie selbst nachschlagen müsste. Der
+Fallback ist
+eindeutig (gemessen: kein `eea_code` kollidiert mit einer fremden `id`, kein
+`eea_code` ist doppelt vergeben), eine ID-Zeile hat also immer Vorrang, ohne
+dass es dafür eine Vorrangregel bräuchte.
+
+`GET /v1/syntaxon/{id}/habitat-types` macht diesen Schritt **nicht** mit und
+nimmt weiterhin **nur** den Primärcode entgegen — eine alte EEA-ID
+beantwortet diese Route mit `NOT_FOUND`. Wer von dort aus navigiert, muss den
+Primärcode also über `GET /v1/syntaxon/{id}` (oder `GET /v1/syntaxa`, gefiltert
+nach `eea_code`) auflösen, bevor er die Habitattyp-Kanten abfragt.
 
 Jede Syntaxon-Referenz — im `syntaxa`-Feld von `GET /v1/habitat-type/{typology}/{code}`
 ebenso wie in der Antwort von `GET /v1/syntaxon/{id}/habitat-types` — trägt seit

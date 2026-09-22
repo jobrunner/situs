@@ -674,6 +674,18 @@ func (r *fakeRepo) Syntaxon(_ context.Context, id string) (domain.Syntaxon, erro
 	return domain.Syntaxon{}, fmt.Errorf("fakeRepo: syntaxon %q: %w", id, output.ErrNotFound)
 }
 
+func (r *fakeRepo) SyntaxonByEEACode(_ context.Context, code string) (domain.Syntaxon, error) {
+	if r.syntaxonErr != nil {
+		return domain.Syntaxon{}, r.syntaxonErr
+	}
+	for _, s := range r.syntaxa {
+		if s.EEACode == code {
+			return s, nil
+		}
+	}
+	return domain.Syntaxon{}, fmt.Errorf("fakeRepo: syntaxon with eea_code %q: %w", code, output.ErrNotFound)
+}
+
 func (r *fakeRepo) Syntaxa(_ context.Context, key domain.HabitatTypeKey) ([]domain.Syntaxon, error) {
 	if r.syntaxaErr != nil {
 		return nil, r.syntaxaErr

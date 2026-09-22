@@ -81,7 +81,7 @@ issue #36. See `docs/reference/measured-index.md` for every measured figure.
 **The syntaxa-quellenumkehr (Teilprojekt A) is done.** FloraVeg.EU (the
 EuroVegChecklist) is now the **primary** source of the syntaxa hierarchy, not
 an overlay on the EEA-EUNIS units. The join between the two sources runs over
-the EEA **eea code** (`syntaxon.eea_code`), never over a name comparison —
+the **eea code** (`syntaxon.eea_code`), never over a name comparison —
 the earlier name-only join silently mismatched real cases (measured: the
 `AMM-02B` successor is `JD02`, not the name-similar `JE01`). The formation
 level (25 EuroVegChecklist sections A–Y, `data/syntaxa_formations.csv`) and

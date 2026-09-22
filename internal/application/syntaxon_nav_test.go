@@ -168,6 +168,61 @@ func TestSyntaxon_UnbekannteIDIstNotFound(t *testing.T) {
 	}
 }
 
+// TestSyntaxon_MeldetEchtenRepositoryFehlerOhneEEACodeFallback covers the
+// third branch of syntaxonByIDOrEEACode: a plain repository failure (not
+// output.ErrNotFound) must surface as-is and must NOT trigger the eea_code
+// fallback lookup — that lookup is only for a genuinely missing id.
+func TestSyntaxon_MeldetEchtenRepositoryFehlerOhneEEACodeFallback(t *testing.T) {
+	repo := seedNavRepo(t)
+	boom := errors.New("boom")
+	repo.syntaxonErr = boom
+	q := NewQueryService(repo)
+
+	_, err := q.Syntaxon(t.Context(), "CA01A", "en")
+	if err == nil || errors.Is(err, input.ErrNotFound) {
+		t.Errorf("Fehler = %v, erwartet einen durchgereichten Repository-Fehler, kein input.ErrNotFound", err)
+	}
+}
+
+// TestSyntaxon_FindetUeberDenEEACodeWennDieIDNichtMehrExistiert covers the
+// fallback this task added: a client still holding the old EEA-EUNIS id
+// (e.g. TST-01A) must find the same unit under its current EVC id (CA01A).
+func TestSyntaxon_FindetUeberDenEEACodeWennDieIDNichtMehrExistiert(t *testing.T) {
+	q := NewQueryService(seedNavRepo(t))
+
+	got, err := q.Syntaxon(t.Context(), "TST-01A", "en")
+	if err != nil {
+		t.Fatalf("Syntaxon: %v", err)
+	}
+	if got.ID != "CA01A" {
+		t.Errorf("ID = %q, erwartet CA01A (aufgeloest ueber eea_code TST-01A)", got.ID)
+	}
+	if !slices.Equal(refIDs(got.Ancestors), []string{"C", "CA", "CA01"}) {
+		t.Errorf("Ancestors = %v, erwartet den Pfad ab der aufgeloesten ID", refIDs(got.Ancestors))
+	}
+}
+
+// TestSyntaxon_IDGewinntVorDemEEACodeFallback covers the precedence rule: a
+// value that exists as a syntaxon's own id must resolve to THAT syntaxon,
+// even when it also happens to be a different syntaxon's eea_code. The
+// fallback lookup must not even run — the fake repo's SyntaxonByEEACode
+// would return the wrong unit if it did.
+func TestSyntaxon_IDGewinntVorDemEEACodeFallback(t *testing.T) {
+	repo := seedNavRepo(t)
+	repo.syntaxa = append(repo.syntaxa,
+		domain.Syntaxon{ID: "TST-01A", Rank: domain.SyntaxonRankAlliance, Name: "Eigene ID gleich fremdem eea_code",
+			ParentID: "CA01", Source: domain.SyntaxonSourceEUNIS, ParentProvenance: domain.ParentProvenanceOfficial})
+	q := NewQueryService(repo)
+
+	got, err := q.Syntaxon(t.Context(), "TST-01A", "en")
+	if err != nil {
+		t.Fatalf("Syntaxon: %v", err)
+	}
+	if got.Name != "Eigene ID gleich fremdem eea_code" {
+		t.Errorf("Name = %q, erwartet den Treffer ueber die ID, nicht ueber den Fallback", got.Name)
+	}
+}
+
 func TestSyntaxon_BaumelndeElternreferenzIstEinInkonsistenterIndex(t *testing.T) {
 	repo := seedNavRepo(t)
 	repo.syntaxa = append(repo.syntaxa, domain.Syntaxon{

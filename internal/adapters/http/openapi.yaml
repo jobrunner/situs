@@ -494,7 +494,13 @@ paths:
         Fehler. Es gibt bewusst keine eigene `/children`- oder
         `/ancestors`-Route: sie wären ein zweiter Weg zu denselben Daten.
         `?lang=` wird angenommen; deutsche Syntaxa-Namen sind eine eigene Runde,
-        bis dahin antworten die Namen englisch.
+        bis dahin antworten die Namen englisch. `id` nimmt sowohl die aktuelle
+        Syntaxon-ID (EVC-Primärcode, z. B. `AA01A`) als auch den historischen
+        EEA-EUNIS-Code (z. B. `PAP-01A`, gespeichert in `eea_code`) an: findet
+        sich keine ID-Zeile, wird zusätzlich per `eea_code` gesucht. Der
+        Fallback ist eindeutig — kein `eea_code` kollidiert mit einer fremden
+        ID, kein `eea_code` ist doppelt vergeben —, eine ID-Zeile hat also
+        immer Vorrang, ohne dass es dafür eine Regel bräuchte.
       operationId: syntaxon
       parameters:
         - name: id

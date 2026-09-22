@@ -416,6 +416,7 @@ func TestReads_QueryErrorsAreReturned(t *testing.T) {
 		"SpeciesRoles":                func() error { _, err := db.SpeciesRoles(ctx, r22, ""); return err },
 		"SpeciesRolesByConcept":       func() error { _, err := db.SpeciesRolesByConcept(ctx, "wcvp-1"); return err },
 		"Syntaxon":                    func() error { _, err := db.Syntaxon(ctx, "BRO-01A"); return err },
+		"SyntaxonByEEACode":           func() error { _, err := db.SyntaxonByEEACode(ctx, "PAP-01A"); return err },
 		"Syntaxa":                     func() error { _, err := db.Syntaxa(ctx, r22); return err },
 		"HabitatTypeKeysForSyntaxon":  func() error { _, err := db.HabitatTypeKeysForSyntaxon(ctx, "BRO-01A"); return err },
 		"SyntaxonChildren":            func() error { _, err := db.SyntaxonChildren(ctx, "CA01"); return err },

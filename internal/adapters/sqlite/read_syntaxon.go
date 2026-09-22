@@ -50,6 +50,25 @@ func (d *DB) Syntaxon(ctx context.Context, id string) (domain.Syntaxon, error) {
 	return s, nil
 }
 
+// SyntaxonByEEACode returns the vegetation unit whose eea_code equals code, or
+// output.ErrNotFound. eea_code is unique among the rows that carry one
+// (measured: no collisions, no duplicates — see
+// docs/reference/http-api.md), so this never has more than one row to return.
+func (d *DB) SyntaxonByEEACode(ctx context.Context, code string) (domain.Syntaxon, error) {
+	var s domain.Syntaxon
+	row := d.QueryRowContext(ctx,
+		`SELECT id, rank, name, author, parent_id, eea_code, source, parent_provenance, life_form_group
+		 FROM syntaxon WHERE eea_code = ?`, code)
+	if err := row.Scan(&s.ID, &s.Rank, &s.Name, &s.Author, &s.ParentID, &s.EEACode, &s.Source,
+		&s.ParentProvenance, &s.LifeFormGroup); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Syntaxon{}, fmt.Errorf("sqlite: syntaxon with eea_code %q: %w", code, output.ErrNotFound)
+		}
+		return domain.Syntaxon{}, fmt.Errorf("sqlite: querying syntaxon by eea_code %q: %w", code, err)
+	}
+	return s, nil
+}
+
 // Syntaxa returns the vegetation units linked to a habitat type.
 func (d *DB) Syntaxa(ctx context.Context, key domain.HabitatTypeKey) ([]domain.Syntaxon, error) {
 	rows, err := d.QueryContext(ctx,

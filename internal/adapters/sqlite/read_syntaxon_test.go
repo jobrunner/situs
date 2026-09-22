@@ -40,6 +40,39 @@ func TestSyntaxonIDsByEEACode(t *testing.T) {
 	}
 }
 
+func TestSyntaxonByEEACode(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertSyntaxon(domain.Syntaxon{ID: "AA01A", Rank: domain.SyntaxonRankAlliance,
+		Name: "X", EEACode: "PAP-01A", Source: domain.SyntaxonSourceEVC,
+		ParentProvenance: domain.ParentProvenanceOfficial}); err != nil {
+		t.Fatalf("UpsertSyntaxon(AA01A): %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.SyntaxonByEEACode(ctx, "PAP-01A")
+	if err != nil {
+		t.Fatalf("SyntaxonByEEACode: %v", err)
+	}
+	if got.ID != "AA01A" {
+		t.Errorf("ID = %q, erwartet AA01A", got.ID)
+	}
+}
+
+func TestSyntaxonByEEACodeOhneTrefferIstErrNotFound(t *testing.T) {
+	db := openTestDB(t)
+	_, err := db.SyntaxonByEEACode(t.Context(), "NOPE-01A")
+	if !errors.Is(err, output.ErrNotFound) {
+		t.Errorf("Fehler = %v, erwartet output.ErrNotFound", err)
+	}
+}
+
 // seedSyntaxaHierarchy fills the small world every navigation test asks about:
 // two complete chains formation -> class -> order -> alliance, one phanerogam
 // and one cryptogam, plus two alliances under the same order so the ordering

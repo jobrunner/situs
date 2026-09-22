@@ -112,6 +112,13 @@ type Repository interface {
 	// syntaxon that exists but is linked to nothing from one that does not
 	// exist at all.
 	Syntaxon(ctx context.Context, id string) (domain.Syntaxon, error)
+	// SyntaxonByEEACode returns the vegetation unit whose eea_code equals code,
+	// or ErrNotFound. Used as a fallback for a syntaxon id that changed to the
+	// EVC primary code: the old EEA-style id (e.g. PAP-01A) is looked up here
+	// once the primary lookup by id has failed. Measured unique (no eea_code
+	// collides with another syntaxon's id, no eea_code is duplicated), so this
+	// never has more than one candidate row.
+	SyntaxonByEEACode(ctx context.Context, code string) (domain.Syntaxon, error)
 	// Syntaxa returns the vegetation units linked to a habitat type.
 	Syntaxa(ctx context.Context, key domain.HabitatTypeKey) ([]domain.Syntaxon, error)
 	// AllSyntaxa returns every vegetation unit the index holds, in id order.
