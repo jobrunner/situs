@@ -346,20 +346,18 @@ folgt jetzt dem EVC-Primärcode (`AA01A`), nicht mehr dem EEA-EUNIS-Code
 (`PAP-01A`). Rund 1310 vormals gültige EEA-Codes stehen nicht mehr in `id`,
 sondern im Feld `eea_code`.
 
-**`GET /v1/syntaxon/{id}` nimmt die alte ID trotzdem weiterhin an.** Findet
-sich zum übergebenen Pfadsegment keine `id`, sucht die Route zusätzlich über
-`eea_code` — anders als zunächst dokumentiert bleibt eine gespeicherte alte
-EEA-ID also nutzbar, ohne dass ein Client sie selbst nachschlagen müsste. Der
-Fallback ist
-eindeutig (gemessen: kein `eea_code` kollidiert mit einer fremden `id`, kein
-`eea_code` ist doppelt vergeben), eine ID-Zeile hat also immer Vorrang, ohne
-dass es dafür eine Vorrangregel bräuchte.
-
-`GET /v1/syntaxon/{id}/habitat-types` macht diesen Schritt **nicht** mit und
-nimmt weiterhin **nur** den Primärcode entgegen — eine alte EEA-ID
-beantwortet diese Route mit `NOT_FOUND`. Wer von dort aus navigiert, muss den
-Primärcode also über `GET /v1/syntaxon/{id}` (oder `GET /v1/syntaxa`, gefiltert
-nach `eea_code`) auflösen, bevor er die Habitattyp-Kanten abfragt.
+**Beide Syntaxon-Routen nehmen die alte ID trotzdem weiterhin an.** Findet
+sich zum übergebenen Pfadsegment keine `id`, suchen sowohl
+`GET /v1/syntaxon/{id}` als auch `GET /v1/syntaxon/{id}/habitat-types`
+zusätzlich über `eea_code` — anders als zunächst dokumentiert bleibt eine
+gespeicherte alte EEA-ID also nutzbar, ohne dass ein Client sie selbst
+nachschlagen müsste. `GET /v1/syntaxon/{id}/habitat-types` sucht dabei die
+Habitattyp-Kanten der über `eea_code` **aufgelösten** ID, nicht der alten —
+wer die Kanten unter der ehemaligen `PAP-01A` abfragt, bekommt dieselbe
+Antwort wie unter der aktuellen `AA01A`. Der Fallback ist eindeutig (gemessen:
+kein `eea_code` kollidiert mit einer fremden `id`, kein `eea_code` ist doppelt
+vergeben), eine ID-Zeile hat also immer Vorrang, ohne dass es dafür eine
+Vorrangregel bräuchte.
 
 Jede Syntaxon-Referenz — im `syntaxa`-Feld von `GET /v1/habitat-type/{typology}/{code}`
 ebenso wie in der Antwort von `GET /v1/syntaxon/{id}/habitat-types` — trägt seit

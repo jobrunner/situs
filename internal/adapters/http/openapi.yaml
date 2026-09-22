@@ -526,7 +526,10 @@ paths:
       summary: Habitattypen einer Pflanzengesellschaft
       description: >-
         Zeigt das m:n — dieselbe Gesellschaft kann in mehreren Habitattypen
-        vorkommen.
+        vorkommen. `id` nimmt wie bei `GET /v1/syntaxon/{id}` sowohl die
+        aktuelle Syntaxon-ID als auch den historischen EEA-EUNIS-Code an
+        (Fallback über `eea_code`, eindeutig); die Habitattyp-Kanten werden
+        unter der aufgelösten ID gesucht.
       operationId: syntaxonHabitatTypes
       parameters:
         - name: id

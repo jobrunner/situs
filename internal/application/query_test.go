@@ -417,6 +417,25 @@ func TestQueryService_SyntaxonHabitatTypes(t *testing.T) {
 	}
 }
 
+// TestQueryService_SyntaxonHabitatTypesFindetUeberDenEEACode covers the
+// fallback this task extended onto SyntaxonHabitatTypes: a client holding the
+// old EEA-EUNIS id must see the same habitat-type edges as under the current
+// id — the habitat-type lookup has to run against the RESOLVED id, not the
+// one that was passed in, or the edge query finds nothing under the old code.
+func TestQueryService_SyntaxonHabitatTypesFindetUeberDenEEACode(t *testing.T) {
+	repo := seedQueryRepo()
+	repo.syntaxa[0].EEACode = "PAP-01A"
+	q := NewQueryService(repo)
+
+	got, err := q.SyntaxonHabitatTypes(context.Background(), "PAP-01A", "de")
+	if err != nil {
+		t.Fatalf("SyntaxonHabitatTypes: %v", err)
+	}
+	if len(got) != 1 || got[0].Code != "R22" {
+		t.Fatalf("got %+v, want the same linked type as under the current id BRO-01A", got)
+	}
+}
+
 // A syntaxon that exists but is linked to nothing answers with an empty list —
 // that is different from not existing at all.
 func TestQueryService_SyntaxonWithoutLinksIsAnEmptyList(t *testing.T) {

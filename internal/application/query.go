@@ -159,8 +159,9 @@ func (q *QueryService) HabitatTypeSpecies(ctx context.Context, key domain.Habita
 // SyntaxonHabitatTypes shows the m:n side: the same vegetation unit can belong
 // to several habitat types.
 func (q *QueryService) SyntaxonHabitatTypes(ctx context.Context, syntaxonID, lang string) ([]input.HabitatTypeSummary, error) {
-	if _, err := q.repo.Syntaxon(ctx, syntaxonID); err != nil {
-		return nil, translateNotFound(err, fmt.Sprintf("syntaxon %q", syntaxonID))
+	_, syntaxonID, err := q.syntaxonByIDOrEEACode(ctx, syntaxonID)
+	if err != nil {
+		return nil, err
 	}
 	keys, err := q.repo.HabitatTypeKeysForSyntaxon(ctx, syntaxonID)
 	if err != nil {
