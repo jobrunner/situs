@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
 
@@ -177,14 +178,21 @@ func writeSyntaxa(ctx context.Context, tx output.IngestTx, dir string,
 	return nil
 }
 
-// mapByEEACode maps each eea_code the hierarchy carries to its FloraVeg
-// primary code. A code claimed by more than one row is REMOVED from the map
-// rather than resolved to one of them: which row wins would be the file's
-// line order, and writeLinks/writeEunisOnly would silently move an EEA
-// unit's identity and its habitat edges onto an arbitrary syntaxon. Without
-// the entry the EEA unit stays a row of its own, exactly like one that has
-// no counterpart at all.
-func mapByEEACode(rows []hierarchyRow, rep *SyntaxaReport) map[string]string {
+// mapEEACodeTo indexes the hierarchy rows by their eea_code, valueOf picking
+// what the caller needs off the row: the FloraVeg primary code for the
+// identity and edge remapping (mapByEEACode), the parent code for the EEA-only
+// rows' parent derivation (assignRemainingParents).
+//
+// A code claimed by more than one row is REMOVED from the map rather than
+// resolved to one of them: which row wins would be the file's line order, and
+// the caller would silently move an EEA unit's identity, its habitat edges or
+// its place in the hierarchy onto an arbitrary syntaxon. Without the entry the
+// EEA unit keeps the honest state — a row of its own for the remapping, a
+// sibling-consensus try or an orphan report for the parent.
+//
+// Both callers walk the same rows and so find the same collisions; a code
+// already reported is not appended a second time.
+func mapEEACodeTo(rows []hierarchyRow, valueOf func(hierarchyRow) string, rep *SyntaxaReport) map[string]string {
 	byEEA := map[string]string{}
 	colliding := map[string]bool{}
 	for _, r := range rows {
@@ -200,13 +208,21 @@ func mapByEEACode(rows []hierarchyRow, rep *SyntaxaReport) map[string]string {
 				"eea_code", r.eeaCode, "code", r.code, "file", fileHierarchy)
 			continue
 		}
-		byEEA[r.eeaCode] = r.code
+		byEEA[r.eeaCode] = valueOf(r)
 	}
 	for code := range colliding {
-		rep.EEACodeCollisions = append(rep.EEACodeCollisions, code)
+		if !slices.Contains(rep.EEACodeCollisions, code) {
+			rep.EEACodeCollisions = append(rep.EEACodeCollisions, code)
+		}
 	}
 	sort.Strings(rep.EEACodeCollisions)
 	return byEEA
+}
+
+// mapByEEACode maps each eea_code the hierarchy carries to its FloraVeg
+// primary code.
+func mapByEEACode(rows []hierarchyRow, rep *SyntaxaReport) map[string]string {
+	return mapEEACodeTo(rows, func(r hierarchyRow) string { return r.code }, rep)
 }
 
 // writeFormations writes the 25 EuroVegChecklist sections as the root of

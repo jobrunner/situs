@@ -353,7 +353,7 @@ absichtlich.
 | `syntaxa_hierarchy.csv` fehlt | Ingest bricht **ab**. Anders als bisher: die Datei ist jetzt die Primärquelle, ohne sie entsteht ein Index ohne jede Hierarchie. Der stille Weiterlauf war für ein Overlay richtig und ist für eine Primärquelle falsch. |
 | `data/syntaxa_formations.csv` fehlt | Ingest bricht ab, gleiche Begründung — ohne Formationen hat die Kette keine Wurzel. |
 | CSV ohne Spalte `eea_code` | Ingest bricht mit Spaltenfehler ab (alte Pipeline-Ausgabe). |
-| EEA-Code zeigt auf mehrere Primärcodes | Kein Join für diesen EEA-Code, in `EEACodeCollisions` vermerkt, Ingest läuft weiter. Nie einen Gewinner raten. |
+| EEA-Code zeigt auf mehrere Primärcodes | Kein Join für diesen EEA-Code, in `EEACodeCollisions` vermerkt (jeder Code genau einmal), Ingest läuft weiter. Nie einen Gewinner raten. Das gilt für **beide** Abbildungen über den EEA-Code: die auf den Primärcode (Identität und Kanten) und die auf den Elterncode (Geschwisterkonsens) — ein kollidierender Code leiht auch keinen Elternteil, die Zeile fällt auf Geschwisterkonsens beziehungsweise Waisenmeldung durch. |
 | EEA-Einheit ohne FloraVeg-Gegenstück | Eigene Zeile, `source=eunis`, `eea_code=""`; Elternteil per Namensabgleich, sonst Geschwisterkonsens. |
 | Klassencode mit unbekanntem Anfangsbuchstaben | Zeile übersprungen und gezählt; die Formation wird **nie** aus einem unbekannten Buchstaben erfunden. |
 | Zeile bleibt nach allen Schritten elternlos | In `Orphans` vermerkt und vom Ingest als Fehler gemeldet. |

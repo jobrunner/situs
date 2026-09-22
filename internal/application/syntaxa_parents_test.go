@@ -269,6 +269,39 @@ func TestAssignRemainingParentsMeldetFehlerBeimSetzenDesElternteilsUeberGeschwis
 	}
 }
 
+// An eea_code claimed by two hierarchy rows must not lend a parent: which of
+// the two parents wins would be the file's line order. The key is dropped from
+// the parent map and reported, so the row falls through to sibling consensus
+// and — here, with no other sibling — to an honest orphan report instead of a
+// guessed parent. That a code colliding in BOTH maps is still reported exactly
+// once is pinned by TestIngestSyntaxaSchliesstKollidierendenEEACodeVomRemappingAus,
+// which runs a full ingest over such a file.
+func TestAssignRemainingParentsLeitetNichtsAusKollidierendemEEACodeAb(t *testing.T) {
+	repo := newFakeRepo()
+	// Seeded the way writeEunisOnly would have, so a run that DOES guess a
+	// parent fails on the assertions below rather than on a missing row.
+	repo.syntaxa = append(repo.syntaxa, domain.Syntaxon{ID: "SIB-01E", Rank: domain.SyntaxonRankAlliance})
+	rows := []hierarchyRow{
+		{code: "CA02A", rank: domain.SyntaxonRankAlliance, name: "Erster", parentCode: "CA02", eeaCode: "SIB-01A"},
+		{code: "CA03A", rank: domain.SyntaxonRankAlliance, name: "Zweiter", parentCode: "CA03", eeaCode: "SIB-01A"},
+	}
+	rep := &SyntaxaReport{}
+	eunisOnly := []eunisOnlyRow{{id: "SIB-01E", name: "Voellig anderer Name ohne Treffer"}}
+
+	if err := assignRemainingParents(repo, eunisOnly, rows, rep); err != nil {
+		t.Fatalf("assignRemainingParents: %v", err)
+	}
+	if len(rep.EEACodeCollisions) != 1 || rep.EEACodeCollisions[0] != "SIB-01A" {
+		t.Errorf("EEACodeCollisions = %v, erwartet [SIB-01A]", rep.EEACodeCollisions)
+	}
+	if rep.ParentsDerived != 0 {
+		t.Errorf("ParentsDerived = %d, erwartet 0 — der kollidierende Code darf keinen Elternteil leihen", rep.ParentsDerived)
+	}
+	if len(rep.Orphans) != 1 || rep.Orphans[0] != "SIB-01E" {
+		t.Errorf("Orphans = %v, erwartet [SIB-01E]", rep.Orphans)
+	}
+}
+
 // --- Coverage for the paths the six brief tests do not reach: error
 // wrapping from SetSyntaxonParent. ---
 

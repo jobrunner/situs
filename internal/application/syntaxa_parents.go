@@ -58,17 +58,19 @@ type eunisOnlyRow struct {
 // before CRU-03A, whose name match would have given them a unanimous
 // parent). Splitting into two passes makes the sibling try see every
 // name-matched parent regardless of file order.
+//
+// parents is built by mapEEACodeTo, the same helper the primary-code map
+// uses: an eea code two rows claim lends no parent either, since which of
+// their two parents wins would be the file's line order. The row falls
+// through to sibling consensus, and failing that to an orphan report.
 func assignRemainingParents(tx output.IngestTx, eunisOnly []eunisOnlyRow, rows []hierarchyRow, rep *SyntaxaReport) error {
 	var allianceRows []hierarchyRow
-	parents := map[string]string{}
 	for _, r := range rows {
 		if r.rank == domain.SyntaxonRankAlliance {
 			allianceRows = append(allianceRows, r)
 		}
-		if r.eeaCode != "" {
-			parents[r.eeaCode] = r.parentCode
-		}
 	}
+	parents := mapEEACodeTo(rows, func(r hierarchyRow) string { return r.parentCode }, rep)
 
 	unresolved, err := matchByName(tx, eunisOnly, allianceRows, parents, rep)
 	if err != nil {
