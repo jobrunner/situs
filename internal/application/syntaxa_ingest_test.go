@@ -86,6 +86,13 @@ func TestIngestSyntaxaSchreibtFormationenAusDemBuchstaben(t *testing.T) {
 		c.LifeFormGroup != domain.LifeFormPhanerogam {
 		t.Errorf("Formation C = %+v", c)
 	}
+	// A formation is a root: the domain invariant says ParentProvenance must
+	// be "official" whenever ParentID is empty. UpsertSyntaxon binds the
+	// column explicitly, so the schema default never gets a chance to apply
+	// it — the ingest itself must set it.
+	if c.ParentProvenance != domain.ParentProvenanceOfficial {
+		t.Errorf("Formation C ParentProvenance = %q, erwartet %q", c.ParentProvenance, domain.ParentProvenanceOfficial)
+	}
 	if got := repo.syntaxonByID("R").LifeFormGroup; got != domain.LifeFormBryophyteLichen {
 		t.Errorf("Formation R Lebensform = %q", got)
 	}

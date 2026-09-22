@@ -25,11 +25,12 @@ func readFormations(ctx context.Context, dir string, rep *SyntaxaReport) (map[st
 		func(idx map[string]int, row []string, _ int) error {
 			letter := row[idx["letter"]]
 			formations[letter] = domain.Syntaxon{
-				ID:            letter,
-				Rank:          domain.SyntaxonRankFormation,
-				Name:          row[idx[colNameEN]],
-				Source:        domain.SyntaxonSourceEVC,
-				LifeFormGroup: row[idx["life_form_group"]],
+				ID:               letter,
+				Rank:             domain.SyntaxonRankFormation,
+				Name:             row[idx[colNameEN]],
+				Source:           domain.SyntaxonSourceEVC,
+				LifeFormGroup:    row[idx["life_form_group"]],
+				ParentProvenance: domain.ParentProvenanceOfficial,
 			}
 			return nil
 		})
