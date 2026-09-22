@@ -250,24 +250,6 @@ func writeHierarchy(tx output.IngestTx, rows []hierarchyRow, formations map[stri
 	return nil
 }
 
-// checkDanglingParents records, into rep.Orphans, every non-class hierarchy
-// row (order or alliance) whose parentID is empty or was never written —
-// either because the CSV's own parent_code is stale, or because the parent
-// row was a class skipped for an unknown formation letter. Class rows are
-// excluded: their parent (a formation) is already validated inside
-// writeHierarchy before the row is written at all, so a written class always
-// has a real parent.
-func checkDanglingParents(rows []hierarchyRow, written map[string]bool, rep *SyntaxaReport) {
-	for _, r := range rows {
-		if r.rank == domain.SyntaxonRankClass || !written[r.code] {
-			continue
-		}
-		if r.parentCode == "" || !written[r.parentCode] {
-			rep.Orphans = append(rep.Orphans, r.code)
-		}
-	}
-}
-
 // writeEunisOnly writes syntaxa.csv's rows whose id is not a key of byAlt —
 // an EEA unit FloraVeg already carries under its own primary code is not
 // written a second time. ParentID stays empty; Task 7 sets it by name and

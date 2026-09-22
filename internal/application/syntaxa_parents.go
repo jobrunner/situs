@@ -1,8 +1,9 @@
-// syntaxa_parents.go closes the last gap IngestSyntaxa leaves open: the
-// EEA-only rows writeEunisOnly wrote without a parent. It is its own file
-// because longestPrefixMatch, siblingConsensus and eeaGroup are one
-// self-contained unit, and syntaxa_ingest.go would otherwise run over the
-// per-file complexity-sum ratchet.
+// syntaxa_parents.go closes the parent-related gaps IngestSyntaxa leaves
+// open: the EEA-only rows writeEunisOnly wrote without a parent
+// (assignRemainingParents and friends), and checkDanglingParents, which
+// catches a hierarchy row whose parent_code points nowhere. It is its own
+// file because these are one self-contained unit, and syntaxa_ingest.go
+// would otherwise run over the per-file complexity-sum ratchet.
 package application
 
 import (
@@ -13,6 +14,27 @@ import (
 	"github.com/jobrunner/situs/internal/domain"
 	"github.com/jobrunner/situs/internal/ports/output"
 )
+
+// checkDanglingParents records, into rep.Orphans, every non-class hierarchy
+// row (order or alliance) whose parentID is empty or was never written —
+// either because the CSV's own parent_code is stale, or because the parent
+// row was a class skipped for an unknown formation letter (writeHierarchy has
+// no reason to know a class was dropped elsewhere in the same CSV). Class
+// rows are excluded: their parent (a formation) is already validated inside
+// writeHierarchy before the row is written at all, so a written class always
+// has a real parent. Lives here, not in syntaxa_ingest.go, for the same
+// reason this whole file does: keeping the per-file complexity sum clear of
+// the codecharta ratchet's cap.
+func checkDanglingParents(rows []hierarchyRow, written map[string]bool, rep *SyntaxaReport) {
+	for _, r := range rows {
+		if r.rank == domain.SyntaxonRankClass || !written[r.code] {
+			continue
+		}
+		if r.parentCode == "" || !written[r.parentCode] {
+			rep.Orphans = append(rep.Orphans, r.code)
+		}
+	}
+}
 
 // eunisOnlyRow is one FloraVeg-less syntaxon writeEunisOnly wrote (id and
 // its EUNIS combi-name). It is the only input assignRemainingParents
