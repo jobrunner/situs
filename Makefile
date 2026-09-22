@@ -38,6 +38,7 @@ pipeline-test: ## Run every pipeline's Python tests
 	cd pipelines/eunis && python3 -m unittest discover
 	cd pipelines/eurlex && python3 -m unittest discover
 	cd pipelines/eurovegchecklist && python3 -m unittest discover
+	cd pipelines/evc-distribution && python3 -m unittest discover
 	cd pipelines/wgsrpd && python3 -m unittest discover
 	cd pipelines/floraveg-factsheets && python3 -m unittest discover
 	cd pipelines/eur28 && python3 -m unittest discover

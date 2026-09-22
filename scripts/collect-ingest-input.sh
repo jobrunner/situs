@@ -41,6 +41,10 @@ REQUIRED=(
   "pipelines/eunis/out/species_roles.csv:species_roles.csv"
   "data/annex1_descriptions.csv:annex1_descriptions.csv"
   "data/localizations_descriptions.csv:localizations_descriptions.csv"
+  # FloraVeg.EU-Hierarchie: primäre Quelle für Syntaxa. Ohne sie entsteht ein
+  # Index ohne Hierarchie und das darf nicht stillschweigend passieren.
+  "pipelines/eurovegchecklist/out/syntaxa_hierarchy.csv:syntaxa_hierarchy.csv"
+  "data/syntaxa_formations.csv:syntaxa_formations.csv"
 )
 
 # Fehlt eine davon, läuft der Ingest trotzdem; die betroffenen Daten fehlen
@@ -48,10 +52,12 @@ REQUIRED=(
 OPTIONAL=(
   "pipelines/wgsrpd/output/wgsrpd_areas.csv:wgsrpd_areas.csv"
   "pipelines/floraveg-factsheets/output/habitat_descriptions.csv:habitat_descriptions.csv"
-  "pipelines/eurovegchecklist/out/syntaxa_hierarchy.csv:syntaxa_hierarchy.csv"
   "pipelines/eive/output/eive-canonical.csv:eive_traits.csv"
   "pipelines/tichy/output/tichy-canonical.csv:tichy_traits.csv"
   "pipelines/midolo/output/midolo-canonical.csv:midolo_traits.csv"
+  "pipelines/evc-distribution/out/syntaxon_distribution.csv:syntaxon_distribution.csv"
+  "pipelines/evc-distribution/out/syntaxon_distribution_coverage.csv:syntaxon_distribution_coverage.csv"
+  "pipelines/evc-distribution/out/evc_territories.csv:evc_territories.csv"
 )
 
 # Diese beiden erzeugt kein Pipeline-Lauf in diesem Repo: eurosl_crosswalk.csv

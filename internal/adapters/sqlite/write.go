@@ -58,57 +58,60 @@ func (t *ingestTx) UpsertCrosswalk(c domain.Crosswalk) error {
 
 func (t *ingestTx) UpsertSyntaxon(s domain.Syntaxon) error {
 	_, err := t.tx.ExecContext(t.ctx,
-		`INSERT INTO syntaxon (id, rank, name, author, parent_id)
-		 VALUES (?, ?, ?, ?, ?)
+		`INSERT INTO syntaxon (id, rank, name, author, parent_id, eea_code, source,
+		                       parent_provenance, life_form_group)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
-		   rank=excluded.rank, name=excluded.name, author=excluded.author, parent_id=excluded.parent_id`,
-		s.ID, s.Rank, s.Name, s.Author, s.ParentID)
+		   rank = excluded.rank, name = excluded.name, author = excluded.author,
+		   parent_id = excluded.parent_id, eea_code = excluded.eea_code,
+		   source = excluded.source, parent_provenance = excluded.parent_provenance,
+		   life_form_group = excluded.life_form_group`,
+		s.ID, s.Rank, s.Name, s.Author, s.ParentID, s.EEACode, s.Source,
+		s.ParentProvenance, s.LifeFormGroup)
 	if err != nil {
 		return fmt.Errorf("sqlite: upserting syntaxon %s: %w", s.ID, err)
 	}
 	return nil
 }
 
-// UpsertSyntaxonAuthor sets name and author on an already-upserted syntaxon.
-// name always updates — a match always has a real FloraVeg name to give. An
-// empty parentID leaves the stored parent_id untouched — a repeated
-// hierarchy-ingest pass without a fresh match must not erase a previous one.
+// SetSyntaxonParent sets the parent and its provenance on an already-written
+// row. Separate from UpsertSyntaxon: the parent of the 16 EEA-only units is
+// only known once the FloraVeg rows and their siblings are in the index.
 //
-// This method enriches a row that must already exist (its caller only ever
-// passes an id read back from the index moments earlier); an id the index
-// does not carry means the index changed under the ingest or the caller
-// drifted out of sync with its own read, and is reported as an error rather
-// than silently doing nothing.
-//
-// Existence is checked with a dedicated SELECT rather than the UPDATE's own
-// RowsAffected(): SQLite counts a row as "changed" once it matches the WHERE
-// clause, even when every assigned value equals what was already stored —
-// which a repeated hierarchy-ingest pass (the very idempotency this method's
-// callers rely on) hits routinely. Trusting RowsAffected()==0 as "not found"
-// would misreport that ordinary no-op re-run as a missing row.
-func (t *ingestTx) UpsertSyntaxonAuthor(id, name, author, parentID string) error {
-	var exists bool
-	if err := t.tx.QueryRowContext(t.ctx,
-		`SELECT EXISTS(SELECT 1 FROM syntaxon WHERE id = ?)`, id).Scan(&exists); err != nil {
-		return fmt.Errorf("sqlite: checking syntaxon %s exists: %w", id, err)
+// An id no row carries is an error, not a silent no-op: SQLite reports an
+// UPDATE matching nothing as success, and the application would then record
+// the parent in its in-memory graph and pass the orphan, cycle and rank checks
+// on it while the index still held a parentless syntaxon. RowsAffected is what
+// tells the two apart — the row is guaranteed to change, since a caller only
+// sets a parent it just derived.
+func (t *ingestTx) SetSyntaxonParent(id, parentID, provenance string) error {
+	res, err := t.tx.ExecContext(t.ctx,
+		`UPDATE syntaxon SET parent_id = ?, parent_provenance = ? WHERE id = ?`,
+		parentID, provenance, id)
+	if err != nil {
+		return fmt.Errorf("sqlite: setting parent of syntaxon %s: %w", id, err)
 	}
-	if !exists {
-		return fmt.Errorf("sqlite: syntaxon %s not found for author update", id)
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("sqlite: reading rows affected for parent of syntaxon %s: %w", id, err)
 	}
+	if affected == 0 {
+		return fmt.Errorf("sqlite: setting parent of syntaxon %s: no such row", id)
+	}
+	return nil
+}
 
-	var err error
-	if parentID == "" {
-		_, err = t.tx.ExecContext(t.ctx,
-			`UPDATE syntaxon SET name = ?, author = ? WHERE id = ?`, name, author, id)
-		if err != nil {
-			return fmt.Errorf("sqlite: setting name/author of syntaxon %s: %w", id, err)
-		}
-	} else {
-		_, err = t.tx.ExecContext(t.ctx,
-			`UPDATE syntaxon SET name = ?, author = ?, parent_id = ? WHERE id = ?`, name, author, parentID, id)
-		if err != nil {
-			return fmt.Errorf("sqlite: setting name/author/parent of syntaxon %s: %w", id, err)
-		}
+// ClearSyntaxa empties habitat_type_syntaxon and syntaxon, in that order (the
+// edges reference syntaxon rows, so the FK-shaped direction goes first). See
+// the ClearSyntaxa doc comment on output.IngestTx for why a delete-then-write
+// step replaces an upsert here, same reasoning as DeleteTraitValuesForVocab
+// in trait.go.
+func (t *ingestTx) ClearSyntaxa() error {
+	if _, err := t.tx.ExecContext(t.ctx, `DELETE FROM habitat_type_syntaxon`); err != nil {
+		return fmt.Errorf("sqlite: clearing habitat_type_syntaxon: %w", err)
+	}
+	if _, err := t.tx.ExecContext(t.ctx, `DELETE FROM syntaxon`); err != nil {
+		return fmt.Errorf("sqlite: clearing syntaxon: %w", err)
 	}
 	return nil
 }
@@ -192,6 +195,52 @@ func (t *ingestTx) UpsertDistribution(conceptID string, a domain.Area) error {
 		conceptID, a.Scheme, a.Code)
 	if err != nil {
 		return fmt.Errorf("sqlite: upserting distribution %s for %s: %w", a, conceptID, err)
+	}
+	return nil
+}
+
+// UpsertSyntaxonDistribution records one occurrence cell. Idempotent, and a
+// repeated ingest overwrites the occurrence: the source is allowed to upgrade
+// an uncertain record to a verified one.
+func (t *ingestTx) UpsertSyntaxonDistribution(syntaxonID, scheme, code, occurrence string) error {
+	_, err := t.tx.ExecContext(t.ctx,
+		`INSERT INTO syntaxon_distribution (syntaxon_id, area_scheme, area_code, occurrence)
+		 VALUES (?, ?, ?, ?)
+		 ON CONFLICT(syntaxon_id, area_scheme, area_code) DO UPDATE SET
+		   occurrence = excluded.occurrence`,
+		syntaxonID, scheme, code, occurrence)
+	if err != nil {
+		return fmt.Errorf("sqlite: upserting syntaxon distribution %s/%s/%s: %w", syntaxonID, scheme, code, err)
+	}
+	return nil
+}
+
+// UpsertSyntaxonDistributionCoverage records that the source makes a
+// statement about this syntaxon at all. Without it "occurs in no territory"
+// is indistinguishable from "nobody looked".
+func (t *ingestTx) UpsertSyntaxonDistributionCoverage(syntaxonID, scheme string) error {
+	_, err := t.tx.ExecContext(t.ctx,
+		`INSERT OR IGNORE INTO syntaxon_distribution_coverage (syntaxon_id, area_scheme)
+		 VALUES (?, ?)`,
+		syntaxonID, scheme)
+	if err != nil {
+		return fmt.Errorf("sqlite: upserting syntaxon distribution coverage %s/%s: %w", syntaxonID, scheme, err)
+	}
+	return nil
+}
+
+// ClearSyntaxonDistribution empties syntaxon_distribution and
+// syntaxon_distribution_coverage. Neither table hangs off a foreign key, so
+// ClearSyntaxa does not reach them and the order between the two is free. See
+// the ClearSyntaxonDistribution doc comment on output.IngestTx for why a stale
+// coverage row is worse than a stale occurrence row — and why
+// species_distribution is not treated the same way.
+func (t *ingestTx) ClearSyntaxonDistribution() error {
+	if _, err := t.tx.ExecContext(t.ctx, `DELETE FROM syntaxon_distribution`); err != nil {
+		return fmt.Errorf("sqlite: clearing syntaxon_distribution: %w", err)
+	}
+	if _, err := t.tx.ExecContext(t.ctx, `DELETE FROM syntaxon_distribution_coverage`); err != nil {
+		return fmt.Errorf("sqlite: clearing syntaxon_distribution_coverage: %w", err)
 	}
 	return nil
 }

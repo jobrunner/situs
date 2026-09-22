@@ -6,10 +6,10 @@
     "default_cap": 50,
     "_default_cap_note": "Per-file SUM of function complexity. Every file not listed below must stay <= this. Stops a file becoming a monolith, but can be satisfied by splitting a file (the sum moves with the code) — see function_complexity for the non-gameable ceiling. Highest non-baseline file today is 33 (internal/application/localize.go), so there is real headroom before this bites.",
     "baseline": {
-      "_query_note": "query.go is the read side's whole use-case layer: five endpoint methods plus IndexInfo and the area/backbone helpers. It is at 100% coverage and 100% mutation efficacy, so the complexity is watched, not unguarded. It said 'split it before letting this number grow', and that is what happened: the German-label overlay pushed it 78 -> 81, the gate refused, and preferredLabel moved to label.go instead of the baseline being raised. 78 -> 73 on the way back. It happened again with the factsheet descriptions: descriptionOf moved to description.go rather than the baseline going up, 73 -> 72. Split it again before letting this grow.",
-      "internal/application/query.go": 72,
-      "_ingest_note": "ingest.go carries one reader per CSV source; each new source adds a block. Also 100% coverage and 100% mutation efficacy.",
-      "internal/application/ingest.go": 64
+      "_query_note": "query.go is the read side's whole use-case layer: five endpoint methods plus the area/backbone helpers. It is at 100% coverage and 100% mutation efficacy, so the complexity is watched, not unguarded. It said 'split it before letting this number grow', and that is what happened: the German-label overlay pushed it 78 -> 81, the gate refused, and preferredLabel moved to label.go instead of the baseline being raised. 78 -> 73 on the way back. It happened again with the factsheet descriptions: descriptionOf moved to description.go rather than the baseline going up, 73 -> 72. Split it again before letting this grow. Task 6 of syntaxa-navigation measured 72 -> 71: syntaxaOf now delegates to the shared syntaxonRefs mapper instead of building SyntaxonRef literals inline. Task 10 of syntaxa-verbreitung added a third IndexInfo error branch (the syntaxa-coverage count) and moved IndexInfo plus backbonesOf out to index_info.go entirely rather than raising the baseline again: 71 -> 65.",
+      "internal/application/query.go": 65,
+      "_ingest_note": "ingest.go carries one reader per CSV source; each new source adds a block. Also 100% coverage and 100% mutation efficacy. Ratcheted down 64 -> 55 in Task 9 of the syntaxa-quellenumkehr plan: the two syntaxa-hierarchy readers moved to internal/application/syntaxa_ingest.go and syntaxa_parents.go, so this file lost the complexity that came with them.",
+      "internal/application/ingest.go": 55
     }
   },
   "function_complexity": {
@@ -18,7 +18,9 @@
     "_default_cap_note": "The single most complex FUNCTION in a file (McCabe). This is the real overall-complexity control: a function keeps its complexity wherever it lives, so moving it between files cannot game this gate — passing requires actually simplifying the function (or extracting cohesive sub-functions). Note that query.go, ingest.go and localize.go all sit at exactly 10, so any growth in their worst function fails the gate immediately. Repo max today is 12.",
     "baseline": {
       "_ingest_cmd_note": "cmd/situs/ingest.go's runIngest wires the CSV ingest, the localization overlay and the paced distribution source, and reports each phase. The distribution phase must not abort the run on a source outage, which is where the branching comes from.",
-      "cmd/situs/ingest.go": 12
+      "cmd/situs/ingest.go": 12,
+      "_paced_distribution_note": "cmd/situs/paced_distribution.go's Areas method (moved out of ingest.go in Task 9 of syntaxa-quellenumkehr, unmodified, to bring ingest.go's per-file complexity sum back under the file cap) tolerates per-concept failures instead of aborting the whole distribution batch, and treats a canceled/expired context as the one failure that is NOT tolerated — that branching is where the complexity comes from. Same shape and same measured value (12) as runIngest above; both were already at this level before this task, codecharta was simply not run against them until now (Tasks 7/8 deferred it to Task 9).",
+      "cmd/situs/paced_distribution.go": 12
     }
   },
   "hotspot": {

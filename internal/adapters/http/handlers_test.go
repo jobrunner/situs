@@ -109,6 +109,77 @@ func TestHabitatType_SyntaxonAuthorAndParentIDAreOmittedWhenEmpty(t *testing.T) 
 	}
 }
 
+func TestHabitatType_SyntaxonCarriesProvenanceFields(t *testing.T) {
+	q := seededQueryService()
+	detail := q.types["eunis@2021:R22"]
+	detail.Syntaxa = []input.SyntaxonRef{
+		{ID: "CAK-01C", Rank: "alliance", Name: "Cakilion edentulae Br.-Bl. 1931",
+			EEACode: "TST-01A", Source: "evc", ParentProvenance: "official"},
+	}
+	q.types["eunis@2021:R22"] = detail
+	srv := newTestServer(t, q)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/habitat-type/eunis@2021/R22", nil)
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got struct {
+		Syntaxa []map[string]any `json:"syntaxa"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if len(got.Syntaxa) != 1 {
+		t.Fatalf("syntaxa = %+v, want 1 entry", got.Syntaxa)
+	}
+	syn := got.Syntaxa[0]
+	for field, want := range map[string]any{
+		"eea_code":          "TST-01A",
+		"source":            "evc",
+		"parent_provenance": "official",
+	} {
+		if got := syn[field]; got != want {
+			t.Errorf("%s = %v, erwartet %v", field, got, want)
+		}
+	}
+}
+
+func TestHabitatType_SyntaxonOmitsEmptyProvenanceFields(t *testing.T) {
+	q := seededQueryService()
+	detail := q.types["eunis@2021:R22"]
+	detail.Syntaxa = []input.SyntaxonRef{
+		{ID: "XYZ-01", Rank: "alliance", Name: "Nomatchion nowhereii"},
+	}
+	q.types["eunis@2021:R22"] = detail
+	srv := newTestServer(t, q)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/habitat-type/eunis@2021/R22", nil)
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got struct {
+		Syntaxa []map[string]any `json:"syntaxa"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if len(got.Syntaxa) != 1 {
+		t.Fatalf("syntaxa = %+v, want 1 entry", got.Syntaxa)
+	}
+	syn := got.Syntaxa[0]
+	for _, field := range []string{"eea_code", "source", "parent_provenance", "life_form_group"} {
+		if _, ok := syn[field]; ok {
+			t.Errorf("%s erscheint, obwohl leer", field)
+		}
+	}
+}
+
 func TestHabitatType_CrosswalksAreEmptyNotNullWhenNoneExist(t *testing.T) {
 	srv := newTestServer(t, seededQueryService())
 
@@ -863,15 +934,33 @@ type fakeQueryService struct {
 	// typologies/typologiesErr control what Typologies returns.
 	typologies    []input.TypologyView
 	typologiesErr error
-	// areas/areasErr control what Areas returns.
-	areas    []input.AreaView
-	areasErr error
+	// areas/areasErr control what Areas returns; areaScheme records the last
+	// scheme it was called with, so a test can prove the parsed query string
+	// (or its default) actually reached the use case.
+	areas      []input.AreaView
+	areasErr   error
+	areaScheme string
 	// undescribed strips the description fields, standing for the 7673 types
 	// the factsheets do not cover.
 	undescribed bool
+	// syntaxonDetails backs GET /v1/syntaxon/{id}; syntaxaByRank backs
+	// GET /v1/syntaxa, keyed by "rank|life_form_group" so a test can pin the
+	// handler's default and its group pass-through separately.
+	syntaxonDetails map[string]input.SyntaxonDetail
+	syntaxaByRank   map[string][]input.SyntaxonRef
+	syntaxaErr      error
+	// gotRank/gotLifeFormGroup record the last SyntaxaByRank call; rankCalls
+	// counts it, so a test can prove a rejected filter never reached the port.
+	gotRank          string
+	gotLifeFormGroup string
+	rankCalls        int
+	// syntaxonAreaFilter records the last filter SyntaxaByRank received, so a
+	// test can prove the parsed ?area=/?include= actually reached the port.
+	syntaxonAreaFilter input.SyntaxonAreaFilter
 }
 
-func (f *fakeQueryService) Areas(context.Context) ([]input.AreaView, error) {
+func (f *fakeQueryService) Areas(_ context.Context, scheme string) ([]input.AreaView, error) {
+	f.areaScheme = scheme
 	if f.areasErr != nil {
 		return nil, f.areasErr
 	}
@@ -956,6 +1045,37 @@ func (f *fakeQueryService) IndexInfo(context.Context) (input.IndexInfo, error) {
 	return f.indexInfo, nil
 }
 
+func (f *fakeQueryService) Syntaxon(_ context.Context, id, lang string) (input.SyntaxonDetail, error) {
+	f.lang = lang
+	if f.err != nil {
+		return input.SyntaxonDetail{}, f.err
+	}
+	detail, ok := f.syntaxonDetails[id]
+	if !ok {
+		return input.SyntaxonDetail{}, fmt.Errorf("syntaxon %q: %w", id, input.ErrNotFound)
+	}
+	return detail, nil
+}
+
+// SyntaxaByRank restates the use case's contract closely enough for the adapter
+// to be tested against it: an unknown rank is INVALID_QUERY with the allowed
+// values in the message, never an empty list.
+func (f *fakeQueryService) SyntaxaByRank(_ context.Context, rank, lifeFormGroup string,
+	filter input.SyntaxonAreaFilter) ([]input.SyntaxonRef, error) {
+	f.rankCalls++
+	f.gotRank, f.gotLifeFormGroup = rank, lifeFormGroup
+	f.syntaxonAreaFilter = filter
+	if f.syntaxaErr != nil {
+		return nil, f.syntaxaErr
+	}
+	refs, ok := f.syntaxaByRank[rank+"|"+lifeFormGroup]
+	if !ok {
+		return nil, fmt.Errorf("rank %q: the index carries alliance, class, formation, order: %w",
+			rank, input.ErrInvalidQuery)
+	}
+	return refs, nil
+}
+
 func seededQueryService() *fakeQueryService {
 	level := 3
 	priority := false
@@ -1017,10 +1137,12 @@ func seededQueryService() *fakeQueryService {
 			{ID: "eunis@2021", Scheme: "eunis", Version: "2021", Name: "EUNIS 2021", HabitatTypes: 2},
 		},
 		indexInfo: input.IndexInfo{
-			ConceptBackbones:   []string{"wcvp"},
-			SpeciesWithConcept: 2,
-			AreaScheme:         domain.SchemeWGSRPDL3,
-			AreasWithData:      3,
+			ConceptBackbones:        []string{"wcvp"},
+			SpeciesWithConcept:      2,
+			AreaScheme:              domain.SchemeWGSRPDL3,
+			AreasWithData:           3,
+			SyntaxonAreaScheme:      domain.SchemeEVCTerritory,
+			SyntaxaWithDistribution: 1,
 		},
 		searchHits: []input.SpeciesSearchHit{
 			{VerbatimName: "Fagus sylvatica", ConceptID: strPtr("wcvp:concept:83891")},
@@ -1031,6 +1153,66 @@ func seededQueryService() *fakeQueryService {
 				"eive": {VocabVersion: "1.0", Dimensions: map[string]input.DimensionSummary{
 					"M": {Mean: 6, Min: 4, Max: 8, N: 2},
 				}},
+			},
+		},
+		syntaxonDetails: map[string]input.SyntaxonDetail{
+			"C": {
+				SyntaxonRef: input.SyntaxonRef{ID: "C", Rank: "formation",
+					Name: "Vegetation of the nemoral forest zone", LifeFormGroup: "phanerogam"},
+				Ancestors: []input.SyntaxonRef{},
+				Children: []input.SyntaxonRef{
+					{ID: "CA", Rank: "class", Name: "Testklasse", ParentID: "C"},
+				},
+			},
+			"BRO-01A": {
+				SyntaxonRef: input.SyntaxonRef{ID: "BRO-01A", Rank: "alliance",
+					Name: "Bromion erecti", Author: "Koch 1926", ParentID: "CA01",
+					EEACode: "BRO-01A", Source: "evc", ParentProvenance: "official",
+					LifeFormGroup: "phanerogam"},
+				Ancestors: []input.SyntaxonRef{
+					{ID: "C", Rank: "formation", Name: "Vegetation of the nemoral forest zone"},
+					{ID: "CA", Rank: "class", Name: "Testklasse", ParentID: "C"},
+					{ID: "CA01", Rank: "order", Name: "Testordnung", ParentID: "CA"},
+				},
+				Children:               []input.SyntaxonRef{},
+				DirectHabitatTypeCount: 1,
+			},
+			// CA01B: the source checked and found no occurrence at all — the
+			// present-object-with-two-empty-lists case.
+			"CA01B": {
+				SyntaxonRef: input.SyntaxonRef{ID: "CA01B", Rank: "alliance", Name: "Testverband ohne Vorkommen"},
+				Ancestors:   []input.SyntaxonRef{},
+				Children:    []input.SyntaxonRef{},
+				Distribution: &input.SyntaxonDistribution{
+					AreaScheme: domain.SchemeEVCTerritory,
+					Verified:   []string{},
+					Uncertain:  []string{},
+				},
+			},
+			// RA01A: a bryophyte alliance the source makes no statement about
+			// at all — Distribution stays nil, and the JSON field is absent.
+			"RA01A": {
+				SyntaxonRef: input.SyntaxonRef{ID: "RA01A", Rank: "alliance", Name: "Testverband ohne Abdeckung"},
+				Ancestors:   []input.SyntaxonRef{},
+				Children:    []input.SyntaxonRef{},
+			},
+		},
+		syntaxaByRank: map[string][]input.SyntaxonRef{
+			"formation|": {{ID: "C", Rank: "formation",
+				Name: "Vegetation of the nemoral forest zone", LifeFormGroup: "phanerogam"}},
+			"formation|bryophyte_lichen": {{ID: "R", Rank: "formation",
+				Name: "Epigaeic bryophyte and lichen vegetation", LifeFormGroup: "bryophyte_lichen"}},
+			"class|": {{ID: "CA", Rank: "class", Name: "Testklasse", ParentID: "C"}},
+			// alliance| carries the ?area= JSON-shape fixture: CA01A a
+			// verified hit, RA01A a carried-but-unjudged row. The fake
+			// returns this canned answer regardless of the actual filter
+			// value — it exists to pin the wire shape, not the filter logic
+			// (which internal/application/syntaxon_distribution_test.go
+			// already covers).
+			"alliance|": {
+				{ID: "CA01A", Rank: "alliance", Name: "Verband mit Verbreitung",
+					Occurrence: domain.OccurrenceVerified},
+				{ID: "RA01A", Rank: "alliance", Name: "Verband ohne Aussage"},
 			},
 		},
 	}
@@ -1153,6 +1335,59 @@ func (f *fakeQueryService) SpeciesSetHabitatTypes(ctx context.Context, conceptID
 		out = append(out, entry)
 	}
 	return out, nil
+}
+
+// Every request made before the second scheme existed must keep its answer
+// unchanged. The default is not cosmetic: it is the compatibility promise.
+func TestAreasOhneSchemaAntwortetWieBisher(t *testing.T) {
+	q := seededQueryService()
+	srv := newTestServer(t, q)
+
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/areas", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if q.areaScheme != domain.SchemeWGSRPDL3 {
+		t.Errorf("scheme = %q, want the default %q", q.areaScheme, domain.SchemeWGSRPDL3)
+	}
+}
+
+func TestAreasMitTerritoriumsschema(t *testing.T) {
+	q := seededQueryService()
+	srv := newTestServer(t, q)
+
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/areas?scheme=evc_territory", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if q.areaScheme != domain.SchemeEVCTerritory {
+		t.Errorf("scheme = %q, want %q", q.areaScheme, domain.SchemeEVCTerritory)
+	}
+}
+
+func TestAreasMitUnbekanntemSchemaIstInvalidQuery(t *testing.T) {
+	for _, scheme := range []string{"evc-territory", "iso3166", "WGSRPD_L3"} {
+		srv := newTestServer(t, seededQueryService())
+
+		rec := httptest.NewRecorder()
+		srv.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/areas?scheme="+scheme, nil))
+
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("scheme=%q: status = %d, want 400", scheme, rec.Code)
+		}
+		body := rec.Body.String()
+		// The message lists the allowed values — never an empty list, which
+		// would look like "there are none" while meaning "you mistyped".
+		for _, want := range []string{"INVALID_QUERY", "evc_territory", "wgsrpd_l3"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("scheme=%q: response does not mention %q: %s", scheme, want, body)
+			}
+		}
+	}
 }
 
 func TestHabitatTypeSpecies_UnknownAreaIsInvalidQuery(t *testing.T) {

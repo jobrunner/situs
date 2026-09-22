@@ -22,6 +22,8 @@ decken).
 | `GET /v1/species/search?q=&limit=` | Namenssuche über die im Index geführten `verbatim_name` |
 | `GET /v1/species/{conceptId}/habitat-types` | Habitattypen einer Art (mit Rolle) |
 | `POST /v1/species/habitat-types` | Batch über Konzept-IDs (`concept_ids`) |
+| `GET /v1/syntaxa?rank=&life_form_group=&area=&include=` | Wurzeln der Syntaxa-Hierarchie; ohne `?rank=` die 25 Formationen; `?area=` filtert auf Vorkommen |
+| `GET /v1/syntaxon/{id}` | ein Syntaxon mit Ahnenpfad und direkten Kindern |
 | `GET /v1/syntaxon/{id}/habitat-types` | Habitattypen einer Pflanzengesellschaft |
 | `GET /v1/species/{conceptId}/traits?vocab=` | Zeigerwerte einer Art, optional nach Vokabular gefiltert |
 | `POST /v1/species/traits/summary` | Zeigerwertanalyse über eine Artenliste |
@@ -185,7 +187,9 @@ Build):
     "concept_backbones": ["cdm", "eurosl", "wcvp"],
     "species_with_concept": 3323,
     "area_scheme": "wgsrpd_l3",
-    "areas_with_data": 366
+    "areas_with_data": 366,
+    "syntaxon_area_scheme": "evc_territory",
+    "syntaxa_with_distribution": 1114
   }
 }
 ```
@@ -195,6 +199,15 @@ Build):
 Gebietscodes in `species_distribution` — solange kein Verbreitungs-Ingest
 gelaufen ist, steht dort `0`, und dann ist ein `?area=` mit **jedem** Code
 `INVALID_QUERY`.
+
+`area_scheme` meint weiterhin **ausschließlich** die Artverbreitung
+(`wgsrpd_l3`, fest verdrahtet — der Index kennt kein zweites Artenschema).
+Das zweite Schemapaar, `syntaxon_area_scheme` (immer `evc_territory`) und
+`syntaxa_with_distribution` (die Zahl der Verbände mit mindestens einer
+Coverage-Zeile, am Referenzlauf 2026-09-21 **1114** von 1326), gehört zur
+Syntaxa-Verbreitung und wird **nicht** in `area_scheme`/`areas_with_data`
+mitgezählt — beide Schemata bleiben getrennt gemessen, weil zwischen ihnen
+keine Abbildung existiert (siehe unten, `GET /v1/areas`).
 
 Wozu die Selbstauskunft taugt und wozu nicht: sie sagt, worauf dieser Index
 gebaut ist — auf der **Batch**-Route beantwortbar sind aber nur `wcvp:`-IDs,
@@ -246,6 +259,14 @@ Filter und keine Parameter: wer eine einzelne Typologie will, kennt danach
 ihre ID und fragt `GET /v1/habitat-type/{typology}/{code}`.
 
 ## Gebiete auflisten: `GET /v1/areas`
+
+`?scheme=` wählt zwischen den **zwei** Gebietsschemata dieses Index — Vorgabe
+`wgsrpd_l3` (die Artverbreitung, WGSRPD Level 3), daneben `evc_territory` (die
+136 Territorien der Syntaxa-Verbreitung). Ein unbekannter Wert ist
+`INVALID_QUERY`. Es gibt **keine Abbildung zwischen den Schemata**: ein
+WGSRPD-Code lässt sich nicht in einen `evc_territory`-Code übersetzen und
+umgekehrt — beide sind eigene, unverbundene Vokabulare, und die Route
+beantwortet nur das eine, das gerade angefragt wurde.
 
 Der Einstiegspunkt für `?area=`: die Gebiete, zu denen **dieser** Index
 Verbreitungsdaten hat, jedes mit seinem englischen WGSRPD-Namen, **nach
@@ -317,6 +338,117 @@ absent heißt absent.
 
 Einen eigenen Endpunkt dafür gibt es bewusst nicht: wer den Habitattyp
 abfragt, will seine Beschreibung im selben Aufruf.
+
+## Pflanzengesellschaften (`SyntaxonRef`)
+
+**Der Identifikator hat mit der Quellenumkehr gewechselt.** `syntaxon.id`
+folgt jetzt dem EVC-Primärcode (`AA01A`), nicht mehr dem EEA-EUNIS-Code
+(`PAP-01A`). Rund 1310 vormals gültige EEA-Codes stehen nicht mehr in `id`,
+sondern im Feld `eea_code`.
+
+**Beide Syntaxon-Routen nehmen die alte ID trotzdem weiterhin an.** Findet
+sich zum übergebenen Pfadsegment keine `id`, suchen sowohl
+`GET /v1/syntaxon/{id}` als auch `GET /v1/syntaxon/{id}/habitat-types`
+zusätzlich über `eea_code` — anders als zunächst dokumentiert bleibt eine
+gespeicherte alte EEA-ID also nutzbar, ohne dass ein Client sie selbst
+nachschlagen müsste. `GET /v1/syntaxon/{id}/habitat-types` sucht dabei die
+Habitattyp-Kanten der über `eea_code` **aufgelösten** ID, nicht der alten —
+wer die Kanten unter der ehemaligen `PAP-01A` abfragt, bekommt dieselbe
+Antwort wie unter der aktuellen `AA01A`. Eine ID-Zeile hat immer Vorrang, ohne
+dass es dafür eine Vorrangregel bräuchte. Der Fallback ist eindeutig (gemessen:
+kein `eea_code` kollidiert mit einer fremden `id`, kein `eea_code` ist doppelt
+vergeben) — und das bleibt er auch dann, wenn ein Index diese Eigenschaft
+verletzt: Der Ingest bricht bei doppeltem `eea_code` ab, und trägt ein anders
+gebauter oder älterer Index den Code doch doppelt, antwortet die Route
+`INTERNAL_ERROR` statt eines geratenen Syntaxons. Der leere Code trifft nie.
+
+Jede Syntaxon-Referenz — im `syntaxa`-Feld von `GET /v1/habitat-type/{typology}/{code}`
+ebenso wie in der Antwort von `GET /v1/syntaxon/{id}/habitat-types` — trägt seit
+der Syntaxa-Quellenumkehr (FloraVeg.EU als Primärquelle) vier zusätzliche
+Felder:
+
+```json
+{
+  "id": "CA01A",
+  "rank": "alliance",
+  "name": "Arrhenatherion",
+  "author": "Koch 1926",
+  "parent_id": "CA01",
+  "eea_code": "TST-01A",
+  "source": "evc",
+  "parent_provenance": "official",
+  "life_form_group": "phanerogam"
+}
+```
+
+| Feld | Bedeutung |
+|---|---|
+| `eea_code` | der EEA-EUNIS-Code desselben Syntaxons; fehlt bei Formationen und bei Einheiten, die nur eine der beiden Quellen kennt |
+| `source` | welche Quelle diese Zeile führt: `evc` (EuroVegChecklist) oder `eunis` (nur die EEA-EUNIS-Zuordnung kennt sie) |
+| `parent_provenance` | ob `parent_id` aus der Quelle selbst stammt (`official`) oder aus dem Geschwisterkonsens abgeleitet wurde (`derived`) |
+| `life_form_group` | die Lebensform-Gruppe (`phanerogam`, `bryophyte_lichen`, `algae`); nur auf Formationszeilen gesetzt |
+
+`rank` führt jetzt vier statt zwei Werte: `formation` (die Wurzel — die 25
+EuroVegChecklist-Sektionen A–Y) und `class` sind neu hinzugekommen, `order`
+und `alliance` gab es schon. Jede Nicht-Formations-Zeile hat einen `parent_id`,
+der in höchstens drei Schritten eine Formation erreicht — der Ingest bricht
+ab, wenn eine Zeile das nicht schafft (siehe `CLAUDE.md`, Invariants).
+
+### Die Hierarchie durchlaufen: `GET /v1/syntaxa` und `GET /v1/syntaxon/{id}`
+
+`GET /v1/syntaxa?rank=&life_form_group=` ist der Einstiegspunkt: ohne
+Parameter sind es die 25 Formationen, nicht alle 1882 Zeilen. `?rank=` fragt
+einen anderen Rang ab (`alliance`, `class`, `formation`, `order` — die
+tatsächlich erlaubten Werte liest der Dienst aus dem Index, nicht aus einer
+fest verdrahteten Liste); `?life_form_group=` filtert zusätzlich über die
+Formation, zu der ein Syntaxon gehört (feste Wertemenge, s.o.). Ein
+unbekannter Wert bei beiden Parametern ist `INVALID_QUERY`, und die Meldung
+nennt die erlaubten Werte. Die Antwort trägt `SyntaxonRef`.
+
+`?area=` filtert zusätzlich auf Vorkommen in einem Territorium des Schemas
+`evc_territory` (Liste: `GET /v1/areas?scheme=evc_territory`). `?include=`
+steuert dabei, welche Vorkommens-Werte als Treffer zählen — eine kommagetrennte
+Menge aus `verified` und `uncertain`, Vorgabe `verified`. Syntaxa, über die die
+Quelle **nichts** sagt (kein Coverage-Eintrag), bleiben in der Liste — dieselbe
+Regel wie bei `only_in_area` auf der Arten-Seite: eine Liste, die wegwirft, was
+sie nicht beurteilen kann, ist unehrlich sauber. Ein solcher Treffer trägt
+kein `occurrence`-Feld; ein Treffer, der auf `?include=` passt, trägt
+`occurrence: verified` oder `occurrence: uncertain`. Ein Syntaxon, das die
+Quelle geprüft hat, aber ohne die gefragte Ausprägung, fällt aus der Liste —
+das ist eine definitive Aussage, keine Unwissenheit.
+
+Sechs Kombinationen sind `INVALID_QUERY`: `?include=` ohne `?area=` (wäre
+wirkungslos), ein unbekannter oder leerer Wert in `?include=`, ein doppelt
+angegebener `?include=`-Parameter, `?area=` mit einem Rang ohne Verbreitungsdaten
+— das sind `formation` (der Vorgabe-Rang), `class` und `order`, denn
+`syntaxon_distribution` und `syntaxon_distribution_coverage` tragen
+ausschließlich `alliance`-Zeilen — und ein `?area=`-Code, den das Schema
+nicht kennt (nie eine leere Liste von „kommt nicht vor").
+
+`GET /v1/syntaxon/{id}` liefert ein einzelnes Syntaxon als `SyntaxonDetail`
+— `SyntaxonRef` eingebettet (die Felder liegen also flach im selben
+JSON-Objekt) plus `ancestors` (Weg zur Wurzel, äußerste zuerst), `children`
+(direkte Kinder, nach `id` sortiert) und `direct_habitat_type_count` (nur die
+Habitattypen, die genau dieses Syntaxon verlinken, nicht seine Nachkommen).
+`ancestors` und `children` stehen immer im JSON, auch leer — eine Formation
+ohne Ahnen und ein Verband ohne Kinder sind der Normalfall, kein Fehler. Eine
+unbekannte oder leere `{id}` ist `NOT_FOUND`, nie `INVALID_QUERY`: ein
+Pfadsegment ist keine Query. Eine baumelnde `parent_id` — der Index verweist
+auf eine Zeile, die es nicht gibt — ist `INTERNAL_ERROR`, kein `404`: das ist
+ein Indexdefekt, nicht eine unbekannte Anfrage. `?lang=` wird angenommen, aber
+deutsche Syntaxa-Namen sind eine eigene Runde — bis dahin antworten die Namen
+englisch.
+
+`SyntaxonDetail` trägt außerdem `distribution` — die Verbreitungsaussage der
+Quelle (Preislerová et al., Schema `evc_territory`) mit sortierten
+`verified`- und `uncertain`-Codelisten. Das Feld hat `omitempty` und **fehlt
+ganz**, wenn für dieses Syntaxon keine Coverage-Zeile vorliegt: dann ist
+nichts über sein Vorkommen bekannt. Zwei leere Listen dagegen bedeuten
+„geprüft, kommt in keinem Territorium vor" — eine andere Aussage als das
+fehlende Feld. Gemessen fehlt `distribution` bei 212 von 1326 Verbänden,
+darunter jedem Moos-, Flechten- und Algenverband, weil die Quelle nur
+Gefäßpflanzen-Vegetation abdeckt. Abwesenheit wird nie aufgezählt: der Client
+kennt die 136 Codes des Schemas aus `GET /v1/areas?scheme=evc_territory`.
 
 ## Die zwei Arten-Pfade
 
@@ -525,3 +657,8 @@ die Zahlen zu cachen. Für eine Route, die ein Client einmal beim Start ruft, is
 das richtig — ein Cache würde aus einer gemessenen Zahl eine behauptete machen,
 und ein Index kann sich unter dem laufenden Prozess ändern. Wer die Route in
 eine Schleife legt, sollte wissen, was sie kostet.
+
+`GET /v1/syntaxon/{id}` braucht bis zu vier Primärschlüsselabfragen für den
+Ahnenpfad (eine je Ebene, maximal `maxSyntaxonAncestors` plus die Zeile selbst)
+und liest die Kinder über `idx_syntaxon_parent` — kein Full-Table-Scan in
+keinem der beiden Fälle.

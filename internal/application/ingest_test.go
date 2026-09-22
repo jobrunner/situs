@@ -39,11 +39,33 @@ func seedDir(t *testing.T) string {
 	writeCSV(t, dir, "crosswalks.csv",
 		"from_typology,from_code,to_typology,to_code,qualifier\n"+
 			"eunis@2021,R22,annex1,6510,=\n")
-	writeCSV(t, dir, "syntaxa.csv",
-		"id,rank,name,parent_id\nARR,alliance,Arrhenatherion elatioris,MOL\n")
-	writeCSV(t, dir, "habitat_type_syntaxa.csv",
-		"typology_id,code,syntaxon_id\neunis@2021,R22,ARR\n")
 	return dir
+}
+
+// The syntaxa CSVs are still present in the pipeline's output directory
+// (other tools read them), but writing vegetation units and their edges is
+// IngestSyntaxa's job now (Task 5-7) — IngestCSV must leave them alone.
+func TestIngestCSVSchreibtKeineSyntaxaMehr(t *testing.T) {
+	repo := newFakeRepo()
+	dir := t.TempDir()
+	writeCSV(t, dir, "typologies.csv", "id,scheme,version,name,source_ref\neunis@2021,eunis,2021,EUNIS,\n")
+	writeCSV(t, dir, "habitat_types.csv",
+		"typology_id,code,level,name_en,parent_code,priority\neunis@2021,T1,1,Wald,,\n")
+	writeCSV(t, dir, "crosswalks.csv",
+		"from_typology,from_code,to_typology,to_code,qualifier\n")
+	// The files are present but must no longer be read by IngestCSV.
+	writeCSV(t, dir, "syntaxa.csv", "id,rank,name,parent_id\nX-01A,alliance,Darf nicht rein,\n")
+	writeCSV(t, dir, "habitat_type_syntaxa.csv", "typology_id,code,syntaxon_id\neunis@2021,T1,X-01A\n")
+
+	if _, err := IngestCSV(context.Background(), repo, dir); err != nil {
+		t.Fatalf("IngestCSV: %v", err)
+	}
+	if repo.has("X-01A") {
+		t.Error("IngestCSV hat ein Syntaxon geschrieben")
+	}
+	if len(repo.syntaxaLinks) != 0 {
+		t.Errorf("IngestCSV hat %d Kanten geschrieben", len(repo.syntaxaLinks))
+	}
 }
 
 func TestIngestCSV_LoadsEverySource(t *testing.T) {
@@ -55,11 +77,8 @@ func TestIngestCSV_LoadsEverySource(t *testing.T) {
 	if rep.HabitatTypes != 2 {
 		t.Errorf("HabitatTypes = %d, want 2", rep.HabitatTypes)
 	}
-	if rep.Crosswalks != 1 || rep.SyntaxonLinks != 1 {
-		t.Errorf("Crosswalks/SyntaxonLinks = %d/%d, want 1/1", rep.Crosswalks, rep.SyntaxonLinks)
-	}
-	if rep.Syntaxa != 1 {
-		t.Errorf("Syntaxa = %d, want 1", rep.Syntaxa)
+	if rep.Crosswalks != 1 {
+		t.Errorf("Crosswalks = %d, want 1", rep.Crosswalks)
 	}
 	if !repo.committed {
 		t.Error("ingest did not commit")
@@ -181,8 +200,8 @@ func TestIngestCSV_SkipWarningNamesFileAndLine(t *testing.T) {
 
 func TestIngestCSV_MissingFileFails(t *testing.T) {
 	dir := seedDir(t)
-	if err := os.Remove(filepath.Join(dir, "syntaxa.csv")); err != nil {
-		t.Fatalf("removing syntaxa.csv: %v", err)
+	if err := os.Remove(filepath.Join(dir, "crosswalks.csv")); err != nil {
+		t.Fatalf("removing crosswalks.csv: %v", err)
 	}
 
 	repo := newFakeRepo()
@@ -267,24 +286,6 @@ func TestIngestCSV_SkipsMalformedLevelAndPriority(t *testing.T) {
 	}
 }
 
-func TestIngestCSV_SkipsMalformedSyntaxonLinkTypology(t *testing.T) {
-	dir := seedDir(t)
-	writeCSV(t, dir, "habitat_type_syntaxa.csv",
-		"typology_id,code,syntaxon_id\neunis@2021,R22,ARR\n,R99,ARR\n")
-
-	repo := newFakeRepo()
-	rep, err := IngestCSV(context.Background(), repo, dir)
-	if err != nil {
-		t.Fatalf("IngestCSV: %v", err)
-	}
-	if rep.SyntaxonLinks != 1 {
-		t.Errorf("SyntaxonLinks = %d, want 1", rep.SyntaxonLinks)
-	}
-	if rep.SkippedRows != 1 {
-		t.Errorf("SkippedRows = %d, want 1 (empty typology id)", rep.SkippedRows)
-	}
-}
-
 func TestIngestCSV_RepositoryErrorRollsBackAndReturnsTheError(t *testing.T) {
 	repo := newFakeRepo()
 	repo.failOn = "UpsertHabitatType"
@@ -342,18 +343,18 @@ func TestIngestCSV_MissingDirectoryFails(t *testing.T) {
 
 func TestIngestCSV_EmptyFileFailsOnTheHeader(t *testing.T) {
 	dir := seedDir(t)
-	writeCSV(t, dir, "syntaxa.csv", "")
+	writeCSV(t, dir, "crosswalks.csv", "")
 
 	repo := newFakeRepo()
 	if _, err := IngestCSV(context.Background(), repo, dir); err == nil {
-		t.Fatal("IngestCSV(empty syntaxa.csv) = nil error, want an error")
+		t.Fatal("IngestCSV(empty crosswalks.csv) = nil error, want an error")
 	}
 }
 
 func TestIngestCSV_MalformedCSVSyntaxFails(t *testing.T) {
 	dir := seedDir(t)
-	writeCSV(t, dir, "syntaxa.csv",
-		"id,rank,name,parent_id\nARR,alliance,\"unterminated,MOL\n")
+	writeCSV(t, dir, "crosswalks.csv",
+		"from_typology,from_code,to_typology,to_code,qualifier\neunis@2021,R22,\"unterminated,6510,=\n")
 
 	repo := newFakeRepo()
 	if _, err := IngestCSV(context.Background(), repo, dir); err == nil {
@@ -411,7 +412,7 @@ func TestIngestCSV_SkipsMalformedCrosswalkTypologies(t *testing.T) {
 }
 
 func TestIngestCSV_RepositoryErrorPerEntity(t *testing.T) {
-	for _, failOn := range []string{"UpsertTypology", "UpsertHabitatType", "UpsertCrosswalk", "UpsertSyntaxon", "LinkSyntaxon"} {
+	for _, failOn := range []string{"UpsertTypology", "UpsertHabitatType", "UpsertCrosswalk"} {
 		t.Run(failOn, func(t *testing.T) {
 			repo := newFakeRepo()
 			repo.failOn = failOn
@@ -441,9 +442,6 @@ type fakeRepo struct {
 		key        domain.HabitatTypeKey
 		syntaxonID string
 	}
-	authorUpdates []struct {
-		id, name, author, parentID string
-	}
 	allSyntaxaErr error
 	speciesRoles  []domain.SpeciesRole
 	speciesNames  []domain.SpeciesName
@@ -469,8 +467,12 @@ type fakeRepo struct {
 	crosswalksErr   error
 	speciesRolesErr error
 	syntaxonErr     error
-	syntaxaErr      error
-	syntaxonKeysErr error
+	// syntaxonByEEACodeErr fails only SyntaxonByEEACode, exercising
+	// syntaxonByIDOrEEACode's fallback-lookup error path independently of
+	// syntaxonErr, which fails the primary Syntaxon lookup instead.
+	syntaxonByEEACodeErr error
+	syntaxaErr           error
+	syntaxonKeysErr      error
 	// localizationErr fails every Localization call; localizationErrOnCall,
 	// if non-zero, instead fails only the n-th call (1-indexed) — needed to
 	// exercise DeriveGermanLabels' second Localization lookup (the Annex I
@@ -481,6 +483,11 @@ type fakeRepo struct {
 	// failOn names an Upsert*/LinkSyntaxon method that should fail once
 	// called, to exercise the rollback path.
 	failOn string
+	// failOnSyntaxonID narrows failOn = "UpsertSyntaxon" to a single id, so a
+	// test can reach a later write step: the formations are written first and
+	// are no longer allowed to be empty, so an unscoped failure would always
+	// land on the first formation.
+	failOnSyntaxonID string
 	// areasErr fails AreasForConcepts and KnownAreaCodes.
 	areasErr error
 	// conceptIDsErr fails ConceptIDs, exercising IngestDistribution's error path.
@@ -495,6 +502,44 @@ type fakeRepo struct {
 	// descriptionErr fails Description, exercising the detail route's
 	// description error path.
 	descriptionErr error
+	// The navigation failures (subproject B): each fails exactly one of the
+	// new reads, so a use-case test can pin that the failure surfaces.
+	syntaxonChildrenErr  error
+	syntaxonAncestorsErr error
+	habitatTypeCountErr  error
+	syntaxaByRankErr     error
+	syntaxonRanksErr     error
+	// syntaxonDistributionErr fails the read-side SyntaxonDistribution call
+	// (subproject C, Task 8), exercising Syntaxon's distribution error path.
+	syntaxonDistributionErr error
+	// syntaxonOccurrencesInAreaErr and syntaxaWithCoverageErr fail the two
+	// reads SyntaxaByRank's ?area= filter needs (subproject C, Task 9),
+	// exercising syntaxonAreaLookup's two remaining error paths (KnownAreaCodes'
+	// is exercised through areasErr already).
+	syntaxonOccurrencesInAreaErr error
+	syntaxaWithCoverageErr       error
+
+	// syntaxonDistribution and syntaxonCoverage back the syntaxa-distribution
+	// read/write pair (subproject C): recorded separately from distribution
+	// (species) since the two never share a row.
+	syntaxonDistribution []fakeSyntaxonOccurrence
+	syntaxonCoverage     []fakeSyntaxonCoverage
+
+	// knownAreaCodes overrides KnownAreaCodes for one scheme, so a test can
+	// seed the evc_territory vocabulary without also faking a full
+	// species-distribution fixture (which is what the fallback below derives
+	// wgsrpd_l3 codes from).
+	knownAreaCodes map[string][]string
+}
+
+// fakeSyntaxonOccurrence is one recorded UpsertSyntaxonDistribution call.
+type fakeSyntaxonOccurrence struct {
+	SyntaxonID, Scheme, Code, Occurrence string
+}
+
+// fakeSyntaxonCoverage is one recorded UpsertSyntaxonDistributionCoverage call.
+type fakeSyntaxonCoverage struct {
+	SyntaxonID, Scheme string
 }
 
 // fakeDistribution is one recorded UpsertDistribution call.
@@ -617,31 +662,108 @@ func (r *fakeRepo) UpsertCrosswalk(c domain.Crosswalk) error {
 }
 
 func (r *fakeRepo) UpsertSyntaxon(s domain.Syntaxon) error {
-	if err := r.failIfNamed("UpsertSyntaxon"); err != nil {
-		return err
+	if r.failOnSyntaxonID == "" || r.failOnSyntaxonID == s.ID {
+		if err := r.failIfNamed("UpsertSyntaxon"); err != nil {
+			return err
+		}
 	}
 	r.syntaxa = append(r.syntaxa, s)
 	return nil
 }
 
-func (r *fakeRepo) UpsertSyntaxonAuthor(id, name, author, parentID string) error {
-	if err := r.failIfNamed("UpsertSyntaxonAuthor"); err != nil {
+// SetSyntaxonParent mirrors the sqlite adapter: an id the index does not
+// carry is an error, not a silent no-op, so a test seeding the wrong id
+// fails loudly instead of Task 7 checking a no-op that looked like success.
+func (r *fakeRepo) SetSyntaxonParent(id, parentID, provenance string) error {
+	if err := r.failIfNamed("SetSyntaxonParent"); err != nil {
 		return err
 	}
-	r.authorUpdates = append(r.authorUpdates, struct{ id, name, author, parentID string }{id, name, author, parentID})
 	for i := range r.syntaxa {
 		if r.syntaxa[i].ID == id {
-			r.syntaxa[i].Name = name
-			r.syntaxa[i].Author = author
-			if parentID != "" {
-				r.syntaxa[i].ParentID = parentID
-			}
+			r.syntaxa[i].ParentID = parentID
+			r.syntaxa[i].ParentProvenance = provenance
 			return nil
 		}
 	}
-	// Mirrors the sqlite adapter: an id the index does not carry is an error,
-	// not a silent no-op — a test seeding the wrong id must fail loudly.
-	return fmt.Errorf("fakeRepo: syntaxon %s not found for author update", id)
+	return fmt.Errorf("fakeRepo: kein Syntaxon %q", id)
+}
+
+// ClearSyntaxa empties both tables, mirroring the sqlite adapter: every
+// syntaxon and every habitat_type_syntaxon edge is dropped before the run's
+// own writes begin.
+func (r *fakeRepo) ClearSyntaxa() error {
+	if err := r.failIfNamed("ClearSyntaxa"); err != nil {
+		return err
+	}
+	r.syntaxa = nil
+	r.syntaxaLinks = nil
+	return nil
+}
+
+// ClearSyntaxonDistribution empties both distribution tables, mirroring the
+// sqlite adapter: the pinned artifact is the complete truth about them, and a
+// stale coverage row would read as "checked, occurs nowhere".
+func (r *fakeRepo) ClearSyntaxonDistribution() error {
+	if err := r.failIfNamed("ClearSyntaxonDistribution"); err != nil {
+		return err
+	}
+	r.syntaxonDistribution = nil
+	r.syntaxonCoverage = nil
+	return nil
+}
+
+// syntaxonByID is a test helper returning the zero value when id is unknown
+// — callers assert on the fields they care about, which fail loudly enough.
+func (r *fakeRepo) syntaxonByID(id string) domain.Syntaxon {
+	for _, s := range r.syntaxa {
+		if s.ID == id {
+			return s
+		}
+	}
+	return domain.Syntaxon{}
+}
+
+// linkTargets is a test helper returning the syntaxon ids linked to
+// (typology, code), in insertion order.
+func (r *fakeRepo) linkTargets(typology, code string) []string {
+	var out []string
+	for _, l := range r.syntaxaLinks {
+		if string(l.key.Typology) == typology && l.key.Code == code {
+			out = append(out, l.syntaxonID)
+		}
+	}
+	return out
+}
+
+// area returns the named area matching scheme and code, or the zero value if
+// none was written — callers assert on the fields they care about.
+func (r *fakeRepo) area(scheme, code string) domain.NamedArea {
+	for _, a := range r.areas {
+		if a.Scheme == scheme && a.Code == code {
+			return a
+		}
+	}
+	return domain.NamedArea{}
+}
+
+// hasArea reports whether (scheme, code) was written to the fake index.
+func (r *fakeRepo) hasArea(scheme, code string) bool {
+	for _, a := range r.areas {
+		if a.Scheme == scheme && a.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
+// has reports whether id was written to the fake index.
+func (r *fakeRepo) has(id string) bool {
+	for _, s := range r.syntaxa {
+		if s.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *fakeRepo) AllSyntaxa(_ context.Context) ([]domain.Syntaxon, error) {
@@ -877,12 +999,109 @@ func (r *fakeRepo) KnownAreaCodes(_ context.Context, scheme string) ([]string, e
 	if r.areasErr != nil {
 		return nil, r.areasErr
 	}
+	if codes, ok := r.knownAreaCodes[scheme]; ok {
+		return codes, nil
+	}
 	seen := map[string]bool{}
 	out := []string{}
 	for _, d := range r.distribution {
 		if d.Area.Scheme == scheme && !seen[d.Area.Code] {
 			seen[d.Area.Code] = true
 			out = append(out, d.Area.Code)
+		}
+	}
+	return out, nil
+}
+
+// UpsertSyntaxonDistribution mirrors the sqlite adapter's idempotency: a
+// repeated call for the same (syntaxonID, scheme, code) overwrites the
+// occurrence rather than appending a second row.
+func (r *fakeRepo) UpsertSyntaxonDistribution(syntaxonID, scheme, code, occurrence string) error {
+	if err := r.failIfNamed("UpsertSyntaxonDistribution"); err != nil {
+		return err
+	}
+	for i, o := range r.syntaxonDistribution {
+		if o.SyntaxonID == syntaxonID && o.Scheme == scheme && o.Code == code {
+			r.syntaxonDistribution[i].Occurrence = occurrence
+			return nil
+		}
+	}
+	r.syntaxonDistribution = append(r.syntaxonDistribution, fakeSyntaxonOccurrence{
+		SyntaxonID: syntaxonID, Scheme: scheme, Code: code, Occurrence: occurrence,
+	})
+	return nil
+}
+
+// UpsertSyntaxonDistributionCoverage is idempotent: a second call for the same
+// (syntaxonID, scheme) must not duplicate the coverage row.
+func (r *fakeRepo) UpsertSyntaxonDistributionCoverage(syntaxonID, scheme string) error {
+	if err := r.failIfNamed("UpsertSyntaxonDistributionCoverage"); err != nil {
+		return err
+	}
+	for _, c := range r.syntaxonCoverage {
+		if c.SyntaxonID == syntaxonID && c.Scheme == scheme {
+			return nil
+		}
+	}
+	r.syntaxonCoverage = append(r.syntaxonCoverage, fakeSyntaxonCoverage{SyntaxonID: syntaxonID, Scheme: scheme})
+	return nil
+}
+
+// SyntaxonDistribution mirrors the sqlite adapter's contract: Covered false
+// with both lists empty when no coverage row was ever written, distinct from
+// Covered true with empty lists (the source stated coverage but no occurrence).
+func (r *fakeRepo) SyntaxonDistribution(_ context.Context, syntaxonID, scheme string) (domain.SyntaxonDistribution, error) {
+	if r.syntaxonDistributionErr != nil {
+		return domain.SyntaxonDistribution{}, r.syntaxonDistributionErr
+	}
+	out := domain.SyntaxonDistribution{Scheme: scheme}
+	for _, c := range r.syntaxonCoverage {
+		if c.SyntaxonID == syntaxonID && c.Scheme == scheme {
+			out.Covered = true
+			break
+		}
+	}
+	for _, o := range r.syntaxonDistribution {
+		if o.SyntaxonID != syntaxonID || o.Scheme != scheme {
+			continue
+		}
+		switch o.Occurrence {
+		case domain.OccurrenceVerified:
+			out.Verified = append(out.Verified, o.Code)
+		case domain.OccurrenceUncertain:
+			out.Uncertain = append(out.Uncertain, o.Code)
+		}
+	}
+	sort.Strings(out.Verified)
+	sort.Strings(out.Uncertain)
+	return out, nil
+}
+
+// SyntaxonOccurrencesInArea maps syntaxon id -> occurrence for one area,
+// mirroring the sqlite adapter.
+func (r *fakeRepo) SyntaxonOccurrencesInArea(_ context.Context, scheme, code string) (map[string]string, error) {
+	if r.syntaxonOccurrencesInAreaErr != nil {
+		return nil, r.syntaxonOccurrencesInAreaErr
+	}
+	out := map[string]string{}
+	for _, o := range r.syntaxonDistribution {
+		if o.Scheme == scheme && o.Code == code {
+			out[o.SyntaxonID] = o.Occurrence
+		}
+	}
+	return out, nil
+}
+
+// SyntaxaWithCoverage returns the set of syntaxa the source makes a statement
+// about, for one scheme.
+func (r *fakeRepo) SyntaxaWithCoverage(_ context.Context, scheme string) (map[string]bool, error) {
+	if r.syntaxaWithCoverageErr != nil {
+		return nil, r.syntaxaWithCoverageErr
+	}
+	out := map[string]bool{}
+	for _, c := range r.syntaxonCoverage {
+		if c.Scheme == scheme {
+			out[c.SyntaxonID] = true
 		}
 	}
 	return out, nil

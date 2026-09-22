@@ -9,13 +9,17 @@ import (
 	"github.com/jobrunner/situs/internal/ports/input"
 )
 
-// Areas lists the areas the ?area= filter can actually answer, each with its
-// ingested name. It is the discovery entry point for that filter, the same
-// role Typologies plays for (typology, code) addressing.
-func (q *QueryService) Areas(ctx context.Context) ([]input.AreaView, error) {
-	areas, err := q.repo.AreasWithData(ctx, domain.SchemeWGSRPDL3)
+// Areas lists the areas of one scheme the ?area= filter can actually answer,
+// each with its ingested name. It is the discovery entry point for that
+// filter, the same role Typologies plays for (typology, code) addressing.
+//
+// The scheme is validated at the HTTP boundary, not here: it is a query
+// parameter, and rejecting a typo with the list of allowed values is the
+// handler's job — the same place ?rank= and ?include= are checked.
+func (q *QueryService) Areas(ctx context.Context, scheme string) ([]input.AreaView, error) {
+	areas, err := q.repo.AreasWithData(ctx, scheme)
 	if err != nil {
-		return nil, fmt.Errorf("listing areas: %w", err)
+		return nil, fmt.Errorf("listing areas of scheme %q: %w", scheme, err)
 	}
 	out := make([]input.AreaView, 0, len(areas))
 	for _, a := range areas {

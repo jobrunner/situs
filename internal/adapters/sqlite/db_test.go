@@ -147,3 +147,55 @@ func TestMigrateTwiceOnTheSameFileDoesNotFail(t *testing.T) {
 		t.Fatalf("second Migrate = %v, want the already-present columns to be a no-op", err)
 	}
 }
+
+func TestMigrateFuegtSyntaxonSpaltenHinzu(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "old.sqlite")
+	db, err := sqlite.OpenForIngest(ctx, path)
+	if err != nil {
+		t.Fatalf("OpenForIngest: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	// An index that does not yet have the four columns: create it fresh
+	// without them.
+	if _, err := db.ExecContext(ctx, `DROP TABLE syntaxon`); err != nil {
+		t.Fatalf("DROP: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`CREATE TABLE syntaxon (id TEXT PRIMARY KEY, rank TEXT NOT NULL, name TEXT NOT NULL,
+		 author TEXT NOT NULL DEFAULT '', parent_id TEXT NOT NULL DEFAULT '')`); err != nil {
+		t.Fatalf("CREATE: %v", err)
+	}
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	for _, col := range []string{"eea_code", "source", "parent_provenance", "life_form_group"} {
+		var n int
+		row := db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM pragma_table_info('syntaxon') WHERE name = ?`, col)
+		if err := row.Scan(&n); err != nil {
+			t.Fatalf("pragma_table_info(%s): %v", col, err)
+		}
+		if n != 1 {
+			t.Errorf("Spalte %s fehlt nach Migrate", col)
+		}
+	}
+}
+
+func TestMigrateIstIdempotentFuerSyntaxon(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "twice.sqlite")
+	db, err := sqlite.OpenForIngest(ctx, path)
+	if err != nil {
+		t.Fatalf("OpenForIngest: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	for i := range 2 {
+		if err := db.Migrate(ctx); err != nil {
+			t.Fatalf("Migrate Durchlauf %d: %v", i+1, err)
+		}
+	}
+}

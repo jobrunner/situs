@@ -45,7 +45,7 @@ func (c *Client) areasOf(ctx context.Context, conceptID string) ([]domain.Area, 
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("calling hostus %s: %w: %w", endpoint, output.ErrResolverUnavailable, err)
+		return nil, transportError(ctx, endpoint, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 

@@ -33,7 +33,32 @@ const (
 	// stubModeQueryErr fails every query outright, which is how a statement
 	// that cannot even be prepared reaches its caller.
 	stubModeQueryErr
+	// stubModeFirstSyntaxonLookupThenFails answers the first direct-id
+	// syntaxon lookup (SyntaxonAncestors' own starting point) with one row
+	// carrying a non-empty parent_id, then fails every further one with a
+	// plain query error. It is the deterministic way to reach
+	// SyntaxonAncestors' inner-walk failure branch — the outer lookup must
+	// succeed and a later one must fail, without racing a context
+	// cancellation against real row timing (see the file comment above).
+	stubModeFirstSyntaxonLookupThenFails
+	// stubModeSyntaxonDistributionRowsErr answers SyntaxonDistribution's
+	// coverage check with zero rows (a clean "not covered") and then fails
+	// the distribution-rows query's row iteration — the two queries are not
+	// distinguishable by text alone under a mode that fails every query, so
+	// this follows the stubModeFirstSyntaxonLookupThenFails pattern instead.
+	stubModeSyntaxonDistributionRowsErr
+	// stubModeSyntaxonDistributionScanErr is the same, but the
+	// distribution-rows query yields one row a string destination cannot
+	// scan.
+	stubModeSyntaxonDistributionScanErr
 )
+
+// isSyntaxonDistributionMode reports whether mode is one of the two above,
+// which both need the coverage query answered cleanly before failing the
+// distribution-rows query that follows it.
+func isSyntaxonDistributionMode(mode stubMode) bool {
+	return mode == stubModeSyntaxonDistributionRowsErr || mode == stubModeSyntaxonDistributionScanErr
+}
 
 // newStubDB builds a *sql.DB backed by the stub driver — no schema, no file,
 // just enough of the driver.Conn/driver.Rows contract for one QueryContext
@@ -60,7 +85,13 @@ func (stubDriver) Open(string) (driver.Conn, error) {
 	return nil, errors.New("stub: Open is not implemented, use the Connector")
 }
 
-type stubConn struct{ mode stubMode }
+type stubConn struct {
+	mode stubMode
+	// syntaxonLookups counts direct-id syntaxon lookups, used only by
+	// stubModeFirstSyntaxonLookupThenFails to tell the outer call from the
+	// ones the ancestor walk makes afterward.
+	syntaxonLookups int
+}
 
 func (c *stubConn) Prepare(string) (driver.Stmt, error) {
 	return nil, errors.New("stub: Prepare is not implemented, QueryContext is used directly")
@@ -70,6 +101,50 @@ func (c *stubConn) Begin() (driver.Tx, error) {
 	return nil, errors.New("stub: Begin is not implemented")
 }
 
+// stubQueryRule maps a substring found in a query's text to the column set a
+// stubRows answering it must carry — the table stubColumnRules below is
+// checked in order, first match wins.
+type stubQueryRule struct {
+	contains string
+	cols     []string
+}
+
+var stubColumnRules = []stubQueryRule{
+	{"LEFT JOIN area", []string{"area_code", "name_en"}},
+	{"habitat_type_crosswalk", []string{"from_typology", "from_code", "to_typology", "to_code", "qualifier"}},
+	{"FROM localization", []string{"value", "source", "provenance", "derived_from"}},
+	{"FROM species_role WHERE concept_id", []string{
+		"typology_id", "code", "concept_id", "verbatim_name", "role", "fidelity", "constancy",
+	}},
+	{"FROM species_role", []string{"concept_id", "verbatim_name", "role", "fidelity", "constancy"}},
+	{"JOIN syntaxon", []string{"id", "rank", "name", "author", "parent_id"}},
+	{"WHERE parent_id = ?", []string{
+		"id", "rank", "name", "author", "parent_id", "eea_code", "source", "parent_provenance", "life_form_group",
+	}},
+	// "WHERE rank = ?" is SyntaxaByRank's unfiltered statement; the group-filtered
+	// recursive CTE already matches the "JOIN syntaxon" rule above, and its final
+	// SELECT reads "WHERE s.rank = ?" — a different string, no collision.
+	{"WHERE rank = ?", []string{
+		"id", "rank", "name", "author", "parent_id", "eea_code", "source", "parent_provenance", "life_form_group",
+	}},
+	{"DISTINCT rank FROM syntaxon", []string{"rank"}},
+	{"WHERE eea_code = ?", []string{
+		"id", "rank", "name", "author", "parent_id", "eea_code", "source", "parent_provenance", "life_form_group",
+	}},
+	{"FROM syntaxon ORDER BY id", []string{"id", "rank", "name", "author", "parent_id"}},
+	{"eea_code, id FROM syntaxon", []string{"eea_code", "id"}},
+	{"FROM habitat_type_syntaxon", []string{"typology_id", "code"}},
+	{"concept_id, area_code FROM species_distribution", []string{"concept_id", "area_code"}},
+	{"DISTINCT area_code FROM species_distribution", []string{"area_code"}},
+	{"1 FROM syntaxon_distribution_coverage", []string{"1"}},
+	{"syntaxon_id FROM syntaxon_distribution_coverage", []string{"syntaxon_id"}},
+	{"syntaxon_id, occurrence FROM syntaxon_distribution", []string{"syntaxon_id", "occurrence"}},
+	{"area_code, occurrence FROM syntaxon_distribution", []string{"area_code", "occurrence"}},
+	{"DISTINCT area_code FROM syntaxon_distribution", []string{"area_code"}},
+	{"FROM trait_value", []string{"vocab", "vocab_version", "dim", "value", "niche_width", "n_systems"}},
+	{"DISTINCT vocab FROM trait_vocabulary", []string{"vocab"}},
+}
+
 // QueryContext picks the column set by matching the table name in the query
 // text — every list read queries one table (or one join), so this is enough to
 // serve them all without needing a real SQL engine.
@@ -77,37 +152,53 @@ func (c *stubConn) QueryContext(_ context.Context, query string, _ []driver.Name
 	if rows, err := c.openTimeRows(query); rows != nil || err != nil {
 		return rows, err
 	}
-	switch {
-	case strings.Contains(query, "LEFT JOIN area"):
-		return &stubRows{cols: []string{"area_code", "name_en"}, mode: c.mode}, nil
-	case strings.Contains(query, "habitat_type_crosswalk"):
-		return &stubRows{cols: []string{"from_typology", "from_code", "to_typology", "to_code", "qualifier"}, mode: c.mode}, nil
-	case strings.Contains(query, "FROM localization"):
-		return &stubRows{cols: []string{"value", "source", "provenance", "derived_from"}, mode: c.mode}, nil
-	case strings.Contains(query, "FROM species_role WHERE concept_id"):
-		return &stubRows{cols: []string{
-			"typology_id", "code", "concept_id", "verbatim_name", "role", "fidelity", "constancy",
-		}, mode: c.mode}, nil
-	case strings.Contains(query, "FROM species_role"):
-		return &stubRows{cols: []string{"concept_id", "verbatim_name", "role", "fidelity", "constancy"}, mode: c.mode}, nil
-	case strings.Contains(query, "JOIN syntaxon"):
-		return &stubRows{cols: []string{"id", "rank", "name", "author", "parent_id"}, mode: c.mode}, nil
-	case strings.Contains(query, "FROM syntaxon ORDER BY id"):
-		return &stubRows{cols: []string{"id", "rank", "name", "author", "parent_id"}, mode: c.mode}, nil
-	case strings.Contains(query, "FROM habitat_type_syntaxon"):
-		return &stubRows{cols: []string{"typology_id", "code"}, mode: c.mode}, nil
-	case strings.Contains(query, "concept_id, area_code FROM species_distribution"):
-		return &stubRows{cols: []string{"concept_id", "area_code"}, mode: c.mode}, nil
-	case strings.Contains(query, "DISTINCT area_code FROM species_distribution"):
-		return &stubRows{cols: []string{"area_code"}, mode: c.mode}, nil
-	case strings.Contains(query, "FROM trait_value"):
-		return &stubRows{cols: []string{"vocab", "vocab_version", "dim", "value", "niche_width", "n_systems"}, mode: c.mode}, nil
-	case strings.Contains(query, "DISTINCT vocab FROM trait_vocabulary"):
-		return &stubRows{cols: []string{"vocab"}, mode: c.mode}, nil
-	default:
-		return nil, fmt.Errorf("stub: unexpected query %q", query)
+	if c.mode == stubModeFirstSyntaxonLookupThenFails && strings.Contains(query, "FROM syntaxon WHERE id = ?") {
+		c.syntaxonLookups++
+		if c.syntaxonLookups == 1 {
+			return &stubSyntaxonRow{}, nil
+		}
+		return nil, errStubSyntaxonWalk
 	}
+	if isSyntaxonDistributionMode(c.mode) {
+		if rows, ok := c.syntaxonDistributionRows(query); ok {
+			return rows, nil
+		}
+	}
+	for _, rule := range stubColumnRules {
+		if strings.Contains(query, rule.contains) {
+			return &stubRows{cols: rule.cols, mode: c.mode}, nil
+		}
+	}
+	return nil, fmt.Errorf("stub: unexpected query %q", query)
 }
+
+// syntaxonDistributionRows answers the two queries SyntaxonDistribution
+// issues, under the two modes built for exercising its second query's error
+// paths: the coverage check gets a clean "no row" answer (so Covered stays
+// false and the code proceeds to the distribution-rows query), and only that
+// second query then fails. ok is false for any other query, letting the
+// generic dispatch above handle it.
+func (c *stubConn) syntaxonDistributionRows(query string) (driver.Rows, bool) {
+	if strings.Contains(query, "syntaxon_distribution_coverage") {
+		return &stubZeroRows{cols: []string{"1"}}, true
+	}
+	if strings.Contains(query, "area_code, occurrence FROM syntaxon_distribution") {
+		inner := stubModeRowsErr
+		if c.mode == stubModeSyntaxonDistributionScanErr {
+			inner = stubModeScanErr
+		}
+		return &stubRows{cols: []string{"area_code", "occurrence"}, mode: inner}, true
+	}
+	return nil, false
+}
+
+// stubZeroRows answers a query with zero rows: Next() reports io.EOF on the
+// very first call, which is how QueryRowContext's Scan surfaces sql.ErrNoRows.
+type stubZeroRows struct{ cols []string }
+
+func (r *stubZeroRows) Columns() []string           { return r.cols }
+func (r *stubZeroRows) Close() error                { return nil }
+func (r *stubZeroRows) Next(_ []driver.Value) error { return io.EOF }
 
 type stubRows struct {
 	cols []string
@@ -172,6 +263,32 @@ func (c *stubConn) finalizeRows(query string) (driver.Rows, error) {
 
 // errStubQuery is what a database that cannot run the statement at all answers.
 var errStubQuery = errors.New("stub: query failed")
+
+// errStubSyntaxonWalk is what a syntaxon lookup answers once
+// stubModeFirstSyntaxonLookupThenFails has already served its one good row.
+var errStubSyntaxonWalk = errors.New("stub: syntaxon lookup failed")
+
+// stubSyntaxonRow is the one successful row
+// stubModeFirstSyntaxonLookupThenFails serves: a syntaxon whose parent_id is
+// non-empty, so SyntaxonAncestors' loop makes a second lookup — the one this
+// mode then fails.
+type stubSyntaxonRow struct{ done bool }
+
+func (r *stubSyntaxonRow) Columns() []string {
+	return []string{"rank", "name", "author", "parent_id", "eea_code", "source", "parent_provenance", "life_form_group"}
+}
+func (r *stubSyntaxonRow) Close() error { return nil }
+func (r *stubSyntaxonRow) Next(dest []driver.Value) error {
+	if r.done {
+		return io.EOF
+	}
+	r.done = true
+	vals := []string{"alliance", "Stub", "", "STUB-PARENT", "", "", "", ""}
+	for i := range dest {
+		dest[i] = vals[i]
+	}
+	return nil
+}
 
 // errStubJournalMode is what a database that cannot leave WAL answers.
 var errStubJournalMode = errors.New("stub: journal_mode switch failed")

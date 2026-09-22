@@ -16,15 +16,17 @@ type AreaReport struct {
 	SkippedRows int
 }
 
-// IngestAreas loads csvPath (wgsrpd_areas.csv: area_scheme,area_code,name_en,
-// produced by pipelines/wgsrpd) into repo, in one transaction.
+// IngestAreas loads csvPath (area_scheme,area_code,name_en) into repo, in one
+// transaction. Both area-name files have that header — pipelines/wgsrpd's
+// wgsrpd_areas.csv and pipelines/evc-distribution's evc_territories.csv — so
+// the caller calls this once per file rather than a second loader existing.
 //
 // It reads a local CSV and nothing else — the area names are exactly the kind
 // of static reference data situs must not need another service for.
 //
 // A missing csvPath is "no area names pinned yet", not an error, mirroring
-// IngestSyntaxaHierarchy: an index without them still answers every query,
-// its area codes simply stay unnamed.
+// IngestLocalizations' optional CSVs: an index without them still answers
+// every query, its area codes simply stay unnamed.
 func IngestAreas(ctx context.Context, repo output.Repository, csvPath string) (AreaReport, error) {
 	if _, err := os.Stat(csvPath); err != nil {
 		if os.IsNotExist(err) {
@@ -68,25 +70,29 @@ func ingestAreaRows(ctx context.Context, tx output.IngestTx, csvPath string) (Ar
 	var rep AreaReport
 	skip := newRowSkipper(&rep.SkippedRows, file, "area")
 
-	err := readAll(ctx, dir, file, ',', []string{"area_scheme", "area_code", "name_en"}, skip,
+	err := readAll(ctx, dir, file, ',', []string{"area_scheme", "area_code", colNameEN}, skip,
 		func(idx map[string]int, row []string, line int) error {
 			a := domain.NamedArea{
 				Area: domain.Area{
 					Scheme: row[idx["area_scheme"]],
 					Code:   row[idx["area_code"]],
 				},
-				NameEN: row[idx["name_en"]],
+				NameEN: row[idx[colNameEN]],
 			}
 			if !a.IsComplete() {
 				skip(line, fmt.Errorf("incomplete area %s", a.Area))
 				return nil
 			}
-			// situs stores exactly one area scheme. A row naming another one
-			// would be written and counted as a success, yet join with nothing
-			// on the read side — that silence is the whole reason to reject it
-			// here, where the report can show it.
-			if a.Scheme != domain.SchemeWGSRPDL3 {
-				skip(line, fmt.Errorf("area scheme %q is not %q", a.Scheme, domain.SchemeWGSRPDL3))
+			// situs stores a SET of area schemes (wgsrpd_l3 for species,
+			// evc_territory for syntaxa). A row naming something else would be
+			// written and counted as a success, yet join with nothing on the
+			// read side — that silence is the whole reason to reject it here,
+			// where the report can show it. Checking the set rather than one
+			// constant is what keeps a typo like "evc-territory" failing while
+			// letting the second real scheme through.
+			if !domain.IsKnownAreaScheme(a.Scheme) {
+				skip(line, fmt.Errorf("area scheme %q is not one of %v",
+					a.Scheme, domain.KnownAreaSchemes()))
 				return nil
 			}
 			if err := tx.UpsertArea(a); err != nil {

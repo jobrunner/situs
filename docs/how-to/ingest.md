@@ -41,16 +41,27 @@ Pipeline das für sie tut.
 Liest die von `pipelines/eunis/xlsx_to_csv.py` erzeugten CSVs
 (`typologies.csv`, `habitat_types.csv`, `crosswalks.csv`, `syntaxa.csv`,
 `habitat_type_syntaxa.csv`, `species_roles.csv`, optional
-`localizations.csv`) plus, ebenfalls optional, `wgsrpd_areas.csv` von
-`pipelines/wgsrpd`, `habitat_descriptions.csv` von
+`localizations.csv`), die zwei **Pflichtquellen** der Syntaxa-Hierarchie
+`syntaxa_formations.csv` (aus `data/`) und `syntaxa_hierarchy.csv` (von
+`pipelines/eurovegchecklist/xlsx_to_csv.py`) plus, optional,
+`wgsrpd_areas.csv` von `pipelines/wgsrpd`, `evc_territories.csv` und
+`syntaxon_distribution.csv`/`syntaxon_distribution_coverage.csv` von
+`pipelines/evc-distribution`, `habitat_descriptions.csv` von
 `pipelines/floraveg-factsheets`, `localizations_descriptions.csv` (aus
-`data/`) und `syntaxa_hierarchy.csv` von
-`pipelines/eurovegchecklist/xlsx_to_csv.py` und die drei Zeigerwert-CSVs
+`data/`) und die drei Zeigerwert-CSVs
 (`eive_traits.csv`, `tichy_traits.csv`, `midolo_traits.csv` — erzeugt von
 `pipelines/{eive,tichy,midolo}`) — alle Pipelines schreiben in denselben
 `--csv-dir` — aus `--csv-dir` und schreibt in die SQLite-Datei `--db`. Die
 Ausgabe ist ein JSON-Report mit den Zeilenzählern je Entität plus dem
 Artenrollen-Report und dem Trait-Report (siehe unten).
+
+**Ein Feld im JSON wechselt seit der Quellenumkehr die Form.**
+`ingestOutput` bettet den generischen `application.IngestReport` ein (der
+seither kein eigenes `Syntaxa`- oder `SyntaxonLinks`-Zahlenfeld mehr führt)
+**und** trägt ein eigenes Feld `Syntaxa` vom Typ `application.SyntaxaReport`.
+Der JSON-Schlüssel `Syntaxa` ist damit seit dieser Quellenumkehr ein
+**Objekt**, kein Zähler mehr — ein Skript, das `Syntaxa` als Zahl liest,
+bricht. Der Nachfolger von `SyntaxonLinks` ist `Syntaxa.LinksWritten`.
 
 `--crosswalk`/`--aggregate-members` sind optional und fallen auf
 `<csv-dir>/eurosl_crosswalk.csv` bzw. `<csv-dir>/aggregate_members.csv`
@@ -68,8 +79,13 @@ Der Weg für einen neuen Index steht in `deploy.md`: neu bauen, fertig an seinen
 Platz ziehen, Container ersetzen.
 
 Ein Index, der vor der Syntaxa-Hierarchie-Erweiterung gebaut wurde (ohne die
-Spalte `syntaxon.author`), muss gelöscht und per frischem `situs ingest` neu
-aufgebaut werden; ein erneuter Ingest in einen alten Index ist nicht sicher.
+Spalte `syntaxon.author`), braucht die fehlenden Spalten aus `Migrate` — die
+liefert `situs ingest` von selbst, ein Löschen ist dafür **nicht** nötig. Das
+gilt seit dem Fix des gemessenen Doppel-Bestückungs-Befunds auch für einen
+Altindex aus der Zeit vor der Syntaxa-Quellenumkehr: `IngestSyntaxa` leert
+`syntaxon` und `habitat_type_syntaxon` vor jedem Schreiben (siehe Schritt 2
+unten), also ersetzt ein erneuter Ingest die alten Zeilen statt sie neben den
+neuen stehen zu lassen.
 
 !!! warning "Vor dem Ausrollen ingestieren, nicht danach"
 
@@ -123,23 +139,148 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
 
 `ingest` läuft in mehreren Schritten, jeder mit eigener Transaktion:
 
-1. `IngestCSV` — Typologien, Habitattypen, Crosswalks, Syntaxa.
-2. `IngestSyntaxaHierarchy` — liest optional `syntaxa_hierarchy.csv` (FloraVeg.EU
-   EuroVegChecklist, siehe `../reference/measured-index.md#syntaxa-tiefe-offener-punkt-1`)
-   und reichert die gerade ingestierten EUNIS-Verbände um Klasse/Ordnung/Autorschaft
-   an, soweit ein eindeutiger Namenstreffer existiert. Läuft direkt nach
-   `IngestCSV` und vor Artenrollen/Verbreitung/Zeigerwerten/Label-Overlay, von
-   denen keiner davon abhängt.
-3. `IngestAreas` — liest optional `wgsrpd_areas.csv` (`pipelines/wgsrpd`, aus
-   der gepinnten TDWG-Tabelle) und schreibt die Namen der Gebietscodes, die
+1. `IngestCSV` — Typologien, Habitattypen, Crosswalks. (Syntaxa sind seit der
+   Quellenumkehr **nicht** mehr Teil dieses Schritts, siehe Schritt 2.)
+2. `IngestSyntaxa` — liest **vier** Dateien: `syntaxa_formations.csv` (die 25
+   EuroVegChecklist-Sektionen A–Y, aus `data/`) und `syntaxa_hierarchy.csv`
+   (FloraVeg.EU EuroVegChecklist, aus `pipelines/eurovegchecklist`) sind seit
+   der Syntaxa-Quellenumkehr die **primären** Quellen der Hierarchie — beide
+   sind Pflichtdateien, ihr Fehlen bricht den Ingest ab, statt einen Index
+   ohne Vegetationshierarchie stillschweigend zu bauen. `syntaxa.csv` und
+   `habitat_type_syntaxa.csv` (aus `pipelines/eunis`) liefern noch die
+   Verbände, die FloraVeg nicht führt (`source: eunis`), und die
+   Habitattyp-Kanten, deren EEA-Code über den EEA-Code auf FloraVegs
+   Primärcode aufgelöst wird. Details und gemessene Zahlen:
+   `../reference/measured-index.md#syntaxa-tiefe-offener-punkt-1`. Läuft
+   direkt nach `IngestCSV` und vor Artenrollen/Verbreitung/Zeigerwerten/
+   Label-Overlay, von denen keiner davon abhängt.
+
+   **`IngestSyntaxa` ersetzt die Hierarchie, statt sie zu ergänzen:** als
+   allererster Schritt der Transaktion leert es `habitat_type_syntaxon` und
+   danach `syntaxon` komplett, bevor es die aktuellen Dateien schreibt. Die
+   beiden Quelldateien sind die vollständige Wahrheit über die Hierarchie —
+   ein Upsert kann eine Zeile, die aus der Quelle verschwunden ist, nicht
+   entfernen, und genau das ist seit der Quellenumkehr der Normalfall (rund
+   1310 Identifikatoren haben dabei die Seite gewechselt). Ein Leser muss
+   also wissen: ein zweiter Ingest **ersetzt** den Syntaxa-Teil des Index,
+   er hängt nichts an. Da das Leeren und jedes folgende Schreiben in
+   derselben Transaktion laufen, ist ein fehlschlagender Ingest (etwa eine
+   verbleibende Waise) atomar — der Index bleibt unverändert, statt leer
+   dazustehen.
+
+   **Sieben Datenfehler lassen `IngestSyntaxa` absichtlich scheitern**, statt
+   zu warnen und weiterzulaufen:
+
+   - eine **Waise** — eine Zeile mit einem anderen Rang als `formation`, für
+     die weder Namensabgleich noch Geschwisterkonsens einen Elternteil
+     findet. Eine Kette, die an einer Stelle reißt, macht den
+     Orientierungsdienst genau dort wertlos.
+   - ein **Elternteil vom falschen Rang** — eine Kante, die eine Stufe von
+     Formation → Klasse → Ordnung → Verband überspringt (ein Verband direkt
+     unter einer Klasse), oder eine Zeile mit einem Rang, den die Leiter gar
+     nicht führt, oder eine **Formation mit Elternteil**, obwohl über der
+     Formation nichts steht. Alles drei erreicht eine Formation und ist
+     trotzdem nicht navigierbar: `GET /v1/syntaxon/{id}` verspricht genau
+     diese vier Stufen.
+   - ein **doppelt vergebener Primärcode** — zwei Zeilen in
+     `syntaxa_hierarchy.csv` mit demselben `code`. Der Primärcode ist die
+     Identität des Syntaxons: er wird als `id` geschrieben, und ein Konflikt
+     darauf wird per `ON CONFLICT(id) DO UPDATE` aufgelöst. Beide Zeilen zu
+     schreiben verschmölze also zwei Vegetationseinheiten zu einer — die
+     spätere gewinnt Rang, Name und Elternteil —, während der Report beide
+     zählt; jede `parent_code`- und Habitattyp-Kante auf diesen Code meinte
+     dann, wer zuletzt in der Datei stand. Wie beim EEA-Code nennt die Meldung
+     **alle** kollidierenden Codes, und die Prüfung läuft vor der Transaktion.
+     `pipelines/eurovegchecklist/xlsx_to_csv.py` bricht bereits bei der
+     Konvertierung ab; der Go-Ingest liest die CSV aber direkt, eine
+     handverlesene Datei erreicht ihn also ungeprüft.
+   - eine **mehrfach beanspruchte ID**. In die Spalte `syntaxon.id`
+     schreiben **drei** Quellen: die Formationen aus
+     `data/syntaxa_formations.csv`, die Hierarchiezeilen aus
+     `syntaxa_hierarchy.csv` und die EEA-eigenen Zeilen aus `syntaxa.csv` — in
+     dieser Reihenfolge, jede per `ON CONFLICT(id) DO UPDATE`. Der doppelte
+     Primärcode (voriger Spiegelstrich) prüft nur die Hierarchiezeilen
+     untereinander; eine Hierarchie- oder EEA-Zeile mit dem Code einer
+     Formation überschreibt dagegen die Formation selbst, und ist ihre eigene
+     Elternkette rangtreu, laufen Waisen-, Zyklus- und Rangprüfung sauber
+     durch — der Index committet mit einer Wurzel weniger. Gezählt wird jede
+     **Beanspruchung**, nicht jede beanspruchende Datei: zwei Zeilen *derselben*
+     Quelle mit derselben ID sind dieselbe Verschmelzung, und genau dieser Fall
+     lief durch, solange die Beanspruchungen nach Datei gruppiert wurden. Die
+     Regel lautet darum schlicht: eine ID wird **genau einmal** beansprucht —
+     und sie gilt damit für alle drei Quellen, quellenübergreifend wie
+     quellenintern. Geprüft wird vor der Transaktion; die Meldung nennt jede
+     beanspruchte ID einmal, mit den beanspruchenden Dateien, jede Datei einmal
+     je Beanspruchung (`Z (syntaxa_formations.csv, syntaxa_hierarchy.csv)`
+     quellenübergreifend, `EIG-01A (syntaxa.csv, syntaxa.csv)` innerhalb einer
+     Quelle). Abbruch statt Verwerfen-und-Melden, für alle drei Quellen
+     gleich: die Formationen sind die Wurzel der Navigation, eine verworfene
+     Hierarchiezeile nähme den ganzen Teilbaum unter sich mit — und auch eine
+     doppelte EEA-Zeile „verliert nicht bloß sich selbst“, denn die ID ist der
+     Schlüssel, auf den die Kanten aus `habitat_type_syntaxa.csv` und der
+     Migrationspfad zeigen. Welche der beiden Zeilen gemeint ist, entschiede
+     sonst die Zeilenreihenfolge. Geprüft werden nur die Zeilen,
+     die tatsächlich geschrieben werden — eine EEA-Zeile mit FloraVeg-
+     Gegenstück (ihre `id` ist ein `eea_code` der Hierarchie) erreicht die
+     Tabelle nie und kann folglich mit nichts kollidieren.
+   - ein **doppelt beanspruchter EEA-Code** — zwei Zeilen in
+     `syntaxa_hierarchy.csv` mit demselben nichtleeren `eea_code`. Der
+     EEA-Code ist der Migrationsschlüssel von den alten IDs
+     (`GET /v1/syntaxon/PAP-01A`); ist er mehrdeutig, lässt sich nicht
+     entscheiden, welches Syntaxon die alte ID meint. Die Meldung nennt
+     **alle** kollidierenden Codes, damit die Quelle in einem Durchgang
+     reparierbar ist. Diese Prüfung läuft vor der Transaktion, der Index
+     wird also gar nicht erst angefasst.
+   - ein **leerer oder doppelt vergebener Formationsbuchstabe** in
+     `syntaxa_formations.csv`. Der Buchstabe ist der Schlüssel der Formation:
+     leer ergäbe er eine Formation mit der ID `""`, auf die keine Klasse
+     zeigen kann, doppelt überschriebe die spätere Zeile Namen und
+     Lebensformgruppe der früheren, lautlos. Auch das wird beim Lesen der
+     Datei geprüft, also vor der Transaktion. **Nicht** geprüft wird, ob die
+     25 Buchstaben A–Y lückenlos beisammen sind: die Sektionen gehören der
+     gepinnten EuroVegChecklist-Fassung, nicht diesem Code. Ein fehlender
+     Buchstabe bleibt trotzdem nicht unbemerkt — jede Klasse darunter wird
+     übersprungen, und deren Ordnungen und Verbände werden dadurch zu Waisen
+     (erster Spiegelstrich).
+   - eine **Formationsdatei ohne eine einzige Zeile**. Eine `syntaxa_formations.csv`
+     mit bloßer Kopfzeile besteht die Pflichtquellen-Prüfung — die Datei ist ja
+     da und trägt alle Spalten —, und seit das Leeren zum Ingest gehört, würde
+     ein solcher Lauf den Syntaxa-Teil des Index löschen und mit null Wurzeln
+     committen: eine abgeschnittene kuratierte Quelle nimmt lautlos die ganze
+     Hierarchie mit. Auch das wird beim Lesen geprüft, also vor der
+     Transaktion. Eine **leere `syntaxa_hierarchy.csv` bleibt erlaubt**: die
+     Formationen allein sind eine karge, aber gültige Hierarchie.
+
+   Eine Zeile in `syntaxa_hierarchy.csv` **ohne `code`** ist dagegen kein
+   Abbruchgrund: der Code ist die Identität der Zeile, ohne ihn kann niemand
+   auf sie zeigen, und geschrieben würde sie ein namenloses Syntaxon mit der
+   ID `""` ergeben, das Waisen-, Zyklus- und Rangprüfung anstandslos passiert,
+   sofern Rang und Elternteil stimmen. Sie wird übersprungen, in `SkippedRows`
+   gezählt und mit Datei, Zeile und Grund als Warnung protokolliert. Dasselbe
+   gilt für eine Zeile in `syntaxa.csv` **ohne `id`** — trifft ihr Name einen
+   FloraVeg-Verband, löst sogar der Namensabgleich einen Elternteil auf, und
+   der Lauf committet ein unerreichbares Syntaxon. Beide Schlüssel werden
+   geprüft wie die Verbreitungsleser ihre prüfen. Ebenfalls verworfen und
+   gemeldet wird eine Zeile in `syntaxa.csv` **mit dem Rang `formation`**:
+   Formationen definiert allein `syntaxa_formations.csv`, und geschrieben
+   bekäme die Zeile wie jede andere EEA-Zeile einen Elternteil abgeleitet —
+   eine Formation *mit* Elternteil, obwohl die Formation die Wurzel ist. Die
+   Rangprüfung meldet eine solche Formation seitdem auch, statt Formationen
+   ungeprüft zu überspringen (zweiter Spiegelstrich oben).
+3. `IngestAreas` — liest **zwei** Dateien über denselben Code-Pfad, je einmal
+   aufgerufen: `wgsrpd_areas.csv` (`pipelines/wgsrpd`, aus der gepinnten
+   TDWG-Tabelle, Report-Zweig `AreaNames`) und `evc_territories.csv`
+   (`pipelines/evc-distribution`, Report-Zweig `Territories`, separat gezählt
+   statt aufsummiert). Beide schreiben nur die Namen der Gebietscodes, die
    `GET /v1/areas` neben dem Code liefert. Rein lokal, kein Dienst wird
    gefragt; hängt von nichts ab und nichts hängt davon ab — die Namen sind ein
-   Overlay auf die Codes, die Schritt 6 schreibt. Fehlt die Datei, ist das
-   **keine** Fehlersituation: der Report zählt 0 (`AreaNames.Areas`) und die
-   Codes bleiben namenlos. Eine Zeile ohne Code oder mit einem anderen
-   Gebietsschema als `wgsrpd_l3` wird übersprungen und gezählt
-   (`AreaNames.SkippedRows`) statt geschrieben: sie würde auf der Leseseite
-   mit nichts zusammenfinden, und dieses Schweigen soll im Report stehen.
+   Overlay auf Codes, die andere Schritte schreiben (Artenverbreitung bzw.
+   Syntaxa-Verbreitung, Schritt 6). Fehlt eine der beiden Dateien, ist das
+   **keine** Fehlersituation: der jeweilige Zweig zählt 0 Areas und die Codes
+   bleiben namenlos. Eine Zeile ohne Code oder mit einem fremden
+   Gebietsschema wird übersprungen und gezählt (`SkippedRows`) statt
+   geschrieben: sie würde auf der Leseseite mit nichts zusammenfinden, und
+   dieses Schweigen soll im Report stehen.
 4. `IngestDescriptions` — liest optional `habitat_descriptions.csv`
    (`pipelines/floraveg-factsheets`, aus dem gepinnten Factsheet-PDF) und
    `annex1_descriptions.csv` (aus `data/`, von situs verfasst) und schreibt je
@@ -151,30 +292,81 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
    gezählt. `Descriptions.SkippedUnknownCode` ist die **Summe über beide
    Dateien** (am Referenzstand 13, sämtlich aus den Factsheets: die marinen
    `MA*`-Codes sowie `N23`/`N24`). Rein lokal, kein Dienst wird gefragt.
-5. `IngestSpeciesRoles` — Artenrollen, aufgelöst gegen eine lokale
+5. `IngestSyntaxonDistribution` — die Verbreitung der Syntaxa (nicht der
+   Arten — das ist Schritt 7), gelesen aus `syntaxon_distribution.csv` und
+   `syntaxon_distribution_coverage.csv` (beide von
+   `pipelines/evc-distribution`, dem gepinnten EuroVegChecklist-Verbreitungs-
+   export). Rein lokal, kein Dienst wird gefragt. Läuft nach `IngestSyntaxa`:
+   eine Verbreitungszeile zu einer Syntaxon-ID, die der Index nicht führt,
+   wird verworfen und gezählt (`UnknownSyntaxa`) — das bedeutet erst etwas,
+   sobald die Syntaxa selbst im Index stehen. Ebenso verworfen und gemeldet
+   (`NonAllianceSyntaxa`) wird eine Zeile zu einer ID, die der Index führt,
+   aber **nicht als Verband**: die Quelle deckt nur Verbände ab, und eine
+   Klassen- oder Ordnungszeile würde sonst als Verbreitungstatsache an
+   `GET /v1/syntaxon/{id}` erscheinen. Beide Leser prüfen das, bevor eine der
+   beiden Tabellen geschrieben wird. Die Coverage-Datei trennt eine
+   echte „kommt hier nicht vor"-Aussage von einem bloß fehlenden Datenpunkt;
+   siehe `../reference/http-api.md` für die Dreiwertigkeit auf der Leseseite.
+
+   **Auch dieser Schritt ersetzt, statt zu ergänzen** (wie `IngestSyntaxa`):
+   als erstes in derselben Transaktion leert er `syntaxon_distribution` und
+   `syntaxon_distribution_coverage`, bevor er die aktuellen Dateien schreibt.
+   Beide Tabellen hängen an keinem Fremdschlüssel, das Leeren der Syntaxa
+   erreicht sie also nicht. Nötig ist es, weil hier die **Abwesenheit einer
+   Zeile Bedeutung trägt**: eine Coverage-Zeile ohne Verbreitungszeile heißt
+   „geprüft, kommt nirgends vor", gar keine Coverage-Zeile heißt „niemand hat
+   nachgesehen". Eine stehengebliebene Coverage-Zeile veraltet also nicht bloß,
+   sie verwandelt `unknown` in `absence` — die Umkehrung dessen, wofür die
+   Tabelle existiert. Leeren und Schreiben laufen in derselben Transaktion:
+   schlägt der Lauf fehl, bleibt der Altstand unverändert stehen.
+
+   Fehlt `syntaxon_distribution.csv` ganz, wird der Schritt **übersprungen**,
+   bevor überhaupt eine Transaktion aufgeht — „noch nichts gepinnt" löscht
+   nichts.
+
+   **Zwei Datenfehler lassen diesen Schritt absichtlich scheitern**, beide
+   aus demselben Grund: sie würden die Vierwertigkeit der Syntaxa-Verbreitung
+   stillschweigend zu einer Dreiwertigkeit zusammenfalten.
+
+   - `syntaxon_distribution.csv` ist da, `syntaxon_distribution_coverage.csv`
+     fehlt. Dann läse die leere Zelle jedes Verbands als „niemand hat
+     nachgesehen", wo „kommt nicht vor" gemeint ist — und zwar für den ganzen
+     Index. Geprüft, bevor eine Transaktion aufgeht.
+   - beide Dateien sind da, aber die Coverage-Datei nennt ein Syntaxon nicht,
+     für das die Verbreitungsdatei Zeilen trägt. Derselbe Widerspruch, nur je
+     Syntaxon: `GET /v1/syntaxon/{id}` ließe die Verbreitung weg (`unknown`),
+     während `GET /v1/info` und `GET /v1/areas` dessen Territorien weiter
+     ausweisen. Die Meldung nennt **alle** betroffenen IDs, sortiert und je
+     einmal. Anders als ein Syntaxon, das die Verbreitungsquelle führt und die
+     Hierarchie nicht (`CI01E`, siehe `UnknownSyntaxa`), ist das keine
+     Fassungsdrift zwischen zwei unabhängigen Quellen: beide Dateien stammen
+     aus **einem** `pipelines/evc-distribution`-Lauf über **ein** Artefakt.
+     Widersprechen sie einander, passen die Dateien nicht zusammen.
+6. `IngestSpeciesRoles` — Artenrollen, aufgelöst gegen eine lokale
    Crosswalk-Datei (`eurosl_crosswalk.csv`), plus abgeleitete
    Mitgliedsarten-Zeilen für Sammelarten (`aggregate_members.csv`). Kein
    hostus-Aufruf mehr in diesem Schritt.
-6. `IngestDistribution` — die Verbreitung der aufgelösten Konzepte (siehe unten).
-7. `IngestTraits` — die Zeigerwerte (EIVE, Tichý, Midolo) der aufgelösten
+7. `IngestDistribution` — die Verbreitung der aufgelösten Arten-Konzepte
+   (siehe unten; nicht zu verwechseln mit Schritt 5, der Syntaxa-Verbreitung).
+8. `IngestTraits` — die Zeigerwerte (EIVE, Tichý, Midolo) der aufgelösten
    Konzepte, gelesen aus `eive_traits.csv`, `tichy_traits.csv` und
    `midolo_traits.csv` im `--csv-dir`, ebenfalls über hostus-Namensauflösung.
-8. `IngestLocalizations` und `DeriveGermanLabels` — der Label-Overlay. Gelesen
+9. `IngestLocalizations` und `DeriveGermanLabels` — der Label-Overlay. Gelesen
    werden **zwei** Dateien über denselben Code-Pfad: `localizations.csv` (die
    Labels, aus `pipelines/eurlex`) und `localizations_descriptions.csv` (die
    deutschen Beschreibungen, gepflegt in `data/`). Beide sind optional, ihre
    Zeilen werden im Report zusammengezählt.
 
-Fehlt `eurosl_crosswalk.csv`, bricht `ingest` beim **fünften** Schritt
-(`IngestSpeciesRoles`) mit einem Fehler ab — aber die **ersten vier**
+Fehlt `eurosl_crosswalk.csv`, bricht `ingest` beim **sechsten** Schritt
+(`IngestSpeciesRoles`) mit einem Fehler ab — aber die **ersten fünf**
 Schritte sind zu diesem Zeitpunkt bereits committed
-(Typologien/Habitattypen/Crosswalks/Syntaxa inklusive der
-FloraVeg-Hierarchie-Anreicherung, die Gebietsnamen und die Beschreibungen,
-aber keine Artenrollen). hostus wird dabei gar nicht erst kontaktiert: die
-Namensauflösung ist seit der Aggregat-Mitgliedsarten-Erweiterung rein
-dateibasiert, hostus kommt erst ab Schritt 6 (`IngestDistribution`) ins
-Spiel. Ein fehlgeschlagener fünfter Schritt ist kein Datenverlust: jeder
-`Upsert*` ist idempotent, ein erneuter
+(Typologien/Habitattypen/Crosswalks, Syntaxa inklusive der
+FloraVeg-Hierarchie-Anreicherung, die Gebietsnamen, die Beschreibungen und
+die Syntaxa-Verbreitung, aber keine Artenrollen). hostus wird dabei gar nicht
+erst kontaktiert: die Namensauflösung ist seit der
+Aggregat-Mitgliedsarten-Erweiterung rein dateibasiert, hostus kommt erst ab
+Schritt 7 (`IngestDistribution`) ins Spiel. Ein fehlgeschlagener sechster
+Schritt ist kein Datenverlust: jeder `Upsert*` ist idempotent, ein erneuter
 `situs ingest`-Lauf gegen denselben Index holt ihn einfach nach. Ein
 Operator, der nach einem fehlgeschlagenen Lauf den Index inspiziert, sollte
 diese Teilbefüllung nicht als Bug lesen.
@@ -262,6 +454,15 @@ zeigt Nullen, und der Lauf geht weiter — anders als bei der Namensauflösung, 
 ein Ausfall abbricht, damit nicht jeder Name als unauflösbar verbucht wird. Ein
 späterer Lauf holt den Schritt nach: jeder `Upsert*` ist idempotent.
 
+Das gilt auch für **Zeitüberschreitungen einzelner Anfragen**: der
+HTTP-Timeout einer Konzeptanfrage ist ein Quellenproblem und wird toleriert
+(er zählt in `DistributionFailed`), auch wenn alle Anfragen daran scheitern —
+dann greift der Gesamtausfall-Pfad mit Warnung und Nullen. Abgebrochen wird
+der Lauf ausschließlich, wenn der **Ingest-Kontext selbst** beendet ist
+(Ctrl-C, Deadline). Woran das erkannt wird, ist der Kontext, nicht der Fehler:
+ein `http.Client.Timeout` liefert einen Fehler, der `context.DeadlineExceeded`
+erfüllt, obwohl niemand den Lauf gestoppt hat.
+
 `DistributionFailed` ist ein **Teilausfall**-Signal, keine Gesamtzahl: es zählt
 die Konzepte, die in einem ansonsten erfolgreichen Lauf übersprungen wurden. Es
 steht auf `0`, wenn nichts fehlschlug — und ebenso, wenn **alles** fehlschlug,
@@ -276,6 +477,14 @@ als `in_area: true` — hier ist eine veraltete Zeile eine **falsche Antwort**,
 nicht bloß ein veraltetes Label. Eine **schrumpfende** Verbreitung braucht
 deshalb einen frischen Index (neue Datei, voller Ingest), keinen Re-Ingest auf
 den bestehenden.
+
+Das ist eine bewusste Abweichung von der Syntaxa-Verbreitung (Schritt 5), die
+ihre beiden Tabellen vorab leert. Die Artenverbreitung kommt **eine
+hostus-Anfrage je Konzept**, und ein Ausfall mitten im Lauf bricht den Ingest
+absichtlich nicht ab (siehe oben). Würde hier vorab geleert, machte genau
+dieser tolerierte Ausfall aus „diesmal nicht aktualisiert" ein „sämtliche
+Gebiete sämtlicher Arten sind weg". Eine Zeile nicht zu aktualisieren ist die
+kleinere Unwahrheit als sie zu löschen.
 
 Wie viele Gebiete am Ende tatsächlich im Index stehen, sagt `areas_with_data` in
 `GET /v1/info`.

@@ -30,11 +30,33 @@ python3 xlsx_to_csv.py \
   --out-dir out
 ```
 
-Schreibt `out/syntaxa_hierarchy.csv` (`code,rank,name,author,parent_code`) und
-`out/report.json` (Klassen/Ordnungen/Verbände/übersprungene Zeilen). Gemessen
-gegen die reale, am 2026-08-30 gepinnte Datei (siehe `manifest.yaml`): 150
-Klassen, 381 Ordnungen, 1310 Verbände, 1841 Zeilen insgesamt, 0 übersprungene
-Zeilen — deckt sich exakt mit dem Design-Spec-Spike (Zeile 20-21).
+Der Lauf **leert zuerst seine eigenen Ausgaben** (`syntaxa_hierarchy.csv`,
+`report.json`) und schreibt sie danach neu. Grund:
+`scripts/collect-ingest-input.sh` sammelt die Hierarchie allein nach
+Dateipräsenz ein — ein Lauf, der an einer Code-Kollision oder an einer
+fehlenden Spalte scheitert, würde sonst die Datei von gestern als aktuelle in
+den nächsten Ingest schieben. Nach dem Start gilt: `out/` trägt das Ergebnis
+**dieses** Laufs oder gar nichts. Dieselbe Haltung wie in
+`pipelines/evc-distribution/build.sh`, dort in der `build.sh`, hier im
+Konverter, weil diese Pipeline keine `build.sh` hat und jeder Lauf durch
+`convert()` geht. `artifacts/` bleibt unangetastet — der Download-Cache ist
+absichtlich dauerhaft.
+
+Schreibt `out/syntaxa_hierarchy.csv`
+(`code,rank,name,author,parent_code,eea_code`) und `out/report.json`
+(Klassen/Ordnungen/Verbände/Zeilen insgesamt/übersprungene Zeilen/EEA-Codes).
+Gemessen gegen die reale, am 2026-08-30 gepinnte Datei (siehe
+`manifest.yaml`): 150 Klassen, 381 Ordnungen, 1310 Verbände, 1841 Zeilen
+insgesamt, 0 übersprungene Zeilen, 1841 EEA-Codes — deckt sich exakt mit dem
+Design-Spec-Spike (Zeile 20-21).
+
+**Zwei Code-Kollisionen brechen die Konvertierung ab**, statt eine Zeile
+lautlos gewinnen zu lassen (beide gemessen: in der gepinnten Datei kommt
+keine vor). Ein doppelt vergebener **Primärcode** verschmölze zwei
+Vegetationseinheiten zu einer, weil der Code die `id` des Syntaxons ist und
+`IngestSyntaxa` Konflikte darauf per `ON CONFLICT(id) DO UPDATE` auflöst; ein
+von zwei Primärcodes beanspruchter **EEA-Code** machte den Migrations- und
+Join-Schlüssel mehrdeutig.
 
 `rank` und `parent_code` werden **ausschließlich** aus dem Code-Muster
 abgeleitet (`AA` Klasse → `AA01` Ordnung → `AA01A` Verband, Elternteil durch
@@ -46,15 +68,21 @@ FloraVegs eigener Spalte, nie eine Textzerlegung eines Kombi-Strings.
 Die echte Kopfzeile weicht von einem naiven `Code/Name/Author`-Schema ab:
 
 - `Code` trägt zusätzlich einen alternativen/historischen Code in Klammern,
-  z. B. `AA01A (KOB-01A)`. Der Parser extrahiert davon nur den führenden,
-  primären Code (`AA01A`) — der Klammerteil hat in den fünf CSV-Spalten keinen
-  Platz und wird verworfen, nie erraten.
+  z. B. `AA01A (PAP-01A)`. Der Parser zerlegt die Zelle in Primärcode
+  (`AA01A`) und EEA-Code (`PAP-01A`) und schreibt beide in eigene CSV-Spalten —
+  der Klammerteil ist das Codeschema der EEA-EUNIS-Quelle und damit der
+  exakte Join-Schlüssel zwischen beiden Quellen, wird also ausgegeben statt
+  verworfen.
 - Name und Autor liegen doppelt vor: als ursprüngliche EVC-Fassung (Mucina et
   al. 2016) und als aktualisierte Fassung — in der gepinnten Datei tragen
   deren Spaltenköpfe selbst das Datum `EVC, version 2025-06-12`.
   `_HEADER_ALIASES` in `xlsx_to_csv.py` bevorzugt diese aktualisierten
   Spalten und fällt nur auf die Original-Spalten zurück, falls ein älterer
   Export sie nicht mitführt.
+- `read_sheet` liest jede Zelle über ihren eigenen Zellbezug (`r`-Attribut,
+  z. B. `AB7`) statt positionell: Excel lässt leere Zellen in der Sheet-XML
+  weg, und positionelles Lesen würde eine solche Lücke fälschlich als
+  Spaltenverschiebung in die folgenden Zellen übertragen.
 
 ## Tests
 

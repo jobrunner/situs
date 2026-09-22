@@ -72,6 +72,29 @@ func NewClient(baseURL string, httpClient *http.Client, batchSize int, entryBack
 	}
 }
 
+// transportError classifies a failed http.Client.Do: the caller's ctx being
+// done is reported as exactly that, everything else as the upstream being
+// unavailable.
+//
+// The distinction is made HERE, not at the caller, because only here are the
+// two causes still distinguishable. http.Client.Timeout fires as an error
+// whose chain contains context.DeadlineExceeded even when the caller's ctx
+// never expired, so a caller inspecting the returned error alone cannot tell
+// "one request was slow" from "this run was told to stop" — and both callers
+// need to (pacedDistributionSource tolerates the first and aborts on the
+// second, IngestDistribution warns on the first and fails on the second).
+// The cause of a transport failure therefore goes in as text, keeping
+// ErrResolverUnavailable the only sentinel in that chain.
+func transportError(ctx context.Context, endpoint string, err error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return fmt.Errorf("calling hostus %s: %w", endpoint, ctxErr)
+	}
+	// .Error(), not the error itself: the cause is kept as text on purpose (see
+	// above), and handing fmt.Errorf a string says so where a %s on an error
+	// value would read as a forgotten %w.
+	return fmt.Errorf("calling hostus %s: %w: %s", endpoint, output.ErrResolverUnavailable, err.Error())
+}
+
 type matchRequestName struct {
 	ID       string `json:"id"`
 	Verbatim string `json:"verbatim"`
@@ -163,8 +186,9 @@ func (c *Client) resolveBatch(ctx context.Context, batch []string) ([]matchResul
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
 		// Transport failure (refused, reset, timed out): hostus is not
-		// answering, which is an operational problem with hostus.
-		return nil, fmt.Errorf("calling hostus /v1/match: %w: %w", output.ErrResolverUnavailable, err)
+		// answering, which is an operational problem with hostus — unless the
+		// run itself was canceled, see transportError.
+		return nil, transportError(ctx, "/v1/match", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 

@@ -151,26 +151,34 @@ paths:
           $ref: "#/components/responses/InternalError"
   /v1/areas:
     get:
-      summary: Alle Gebiete, nach denen gefiltert werden kann
+      summary: Alle Gebiete eines Schemas, nach denen gefiltert werden kann
       description: >-
-        Der Einstiegspunkt für `?area=`: die WGSRPD-Level-3-Gebiete, zu denen
+        Der Einstiegspunkt für `?area=`: die Gebiete eines Schemas, zu denen
         **dieser** Index Verbreitungsdaten hat, jedes mit seinem englischen
-        Namen. Bewusst nur Gebiete mit Daten — ein Gebiet ohne Daten wäre ein
-        Filter, der nur leer antworten kann. Sortiert nach `code`, damit
-        dieselbe Anfrage stabil dieselbe Reihenfolge liefert. `name` ist leer,
-        wenn zu einem Code kein Name eingelesen wurde: der Code ist die
+        Namen. `?scheme=` wählt das Schema (Vorgabe `wgsrpd_l3`); welche
+        Tabelle die Abdeckung liefert, hängt davon ab —
+        `species_distribution` für `wgsrpd_l3`, `syntaxon_distribution` für
+        `evc_territory`. Bewusst nur Gebiete mit Daten — ein Gebiet ohne Daten
+        wäre ein Filter, der nur leer antworten kann. Sortiert nach `code`,
+        damit dieselbe Anfrage stabil dieselbe Reihenfolge liefert. `name` ist
+        leer, wenn zu einem Code kein Name eingelesen wurde: der Code ist die
         Identität, der Name nur ein Overlay darauf. Die Antwort ist immer ein
-        Array, auch wenn der Index keine Verbreitungsdaten führt.
+        Array, auch wenn der Index keine Verbreitungsdaten führt, und trägt
+        nie die Codes zweier Schemata gemischt.
       operationId: areas
+      parameters:
+        - $ref: "#/components/parameters/AreaScheme"
       responses:
         "200":
-          description: Alle Gebiete mit Daten, nach `code` sortiert.
+          description: Alle Gebiete des Schemas mit Daten, nach `code` sortiert.
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: "#/components/schemas/AreaView"
+        "400":
+          $ref: "#/components/responses/InvalidQuery"
         "500":
           $ref: "#/components/responses/InternalError"
   /v1/habitat-type/{typology}/{code}:
@@ -437,12 +445,91 @@ paths:
                 $ref: "#/components/schemas/TraitSummary"
         "400":
           $ref: "#/components/responses/InvalidQuery"
+  /v1/syntaxa:
+    get:
+      summary: Die Wurzeln der Syntaxa-Hierarchie, filterbar
+      description: >-
+        Der Einstiegspunkt der Navigation. Ohne Parameter sind es die 25
+        Formationen (die Wurzeln), **nicht** alle 1882 Zeilen — ein Vorgabewert,
+        der die ganze Tabelle ausgibt, wäre eine Antwort, die niemand
+        angefordert hat. `?rank=` liefert stattdessen alle Syntaxa eines Rangs
+        (`?rank=alliance` sind 1326 Zeilen, bewusst ohne Paginierung: die Zahl
+        ist fest und wächst nur mit einer neuen Quellfassung).
+        `?life_form_group=` filtert über die Formation, zu der ein Syntaxon
+        gehört; beide Parameter wirken kombiniert als UND. Die Antwort trägt
+        `SyntaxonRef` und nicht `SyntaxonDetail`: die Wurzeln brauchen weder
+        Ahnenpfad (leer) noch Kinderliste — die holt der nächste Schritt.
+        `?area=` (mit `?include=`) filtert zusätzlich auf Vorkommen in einem
+        Gebiet; Syntaxa ohne Aussage bleiben mitgeführt, siehe die
+        Parameterbeschreibung.
+      operationId: syntaxa
+      parameters:
+        - $ref: "#/components/parameters/Rank"
+        - $ref: "#/components/parameters/LifeFormGroup"
+        - $ref: "#/components/parameters/SyntaxonArea"
+        - $ref: "#/components/parameters/SyntaxonInclude"
+      responses:
+        "200":
+          description: Die Syntaxa des angefragten Rangs, nach `id` sortiert.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SyntaxonRef"
+        "400":
+          $ref: "#/components/responses/InvalidQuery"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/syntaxon/{id}:
+    get:
+      summary: Ein Syntaxon mit Ahnenpfad und direkten Kindern
+      description: >-
+        Ein Navigationsschritt in einer Antwort: wo bin ich, und wohin kann
+        ich? `ancestors` ist der Weg zur Wurzel, **äußerste zuerst** (Formation,
+        Klasse, Ordnung) und damit unverändert als Brotkrumenzeile ausgebbar;
+        `children` sind die direkten Kinder, nach `id` sortiert. Beide Felder
+        sind **immer** vorhanden, auch leer — ein Verband ohne Kinder und eine
+        Formation ohne Ahnen sind der Normalfall an den Rändern der Daten, kein
+        Fehler. Es gibt bewusst keine eigene `/children`- oder
+        `/ancestors`-Route: sie wären ein zweiter Weg zu denselben Daten.
+        `?lang=` wird angenommen; deutsche Syntaxa-Namen sind eine eigene Runde,
+        bis dahin antworten die Namen englisch. `id` nimmt sowohl die aktuelle
+        Syntaxon-ID (EVC-Primärcode, z. B. `AA01A`) als auch den historischen
+        EEA-EUNIS-Code (z. B. `PAP-01A`, gespeichert in `eea_code`) an: findet
+        sich keine ID-Zeile, wird zusätzlich per `eea_code` gesucht. Der
+        Fallback ist eindeutig — kein `eea_code` kollidiert mit einer fremden
+        ID, kein `eea_code` ist doppelt vergeben —, eine ID-Zeile hat also
+        immer Vorrang, ohne dass es dafür eine Regel bräuchte.
+      operationId: syntaxon
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            example: CA01A
+        - $ref: "#/components/parameters/Lang"
+      responses:
+        "200":
+          description: Das Syntaxon samt Umgebung.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyntaxonDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /v1/syntaxon/{id}/habitat-types:
     get:
       summary: Habitattypen einer Pflanzengesellschaft
       description: >-
         Zeigt das m:n — dieselbe Gesellschaft kann in mehreren Habitattypen
-        vorkommen.
+        vorkommen. `id` nimmt wie bei `GET /v1/syntaxon/{id}` sowohl die
+        aktuelle Syntaxon-ID als auch den historischen EEA-EUNIS-Code an
+        (Fallback über `eea_code`, eindeutig); die Habitattyp-Kanten werden
+        unter der aufgelösten ID gesucht.
       operationId: syntaxonHabitatTypes
       parameters:
         - name: id
@@ -507,6 +594,22 @@ components:
       schema:
         type: string
         example: GER
+    AreaScheme:
+      name: scheme
+      in: query
+      required: false
+      description: >-
+        Das Gebietsschema. `wgsrpd_l3` (Vorgabe) sind die
+        WGSRPD-Level-3-Gebiete der **Artverbreitung**; `evc_territory` sind
+        die 136 Territorien der **Syntaxa-Verbreitung** (Staaten und
+        biogeografische Teile davon, meist mit eigener Küstenspalte). Eine
+        Abbildung zwischen beiden gibt es nicht und soll es nicht geben —
+        keine Antwort rechnet ein Territorium in einen WGSRPD-Code um. Ein
+        unbekanntes Schema ist INVALID_QUERY.
+      schema:
+        type: string
+        enum: [wgsrpd_l3, evc_territory]
+        default: wgsrpd_l3
     OnlyInArea:
       name: only_in_area
       in: query
@@ -519,6 +622,68 @@ components:
         concept_ids[i], ein Eintrag darf also nicht fehlen.
       schema:
         type: boolean
+    Rank:
+      name: rank
+      in: query
+      required: false
+      description: >-
+        Rang der gelisteten Syntaxa. Weggelassen sind es die Formationen, nicht
+        alle Zeilen. Die erlaubten Werte liest der Dienst aus dem Index
+        (`SELECT DISTINCT rank`) statt sie zu verdrahten: das Schema hat bewusst
+        kein CHECK auf `rank`, damit ein weiterer Rang eine Datenzeile sein
+        kann. Ein unbekannter Wert ist INVALID_QUERY und die Nachricht nennt
+        die Werte, die dieser Index führt — niemals eine leere Liste, die wie
+        „gibt es nicht“ aussieht.
+      schema:
+        type: string
+        example: alliance
+    LifeFormGroup:
+      name: life_form_group
+      in: query
+      required: false
+      description: >-
+        Lebensform-Gruppe der Formation, zu der ein Syntaxon gehört. Gespeichert
+        ist der Wert nur auf Formationszeilen; für jeden anderen Rang filtert
+        der Dienst über den Weg zur Formation. Die Wertemenge ist fest (sie
+        steht als CHECK im Schema) und keine Erweiterungsstelle; ein unbekannter
+        Wert ist INVALID_QUERY.
+      schema:
+        type: string
+        enum: [phanerogam, bryophyte_lichen, algae]
+    SyntaxonArea:
+      name: area
+      in: query
+      required: false
+      description: >-
+        Territoriumscode des Schemas `evc_territory` (Liste:
+        `GET /v1/areas?scheme=evc_territory`). Gefiltert wird auf Syntaxa mit
+        einer passenden Verbreitungszeile; Syntaxa **ohne** Aussage bleiben in
+        der Liste und sind daran erkennbar, dass ihnen `occurrence` fehlt —
+        dieselbe Dreiwertigkeit wie `in_area` bei den Arten.
+
+        Braucht rank=alliance: syntaxon_distribution und
+        syntaxon_distribution_coverage tragen ausschließlich alliance-Zeilen.
+        Mit einem anderen Rang — dem Vorgabewert formation, class oder order —
+        ist die Kombination INVALID_QUERY. Ein Code, den das Schema nicht
+        kennt, ebenso — nie eine Liste von „kommt nicht vor".
+      schema:
+        type: string
+        example: austria-alps
+    SyntaxonInclude:
+      name: include
+      in: query
+      required: false
+      description: >-
+        Kommagetrennte Menge aus `verified` und `uncertain`, in beliebiger
+        Reihenfolge; Vorgabe ist `verified`. `include=uncertain` allein ist
+        gültig. Ein unbekanntes Element, ein leerer Eintrag und ein doppelt
+        angegebener Parameter sind INVALID_QUERY — eine stillschweigend
+        ignorierte Filterangabe wäre schlimmer als eine abgelehnte. Ohne
+        `area` ist der Parameter wirkungslos und deshalb ebenfalls
+        INVALID_QUERY, statt vorzugeben, er hätte gewirkt.
+      schema:
+        type: string
+        example: verified,uncertain
   responses:
     InvalidQuery:
       description: Die Anfrage ist fehlerhaft (INVALID_QUERY).
@@ -617,19 +782,132 @@ components:
           type: string
         rank:
           type: string
-          enum: [class, order, alliance]
+          enum: [formation, class, order, alliance]
         name:
           type: string
         author:
           type: string
           description: >-
-            Autorschafts-Zitat, direkt aus FloraVeg.EU übernommen; fehlt, wenn
-            kein FloraVeg-Treffer gefunden wurde.
+            Autorschafts-Zitat, direkt aus FloraVeg.EU übernommen; fehlt bei
+            den Einheiten, die nur die EEA-EUNIS-Quelle führt.
         parent_id:
           type: string
           description: >-
-            Verweist auf einen FloraVeg-Klasse-/Ordnungscode (reine
-            String-Referenz, kein Fremdschlüssel); fehlt, wenn unbekannt.
+            Verweist auf den übergeordneten Syntaxon (reine String-Referenz,
+            kein Fremdschlüssel). Fehlt nur bei einer Formation — sie ist die
+            Wurzel der Hierarchie.
+        eea_code:
+          type: string
+          description: >-
+            Der EEA-EUNIS-Code desselben Syntaxons; fehlt bei Formationen und
+            bei Einheiten, die nur eine der beiden Quellen kennt.
+        source:
+          type: string
+          enum: [evc, eunis]
+          description: >-
+            Welche Quelle diese Zeile führt: die EuroVegChecklist (evc) oder
+            allein die EEA-EUNIS-Zuordnung (eunis).
+        parent_provenance:
+          type: string
+          enum: [official, derived]
+          description: >-
+            Ob parent_id aus der Quelle stammt (official) oder aus dem
+            Geschwisterkonsens abgeleitet wurde (derived).
+        life_form_group:
+          type: string
+          enum: [phanerogam, bryophyte_lichen, algae]
+          description: >-
+            Die Lebensform-Gruppe der Formation. Nur auf Formationszeilen
+            gesetzt und deshalb in Antworten, die Verbände oder Ordnungen
+            tragen, nicht vorhanden.
+        occurrence:
+          type: string
+          enum: [verified, uncertain]
+          description: >-
+            Nur in einer mit `?area=` gefilterten Liste gesetzt. **Fehlt**,
+            wenn die Quelle über dieses Syntaxon keine Aussage macht — die
+            Zeile wird dann mitgeführt, aber nicht als Vorkommen behauptet.
+    SyntaxonDetail:
+      description: >-
+        Ein Syntaxon mit seiner Umgebung: der Weg nach oben und die direkten
+        Kinder. `allOf`, weil die Go-Struktur `SyntaxonRef` einbettet und dessen
+        Felder damit in dasselbe JSON-Objekt einwandern — ein verschachteltes
+        Objekt hier und ein flaches auf der Leitung wären zwei Verträge, die
+        sich als einer ausgeben. `life_form_group` steht nur in `SyntaxonRef`
+        und wird hier nicht wiederholt; für jeden Rang außer der Formation ist
+        der Wert aus der Formation des Ahnenpfads abgeleitet und deshalb
+        nachvollziehbar, nicht behauptet.
+      allOf:
+        - $ref: "#/components/schemas/SyntaxonRef"
+        - type: object
+          required: [ancestors, children, direct_habitat_type_count]
+          properties:
+            ancestors:
+              type: array
+              description: >-
+                Der Weg zur Wurzel, ÄUSSERSTE zuerst (Formation, dann Klasse,
+                dann Ordnung). Für eine Formation leer — leer und vorhanden,
+                nicht fehlend.
+              items:
+                $ref: "#/components/schemas/SyntaxonRef"
+            children:
+              type: array
+              description: >-
+                Die direkten Kinder, nach `id` sortiert. Für einen Verband leer;
+                das ist die untere Grenze der freien Daten (Assoziationen sind
+                pan-europäisch nicht verfügbar), kein Fehler. Auch hier ist die
+                leere Liste vorhanden und nicht weggelassen.
+              items:
+                $ref: "#/components/schemas/SyntaxonRef"
+            direct_habitat_type_count:
+              type: integer
+              description: >-
+                Die Zahl der Habitattypen, die GENAU dieses Syntaxon verlinken —
+                nicht die seiner Nachkommen. Für eine Klasse oder Formation
+                praktisch immer 0, weil `habitat_type_syntaxon` Verbände
+                verlinkt (und in einem Fall eine Ordnung). Der Name sagt das,
+                damit die 0 nicht als „diese Klasse berührt keinen EUNIS-Typ“
+                gelesen wird.
+              example: 3
+            distribution:
+              allOf:
+                - $ref: "#/components/schemas/SyntaxonDistribution"
+              description: >-
+                Fehlt, wenn die Quelle über dieses Syntaxon keine Aussage macht —
+                dann ist NICHTS über sein Vorkommen bekannt, was von „kommt
+                nirgends vor" streng zu trennen ist.
+    SyntaxonDistribution:
+      description: >-
+        Die Verbreitungsaussage der Quelle (Preislerová et al. 2022/2024,
+        CC-BY 4.0) über ein Syntaxon. `verified` und `uncertain` sind
+        sortierte Codelisten des Schemas `evc_territory` — die Codes selbst
+        listet `GET /v1/areas?scheme=evc_territory`.
+
+        **Abwesenheit wird nicht aufgezählt.** 136 minus die belegten Codes
+        wäre eine erfundene Liste. Zwei leere Listen bedeuten „geprüft, kommt
+        in keinem Territorium vor"; **fehlt das ganze Objekt**, liegt
+        überhaupt keine Aussage vor. Das sind zwei verschiedene Dinge: die
+        Quelle deckt nur *vascular-plant dominated vegetation* ab, weshalb
+        gemessen 212 der 1326 Verbände — darunter alle 190 Moos-, Flechten-
+        und Algenverbände — kein `distribution` tragen.
+      type: object
+      required: [area_scheme, verified, uncertain]
+      properties:
+        area_scheme:
+          type: string
+          enum: [evc_territory]
+        verified:
+          type: array
+          description: Codes mit belegtem Vorkommen (Quellwert `1`).
+          items:
+            type: string
+          example: [austria-alps, czech-republic]
+        uncertain:
+          type: array
+          description: Codes mit unsicherem Vorkommen (Quellwert `U`).
+          items:
+            type: string
+          example: [poland-sudetes]
     TraitValue:
       type: object
       required: [dim, value]
@@ -826,10 +1104,11 @@ components:
             $ref: "#/components/schemas/HabitatTypeRole"
     AreaView:
       description: >-
-        Ein Verbreitungsgebiet, nach dem gefiltert werden kann: WGSRPD-Level-3
-        ("botanische Länder"). `code` ist die Identität, `name` der englische
-        WGSRPD-Name als Overlay — leer, wenn zu dem Code kein Name eingelesen
-        wurde.
+        Ein Verbreitungsgebiet, nach dem gefiltert werden kann: `scheme` ist
+        `wgsrpd_l3` (WGSRPD-Level-3, "botanische Länder", für die
+        Artverbreitung) oder `evc_territory` (die 136 Territorien der
+        Syntaxa-Verbreitung). `code` ist die Identität, `name` der englische
+        Name als Overlay — leer, wenn zu dem Code kein Name eingelesen wurde.
       type: object
       required: [scheme, code, name]
       properties:
@@ -889,7 +1168,15 @@ components:
     # erfundene Fassung wäre schlimmer als keine.
     IndexInfo:
       type: object
-      required: [concept_backbones, species_with_concept, area_scheme, areas_with_data]
+      required:
+        [
+          concept_backbones,
+          species_with_concept,
+          area_scheme,
+          areas_with_data,
+          syntaxon_area_scheme,
+          syntaxa_with_distribution,
+        ]
       properties:
         concept_backbones:
           type: array
@@ -908,7 +1195,13 @@ components:
           example: 3135
         area_scheme:
           type: string
-          description: Das Vokabular, aus dem `?area=`-Codes stammen.
+          enum: [wgsrpd_l3]
+          description: >-
+            Das Vokabular der `?area=`-Codes auf den **Arten**-Routen
+            (WGSRPD Level 3). Der Name steht in der Einzahl, weil er vor dem
+            zweiten Schema veröffentlicht wurde und ein Feldname in einer
+            Antwort keine Geschmacksfrage ist — siehe `syntaxon_area_scheme`
+            für das der Syntaxa.
           example: wgsrpd_l3
         areas_with_data:
           type: integer
@@ -918,6 +1211,24 @@ components:
             über den Index, kein Platzhalter. Es ist eine Anzahl und keine Liste:
             *welche* Codes gültig sind, sagt keine Route.
           example: 366
+        syntaxon_area_scheme:
+          type: string
+          enum: [evc_territory]
+          description: >-
+            Das Vokabular der `?area=`-Codes auf den **Syntaxa**-Routen (die
+            136 EVC-Territorien). Steht auch dann, wenn
+            `syntaxa_with_distribution` 0 ist: das Schema gehört zu dieser
+            Fassung des Dienstes, die Zahl zu diesem Index. Zwischen den
+            beiden Schemata gibt es keine Abbildung.
+          example: evc_territory
+        syntaxa_with_distribution:
+          type: integer
+          description: >-
+            Gemessene Zahl der Syntaxa, über die die Quelle **überhaupt** eine
+            Aussage macht. 0 bis ein Verbreitungs-Ingest gelaufen ist — das
+            ist eine wahre Aussage über den Index, kein Platzhalter. Gemessen
+            gegen die gepinnten Artefakte: 1114.
+          example: 1114
     TraitSummary:
       type: object
       required: [requested, known, unknown, vocabularies]

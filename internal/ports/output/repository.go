@@ -18,13 +18,26 @@ type IngestTx interface {
 	UpsertHabitatType(h domain.HabitatType) error
 	UpsertCrosswalk(c domain.Crosswalk) error
 	UpsertSyntaxon(s domain.Syntaxon) error
-	// UpsertSyntaxonAuthor sets Name and Author on an already-upserted syntaxon
-	// and, if parentID is non-empty, its ParentID — used ONLY by the
-	// hierarchy-matching pass to enrich an existing EUNIS alliance row on a
-	// FloraVeg match. name is FloraVeg's own clean name, replacing the
-	// historical EUNIS combi-string; it is always set (a match always has a
-	// real FloraVeg name), unlike parentID, which can legitimately be empty.
-	UpsertSyntaxonAuthor(id, name, author, parentID string) error
+	// SetSyntaxonParent sets the parent and its provenance on an already
+	// written row. Separate from UpsertSyntaxon because the parent of the
+	// 16 EEA-only units is only known once the FloraVeg rows and their
+	// siblings are in the index. An id no row carries is an error, part of
+	// the port's contract and not an implementation detail: a silent no-op
+	// leaves the index with a parentless syntaxon while every integrity
+	// check, running on the caller's in-memory graph, sees the parent set.
+	SetSyntaxonParent(id, parentID, provenance string) error
+	// ClearSyntaxa empties habitat_type_syntaxon and syntaxon, in that
+	// order, before IngestSyntaxa writes the current run's rows. The
+	// hierarchy comes entirely from two pinned source files, so a row
+	// absent from this run's files must not survive it — an Upsert can only
+	// add or overwrite, never remove a row the source dropped, and the
+	// syntaxa quellenumkehr made dropped rows the normal case: about 1310
+	// ids changed identity in one run. Same reasoning as
+	// DeleteTraitValuesForVocab in internal/adapters/sqlite/trait.go, one
+	// level up: there a stale vocab_version could linger next to the new
+	// one; here a stale EEA-style syntaxon id lingers next to its FloraVeg
+	// replacement unless every prior row is gone before the new ones land.
+	ClearSyntaxa() error
 	LinkSyntaxon(key domain.HabitatTypeKey, syntaxonID string) error
 	UpsertSpeciesRole(r domain.SpeciesRole) error
 	// UpsertDerivedSpeciesRole writes a species role derived from an aggregate's
@@ -41,6 +54,36 @@ type IngestTx interface {
 	// codes species_distribution carries: writing one neither creates nor
 	// requires distribution data.
 	UpsertArea(a domain.NamedArea) error
+	// UpsertSyntaxonDistribution records that a syntaxon occurs in one area,
+	// with occurrence being domain.OccurrenceVerified or
+	// domain.OccurrenceUncertain. Idempotent, and a repeated ingest overwrites
+	// the occurrence: the source is allowed to upgrade an uncertain record to
+	// a verified one, and an index that kept the old value would answer from a
+	// fassung nobody published.
+	UpsertSyntaxonDistribution(syntaxonID, scheme, code, occurrence string) error
+	// UpsertSyntaxonDistributionCoverage records that the source makes a
+	// statement about this syntaxon at all. Without it "occurs in no
+	// territory" is indistinguishable from "nobody looked".
+	UpsertSyntaxonDistributionCoverage(syntaxonID, scheme string) error
+	// ClearSyntaxonDistribution empties syntaxon_distribution and
+	// syntaxon_distribution_coverage before IngestSyntaxonDistribution writes
+	// the current run's rows, same reasoning as ClearSyntaxa: both tables come
+	// entirely from one pinned artifact, so a row absent from this run's files
+	// must not survive it, and an Upsert can only add or overwrite.
+	//
+	// It matters more here than anywhere else because the ABSENCE of a row is
+	// itself a statement: a coverage row without occurrence rows means
+	// "checked, occurs in no territory", no coverage row at all means "nobody
+	// looked". A stale coverage row does not merely age — it turns unknown
+	// into absence, the exact inversion of what the coverage table exists for.
+	//
+	// species_distribution is deliberately NOT replaced this way. It is
+	// fetched per concept from hostus, and an outage mid-run is warned about
+	// and tolerated on purpose, because the species distribution is extra
+	// information a five-minute ingest must not die over. Clearing it up front
+	// would turn such an outage from "not updated this run" into "every area
+	// every species was known from is gone".
+	ClearSyntaxonDistribution() error
 	// UpsertDescription writes one habitat type's prose description.
 	UpsertDescription(d domain.HabitatDescription) error
 	// UpsertTraitValue writes one trait_value row for conceptID. Idempotent
@@ -98,12 +141,42 @@ type Repository interface {
 	// syntaxon that exists but is linked to nothing from one that does not
 	// exist at all.
 	Syntaxon(ctx context.Context, id string) (domain.Syntaxon, error)
+	// SyntaxonByEEACode returns the vegetation unit whose eea_code equals code,
+	// or ErrNotFound. Used as a fallback for a syntaxon id that changed to the
+	// EVC primary code: the old EEA-style id (e.g. PAP-01A) is looked up here
+	// once the primary lookup by id has failed. An empty code never matches,
+	// and a code more than one row carries is an error that does NOT wrap
+	// ErrNotFound: the implementation must report the ambiguity instead of
+	// returning an arbitrary one of the candidates.
+	SyntaxonByEEACode(ctx context.Context, code string) (domain.Syntaxon, error)
 	// Syntaxa returns the vegetation units linked to a habitat type.
 	Syntaxa(ctx context.Context, key domain.HabitatTypeKey) ([]domain.Syntaxon, error)
 	// AllSyntaxa returns every vegetation unit the index holds, in id order.
 	// Used by the FloraVeg hierarchy-matching pass to find every
 	// already-ingested EUNIS alliance to match its own names against.
 	AllSyntaxa(ctx context.Context) ([]domain.Syntaxon, error)
+	// SyntaxonChildren returns the direct children of parentID, ordered by id.
+	// An alliance has none: an empty slice is the answer, not an error — that
+	// is the lower bound of the free data (see the known ceiling).
+	SyntaxonChildren(ctx context.Context, parentID string) ([]domain.Syntaxon, error)
+	// SyntaxonAncestors walks parent_id to the root, OUTERMOST first
+	// (formation, class, order), and is empty for a formation. An unknown id
+	// is ErrNotFound; a parent_id pointing at a missing row and a cycle are
+	// both index defects and are reported as plain errors that do NOT wrap
+	// ErrNotFound, so a caller cannot turn them into a 404 for an id that
+	// exists.
+	SyntaxonAncestors(ctx context.Context, id string) ([]domain.Syntaxon, error)
+	// HabitatTypeCountForSyntaxon counts the edges of exactly this syntaxon,
+	// not its descendants', and without loading them.
+	HabitatTypeCountForSyntaxon(ctx context.Context, syntaxonID string) (int, error)
+	// SyntaxaByRank returns every syntaxon of rank, ordered by id. A non-empty
+	// lifeFormGroup keeps only those whose reachable formation carries that
+	// group — the value is stored on formation rows alone. A rank the index
+	// does not carry yields an empty list here; turning that into an
+	// INVALID_QUERY is the read side's job, which needs SyntaxonRanks for it.
+	SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string) ([]domain.Syntaxon, error)
+	// SyntaxonRanks lists the distinct ranks the index carries, sorted.
+	SyntaxonRanks(ctx context.Context) ([]string, error)
 	// HabitatTypeKeysForSyntaxon returns the habitat types a syntaxon is linked
 	// to — the m:n direction.
 	HabitatTypeKeysForSyntaxon(ctx context.Context, syntaxonID string) ([]domain.HabitatTypeKey, error)
@@ -120,13 +193,32 @@ type Repository interface {
 	AreasForConcepts(ctx context.Context, conceptIDs []string, scheme string) (map[string][]string, error)
 	// KnownAreaCodes lists the area codes the index has data for. An area
 	// filter must be validated against this: an unknown code has to be an
-	// error, not a list of "does not occur".
+	// error, not a list of "does not occur". Read per scheme from its own
+	// table: wgsrpd_l3 codes live in species_distribution, evc_territory
+	// codes in syntaxon_distribution, and there is never a row of one in
+	// the other.
 	KnownAreaCodes(ctx context.Context, scheme string) ([]string, error)
 	// AreasWithData lists the areas the index has distribution data for,
 	// each with its ingested name — what a client needs to offer an area
 	// filter that can actually answer. An area with a name but no data is
-	// not in it; an area with data but no name keeps an empty name.
+	// not in it; an area with data but no name keeps an empty name. Per
+	// scheme from its own distribution table, for the same reason
+	// KnownAreaCodes branches.
 	AreasWithData(ctx context.Context, scheme string) ([]domain.NamedArea, error)
+	// SyntaxonDistribution returns what the source says about one syntaxon in
+	// one area scheme: the verified and uncertain codes, sorted, plus whether
+	// there is any statement at all (Covered). A syntaxon with no coverage row
+	// comes back Covered false and both lists empty — which the read side must
+	// serve as "no distribution field", never as "occurs nowhere".
+	SyntaxonDistribution(ctx context.Context, syntaxonID, scheme string) (domain.SyntaxonDistribution, error)
+	// SyntaxonOccurrencesInArea maps syntaxon id -> occurrence for one area.
+	// A syntaxon absent from the map has no row for that area, which is NOT
+	// the same as one absent from SyntaxaWithCoverage.
+	SyntaxonOccurrencesInArea(ctx context.Context, scheme, code string) (map[string]string, error)
+	// SyntaxaWithCoverage is the set of syntaxa the source makes a statement
+	// about. The read side needs it to keep the unjudgeable rows in an
+	// ?area=-filtered list instead of dropping them.
+	SyntaxaWithCoverage(ctx context.Context, scheme string) (map[string]bool, error)
 	// ConceptIDs lists the distinct concept ids the index holds, so the
 	// distribution step knows what to ask for.
 	ConceptIDs(ctx context.Context) ([]string, error)

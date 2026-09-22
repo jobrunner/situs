@@ -1,0 +1,1045 @@
+package application
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/jobrunner/situs/internal/domain"
+)
+
+// captureSlog redirects the default logger into a buffer for the duration of
+// the test and restores it afterward — used to assert on a warning's
+// presence/absence, not just that the code path ran. Shared across ingest
+// tests (area_ingest_test.go, description_ingest_test.go); it lived in the
+// now-deleted syntaxa_hierarchy_ingest_test.go before this file took it over.
+func captureSlog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return &buf
+}
+
+type syntaxaFiles struct {
+	formations, hierarchy, eunis, links string
+}
+
+func writeSyntaxaDir(t *testing.T, f syntaxaFiles) string {
+	t.Helper()
+	dir := t.TempDir()
+	for name, content := range map[string]string{
+		"syntaxa_formations.csv":   f.formations,
+		"syntaxa_hierarchy.csv":    f.hierarchy,
+		"syntaxa.csv":              f.eunis,
+		"habitat_type_syntaxa.csv": f.links,
+	} {
+		if content == "" {
+			continue
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			t.Fatalf("Schreiben von %s: %v", name, err)
+		}
+	}
+	return dir
+}
+
+const (
+	minimalFormations = "letter,name_en,life_form_group\n" +
+		"C,Vegetation of the nemoral forest zone,phanerogam\n" +
+		"R,Epigaeic bryophyte and lichen vegetation,bryophyte_lichen\n"
+	// The author column mirrors a real phytosociological citation shape
+	// (surname + year); the German word for "author" misspell-lints as a
+	// typo of "Author", so the fixture uses the surnames "Moor"/"Braun"
+	// instead — the brief's own values, only the placeholder changed.
+	minimalHierarchy = "code,rank,name,author,parent_code,eea_code\n" +
+		"CA,class,Testklasse,Moor 1950,,TST\n" +
+		"CA01,order,Testordnung,Moor 1960,CA,TST-01\n" +
+		"CA01A,alliance,Testverband,Moor 1970,CA01,TST-01A\n" +
+		"RA,class,Moosklasse,Braun 1980,,MOO\n" +
+		"RA01,order,Moosordnung,Braun 1981,RA,MOO-01\n" +
+		"RA01A,alliance,Moosverband,Braun 1982,RA01,MOO-01A\n"
+)
+
+func TestIngestSyntaxaSchreibtFormationenAusDemBuchstaben(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations, hierarchy: minimalHierarchy,
+		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if rep.FormationsWritten != 2 {
+		t.Errorf("FormationsWritten = %d, erwartet 2", rep.FormationsWritten)
+	}
+	c := repo.syntaxonByID("C")
+	if c.Rank != domain.SyntaxonRankFormation || c.ParentID != "" ||
+		c.LifeFormGroup != domain.LifeFormPhanerogam {
+		t.Errorf("Formation C = %+v", c)
+	}
+	// A formation is a root: the domain invariant says ParentProvenance must
+	// be "official" whenever ParentID is empty. UpsertSyntaxon binds the
+	// column explicitly, so the schema default never gets a chance to apply
+	// it — the ingest itself must set it.
+	if c.ParentProvenance != domain.ParentProvenanceOfficial {
+		t.Errorf("Formation C ParentProvenance = %q, erwartet %q", c.ParentProvenance, domain.ParentProvenanceOfficial)
+	}
+	if got := repo.syntaxonByID("R").LifeFormGroup; got != domain.LifeFormBryophyteLichen {
+		t.Errorf("Formation R Lebensform = %q", got)
+	}
+}
+
+func TestIngestSyntaxaHaengtKlassenAnIhreFormation(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations, hierarchy: minimalHierarchy,
+		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if rep.ClassesWritten != 2 || rep.OrdersWritten != 2 || rep.AlliancesWritten != 2 {
+		t.Errorf("Zaehler = %d/%d/%d, erwartet 2/2/2",
+			rep.ClassesWritten, rep.OrdersWritten, rep.AlliancesWritten)
+	}
+	for id, wantParent := range map[string]string{
+		"CA": "C", "CA01": "CA", "CA01A": "CA01", "RA": "R", "RA01A": "RA01",
+	} {
+		if got := repo.syntaxonByID(id).ParentID; got != wantParent {
+			t.Errorf("%s.ParentID = %q, erwartet %q", id, got, wantParent)
+		}
+	}
+	if got := repo.syntaxonByID("CA01A"); got.EEACode != "TST-01A" ||
+		got.Source != domain.SyntaxonSourceEVC ||
+		got.ParentProvenance != domain.ParentProvenanceOfficial {
+		t.Errorf("Verband = %+v", got)
+	}
+}
+
+func TestIngestSyntaxaUebernimmtAutorschaftUndNameAusFloraVeg(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations, hierarchy: minimalHierarchy,
+		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	if _, err := IngestSyntaxa(context.Background(), repo, dir); err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	got := repo.syntaxonByID("CA01A")
+	if got.Name != "Testverband" || got.Author != "Moor 1970" {
+		t.Errorf("Name/Author = %q/%q", got.Name, got.Author)
+	}
+}
+
+func TestIngestSyntaxaBrichtOhneFormationsdateiAb(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		hierarchy: minimalHierarchy,
+		eunis:     "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief ohne syntaxa_formations.csv durch")
+	}
+	if !strings.Contains(err.Error(), "syntaxa_formations.csv") {
+		t.Errorf("Fehler benennt die Datei nicht: %v", err)
+	}
+}
+
+func TestIngestSyntaxaBrichtOhneHierarchiedateiAb(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		eunis:      "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief ohne syntaxa_hierarchy.csv durch")
+	}
+	if !strings.Contains(err.Error(), "syntaxa_hierarchy.csv") {
+		t.Errorf("Fehler benennt die Datei nicht: %v", err)
+	}
+}
+
+func TestIngestSyntaxaBrichtBeiDoppeltemFormationsbuchstabenAb(t *testing.T) {
+	// A duplicated letter would silently overwrite the earlier formation:
+	// one of the two names simply disappears, and every class under the
+	// letter lands under the survivor without anything being reported.
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations + "C,Vegetation of the nemoral forest zone (Dublette),phanerogam\n",
+		hierarchy:  minimalHierarchy,
+		eunis:      "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa akzeptierte einen doppelten Formationsbuchstaben")
+	}
+	if !strings.Contains(err.Error(), "C") || !strings.Contains(err.Error(), fileFormations) {
+		t.Errorf("Fehler benennt Buchstabe und Datei nicht: %v", err)
+	}
+	// Weder Commit noch Rollback: die Pruefung laeuft, bevor eine
+	// Transaktion aufgeht, der Index wird also gar nicht erst angefasst.
+	if repo.committed || repo.rolledBack {
+		t.Errorf("erwartet keine Transaktion, committed=%v rolledBack=%v", repo.committed, repo.rolledBack)
+	}
+}
+
+func TestIngestSyntaxaBrichtBeiLeeremFormationsbuchstabenAb(t *testing.T) {
+	// An empty letter would be written as a formation with the id "" — a row
+	// nothing can reach and that no class could ever point at.
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations + ",Vegetation ohne Buchstabe,phanerogam\n",
+		hierarchy:  minimalHierarchy,
+		eunis:      "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa akzeptierte eine Formationszeile ohne Buchstaben")
+	}
+	if !strings.Contains(err.Error(), fileFormations) {
+		t.Errorf("Fehler benennt die Datei nicht: %v", err)
+	}
+}
+
+func TestIngestSyntaxaBrichtBeiLeererFormationsdateiAb(t *testing.T) {
+	// The required-file check passes on a header-only file: it exists and
+	// carries every column. Since writeSyntaxa replaces the hierarchy instead
+	// of extending it, such a run would ClearSyntaxa and commit without a
+	// single root — a truncated curated source deleting the whole hierarchy.
+	repo := newFakeRepo()
+	repo.syntaxa = []domain.Syntaxon{
+		{ID: "C", Rank: domain.SyntaxonRankFormation},
+		{ID: "CA", Rank: domain.SyntaxonRankClass, ParentID: "C"},
+	}
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: "letter,name_en,life_form_group\n",
+		hierarchy:  "code,rank,name,author,parent_code,eea_code\n",
+		eunis:      "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	// The damage first, the diagnosis second: without the check the run
+	// succeeds and the index is empty afterwards.
+	if len(repo.syntaxa) != 2 {
+		t.Errorf("Hierarchie im Index = %v, erwartet unveraendert", repo.syntaxa)
+	}
+	if repo.committed || repo.rolledBack {
+		t.Errorf("erwartet keine Transaktion, committed=%v rolledBack=%v", repo.committed, repo.rolledBack)
+	}
+	if err == nil {
+		t.Fatal("IngestSyntaxa akzeptierte eine Formationsdatei ohne eine einzige Zeile")
+	}
+	if !strings.Contains(err.Error(), fileFormations) {
+		t.Errorf("Fehler benennt die Datei nicht: %v", err)
+	}
+}
+
+func TestIngestSyntaxaAkzeptiertLeereHierarchiedatei(t *testing.T) {
+	// The counterpart of the test above: an empty syntaxa_hierarchy.csv is
+	// deliberately allowed — the formations alone are a valid, if bare,
+	// hierarchy. Only the empty formation set is the defect.
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy:  "code,rank,name,author,parent_code,eea_code\n",
+		eunis:      "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if rep.FormationsWritten != 2 || rep.ClassesWritten != 0 {
+		t.Errorf("Zaehler = %d Formationen / %d Klassen, erwartet 2/0",
+			rep.FormationsWritten, rep.ClassesWritten)
+	}
+}
+
+func TestIngestSyntaxaBrichtBeiFehlenderEEACodeSpalteAb(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy:  "code,rank,name,author,parent_code\nCA,class,K,,\n",
+		eunis:      "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	if _, err := IngestSyntaxa(context.Background(), repo, dir); err == nil {
+		t.Fatal("IngestSyntaxa akzeptierte eine CSV ohne eea_code")
+	}
+}
+
+func TestIngestSyntaxaUeberspringtKlasseMitUnbekanntemBuchstaben(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy: "code,rank,name,author,parent_code,eea_code\n" +
+			"ZA,class,Klasse ohne Formation,,,ZZZ\n",
+		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if rep.ClassesWritten != 0 || rep.SkippedRows != 1 {
+		t.Errorf("ClassesWritten/SkippedRows = %d/%d, erwartet 0/1",
+			rep.ClassesWritten, rep.SkippedRows)
+	}
+	if repo.has("ZA") {
+		t.Error("ZA wurde geschrieben, obwohl Formation Z fehlt")
+	}
+}
+
+func TestIngestSyntaxaUeberspringtHierarchiezeileOhneCode(t *testing.T) {
+	// A row with a valid rank and a valid parent passes the dangling-parent,
+	// cycle and rank checks — and lands in the index as a syntaxon with the id
+	// "": nameless, unreachable, and a hole in the navigation tree. Skipped and
+	// counted like every other malformed row, not fatal: the row carries no key
+	// anything else could point at, so dropping it costs nothing else.
+	buf := captureSlog(t)
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy:  minimalHierarchy + ",alliance,Verband ohne Code,Moor 1990,CA01,XYZ-01A\n",
+		eunis:      "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if repo.has("") {
+		t.Error("eine Zeile ohne Code wurde als Syntaxon mit der ID \"\" geschrieben")
+	}
+	if rep.AlliancesWritten != 2 {
+		t.Errorf("AlliancesWritten = %d, erwartet 2", rep.AlliancesWritten)
+	}
+	if rep.SkippedRows != 1 {
+		t.Errorf("SkippedRows = %d, erwartet 1", rep.SkippedRows)
+	}
+	// Eine Zahl ohne Grund ist nur halb gemeldet: die Warnung nennt Datei,
+	// Zeile und Ursache.
+	if !strings.Contains(buf.String(), fileHierarchy) || !strings.Contains(buf.String(), "line=8") {
+		t.Errorf("Warnung nennt Datei und Zeile nicht: %s", buf.String())
+	}
+}
+
+func TestIngestSyntaxaBrichtBeiBaumelndemParentCodeAb(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy: "code,rank,name,author,parent_code,eea_code\n" +
+			"CA,class,Testklasse,Moor 1950,,TST\n" +
+			// CA99 does not exist anywhere in this file: a stale parent_code,
+			// not a skipped class.
+			"CA01,order,Testordnung,Moor 1960,CA99,TST-01\n",
+		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief mit baumelndem parent_code durch")
+	}
+	if !strings.Contains(err.Error(), "CA01") {
+		t.Errorf("Fehler nennt CA01 nicht: %v", err)
+	}
+}
+
+// TestIngestSyntaxaBrichtBeiZyklusImParentCodeAb covers what
+// checkDanglingParents alone cannot see: CA01 and CA01A point at each other,
+// so both rows ARE written and both have a written parent — the plain
+// "was the parent written" check passes them cleanly, even though neither
+// ever reaches the formation C. checkCycles must catch this.
+func TestIngestSyntaxaBrichtBeiZyklusImParentCodeAb(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy: "code,rank,name,author,parent_code,eea_code\n" +
+			"CA,class,Testklasse,Moor 1950,,TST\n" +
+			"CA01,order,Testordnung,Moor 1960,CA01A,TST-01\n" +
+			"CA01A,alliance,Testverband,Moor 1970,CA01,TST-01A\n",
+		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief mit einem Zyklus im parent_code durch")
+	}
+	if !strings.Contains(err.Error(), "CA01") || !strings.Contains(err.Error(), "CA01A") {
+		t.Errorf("Fehler nennt nicht beide Zyklus-Mitglieder CA01/CA01A: %v", err)
+	}
+}
+
+func TestIngestSyntaxaBrichtAbWennOrdnungAnUebersprungenerKlasseHaengt(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy: "code,rank,name,author,parent_code,eea_code\n" +
+			// ZA's formation letter Z is unknown -> ZA is skipped
+			// (SkippedRows), but its order ZA01 is written regardless and
+			// must not be allowed to dangle.
+			"ZA,class,Klasse ohne Formation,,,ZZZ\n" +
+			"ZA01,order,Ordnung ohne Klasse,,ZA,ZZZ-01\n",
+		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief mit einer Ordnung an uebersprungener Klasse durch")
+	}
+	if !strings.Contains(err.Error(), "ZA01") {
+		t.Errorf("Fehler nennt ZA01 nicht: %v", err)
+	}
+}
+
+func TestFormationOfLeeresCodeLiefertLeereFormation(t *testing.T) {
+	if got := formationOf(""); got != "" {
+		t.Errorf("formationOf(\"\") = %q, erwartet \"\"", got)
+	}
+}
+
+func TestIngestSyntaxaUeberspringtUnbekanntenRang(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy: "code,rank,name,author,parent_code,eea_code\n" +
+			"CF,family,Unbekannter Rang,,,CFX\n",
+		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if rep.SkippedRows != 1 {
+		t.Errorf("SkippedRows = %d, erwartet 1", rep.SkippedRows)
+	}
+	if repo.has("CF") {
+		t.Error("CF wurde geschrieben, obwohl der Rang unbekannt ist")
+	}
+}
+
+func TestIngestSyntaxaBrichtBeiBeginFehlerAb(t *testing.T) {
+	repo := newFakeRepo()
+	repo.beginErr = fmt.Errorf("boom")
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations, hierarchy: minimalHierarchy,
+		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz Begin-Fehler durch")
+	}
+	if !strings.Contains(err.Error(), "beginning syntaxa ingest transaction") {
+		t.Errorf("Fehler = %v, erwartet Begin-Kontext", err)
+	}
+}
+
+func TestIngestSyntaxaRollbackBeiFehlerhaftemUpsertFormation(t *testing.T) {
+	repo := newFakeRepo()
+	repo.failOn = "UpsertSyntaxon"
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy:  "code,rank,name,author,parent_code,eea_code\n",
+		eunis:      "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz fehlschlagendem Formation-Upsert durch")
+	}
+	if !strings.Contains(err.Error(), "upserting formation") {
+		t.Errorf("Fehler = %v, erwartet Formation-Kontext", err)
+	}
+	if !repo.rolledBack {
+		t.Error("rolledBack = false, erwartet true nach fehlgeschlagenem Upsert")
+	}
+	if repo.committed {
+		t.Error("committed = true, obwohl der Upsert fehlschlug")
+	}
+}
+
+func TestIngestSyntaxaRollbackBeiFehlerhaftemUpsertHierarchie(t *testing.T) {
+	repo := newFakeRepo()
+	repo.failOn = "UpsertSyntaxon"
+	repo.failOnSyntaxonID = "CA01A"
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy: "code,rank,name,author,parent_code,eea_code\n" +
+			"CA01A,alliance,Testverband,Moor 1970,CA01,TST-01A\n",
+		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz fehlschlagendem Hierarchie-Upsert durch")
+	}
+	if !strings.Contains(err.Error(), "upserting alliance CA01A") {
+		t.Errorf("Fehler = %v, erwartet Hierarchie-Kontext", err)
+	}
+	if !repo.rolledBack {
+		t.Error("rolledBack = false, erwartet true nach fehlgeschlagenem Upsert")
+	}
+}
+
+func TestIngestSyntaxaMeldetFehlgeschlagenesRollback(t *testing.T) {
+	repo := newFakeRepo()
+	repo.failOn = "UpsertSyntaxon"
+	repo.rollbackErr = fmt.Errorf("rollback boom")
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy:  "code,rank,name,author,parent_code,eea_code\n",
+		eunis:      "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz Rollback-Fehler durch")
+	}
+	if !strings.Contains(err.Error(), "rollback also failed") {
+		t.Errorf("Fehler = %v, erwartet Hinweis auf fehlgeschlagenes Rollback", err)
+	}
+}
+
+func TestIngestSyntaxaSchreibtNurEeaEinheitenOhneFloraVegGegenstueck(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		// TST-01A has a FloraVeg counterpart (CA01A), EIG-01A does not, but
+		// a name match resolves its parent (Task 7): a genuinely
+		// unresolvable EIG-01A would fail the whole ingest as an orphan.
+		formations: minimalFormations,
+		hierarchy: minimalHierarchy +
+			"RA02A,alliance,Eigenverband,Moor 1990,RA01,XYZ-01A\n",
+		eunis: "id,rank,name,parent_id\n" +
+			"TST-01A,alliance,Testverband Moor 1970,\n" +
+			"EIG-01A,alliance,Eigenverband Moor 1990,\n",
+		links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if rep.EunisOnly != 1 {
+		t.Errorf("EunisOnly = %d, erwartet 1", rep.EunisOnly)
+	}
+	if repo.has("TST-01A") {
+		t.Error("TST-01A wurde als eigene Zeile geschrieben, obwohl CA01A sie vertritt")
+	}
+	eig := repo.syntaxonByID("EIG-01A")
+	if eig.Source != domain.SyntaxonSourceEUNIS || eig.EEACode != "" {
+		t.Errorf("EIG-01A = %+v, erwartet source=eunis und leeren EEACode", eig)
+	}
+	if eig.Name != "Eigenverband Moor 1990" {
+		t.Errorf("Name = %q, erwartet den EUNIS-Kombistring unveraendert", eig.Name)
+	}
+}
+
+func TestIngestSyntaxaUeberspringtEeaZeileOhneId(t *testing.T) {
+	// An EEA-only row without an id is written as a syntaxon with the id "";
+	// a name matching a FloraVeg alliance even resolves its parent, so the
+	// whole run commits with an invalid navigation target in it. Same
+	// treatment as the distribution readers give a row without its key:
+	// skipped, counted and named.
+	buf := captureSlog(t)
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations, hierarchy: minimalHierarchy,
+		eunis: "id,rank,name,parent_id\n,alliance,Testverband Moor 1970,\n",
+		links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if repo.has("") {
+		t.Error("eine EEA-Zeile ohne id wurde als Syntaxon mit der ID \"\" geschrieben")
+	}
+	if rep.EunisOnly != 0 {
+		t.Errorf("EunisOnly = %d, erwartet 0", rep.EunisOnly)
+	}
+	if rep.SkippedRows != 1 {
+		t.Errorf("SkippedRows = %d, erwartet 1", rep.SkippedRows)
+	}
+	if !strings.Contains(buf.String(), fileEunisSyntaxa) || !strings.Contains(buf.String(), "line=2") {
+		t.Errorf("Warnung nennt Datei und Zeile nicht: %s", buf.String())
+	}
+}
+
+func TestIngestSyntaxaLoestKantenUeberDenEEACodeAuf(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations, hierarchy: minimalHierarchy,
+		eunis: "id,rank,name,parent_id\nTST-01A,alliance,Testverband Moor 1970,\n",
+		links: "typology_id,code,syntaxon_id\neunis@2021,T11,TST-01A\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if rep.LinksWritten != 1 || rep.LinksRemapped != 1 {
+		t.Errorf("LinksWritten/LinksRemapped = %d/%d, erwartet 1/1",
+			rep.LinksWritten, rep.LinksRemapped)
+	}
+	if got := repo.linkTargets("eunis@2021", "T11"); len(got) != 1 || got[0] != "CA01A" {
+		t.Errorf("Kanten = %v, erwartet [CA01A]", got)
+	}
+}
+
+func TestIngestSyntaxaBehaeltKanteAufEeaEigeneEinheit(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		// A name match resolves EIG-01A's parent (Task 7); an unresolvable
+		// row would fail the whole ingest as an orphan.
+		formations: minimalFormations,
+		hierarchy: minimalHierarchy +
+			"RA02A,alliance,Eigenverband,Moor 1990,RA01,XYZ-01A\n",
+		eunis: "id,rank,name,parent_id\nEIG-01A,alliance,Eigenverband Moor 1990,\n",
+		links: "typology_id,code,syntaxon_id\neunis@2021,T11,EIG-01A\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if rep.LinksRemapped != 0 {
+		t.Errorf("LinksRemapped = %d, erwartet 0", rep.LinksRemapped)
+	}
+	if got := repo.linkTargets("eunis@2021", "T11"); len(got) != 1 || got[0] != "EIG-01A" {
+		t.Errorf("Kanten = %v, erwartet [EIG-01A]", got)
+	}
+}
+
+func TestIngestSyntaxaMeldetKanteAufUnbekanntesSyntaxon(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations, hierarchy: minimalHierarchy,
+		eunis: "id,rank,name,parent_id\n",
+		links: "typology_id,code,syntaxon_id\neunis@2021,T11,GIBTSNICHT\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if len(rep.UnknownLinkTargets) != 1 || rep.UnknownLinkTargets[0] != "GIBTSNICHT" {
+		t.Errorf("UnknownLinkTargets = %v", rep.UnknownLinkTargets)
+	}
+	if rep.LinksWritten != 0 {
+		t.Errorf("LinksWritten = %d, erwartet 0", rep.LinksWritten)
+	}
+}
+
+func TestIngestSyntaxaFuehrtEeaOrdnungMitFloraVegGegenstueckZusammen(t *testing.T) {
+	// The ASP-03/KC03 case: an EEA order that FloraVeg carries
+	// identically. The habitat type's edge must survive, just pointing
+	// at the primary code.
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations, hierarchy: minimalHierarchy,
+		eunis: "id,rank,name,parent_id\nTST-01,order,Testordnung Moor 1960,\n",
+		links: "typology_id,code,syntaxon_id\neunis@2021,T11,TST-01\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if repo.has("TST-01") {
+		t.Error("TST-01 blieb als Dublette von CA01 im Index")
+	}
+	if got := repo.linkTargets("eunis@2021", "T11"); len(got) != 1 || got[0] != "CA01" {
+		t.Errorf("Kanten = %v, erwartet [CA01]", got)
+	}
+	if rep.LinksRemapped != 1 {
+		t.Errorf("LinksRemapped = %d, erwartet 1", rep.LinksRemapped)
+	}
+}
+
+func TestIngestSyntaxaScheitertAnKollidierendemEEACode(t *testing.T) {
+	// Two FloraVeg rows carrying the SAME eea_code. The EEA code is the
+	// documented migration path from the old ids, so a duplicate makes
+	// GET /v1/syntaxon/TST-01A resolvable to either row — the ingest must
+	// fail on it, not build such an index.
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy: minimalHierarchy +
+			"RA02A,alliance,Doppelverband,Braun 1990,RA01,TST-01A\n",
+		eunis: "id,rank,name,parent_id\nTST-01A,alliance,Testverband Moor 1970,\n",
+		links: "typology_id,code,syntaxon_id\nannex1,9130,TST-01A\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz doppeltem EEA-Code durch")
+	}
+	if !strings.Contains(err.Error(), "TST-01A") {
+		t.Errorf("Fehler = %v, erwartet den kollidierenden Code TST-01A", err)
+	}
+	if len(rep.EEACodeCollisions) != 1 || rep.EEACodeCollisions[0] != "TST-01A" {
+		t.Errorf("EEACodeCollisions = %v, erwartet [TST-01A]", rep.EEACodeCollisions)
+	}
+	if repo.has("RA02A") {
+		t.Error("RA02A wurde geschrieben, obwohl der Ingest abbrechen sollte")
+	}
+}
+
+func TestIngestSyntaxaNenntJedenKollidierendenEEACodeGenauEinmal(t *testing.T) {
+	// The operator must be able to repair the source in one pass, so the
+	// error names EVERY colliding code, sorted and each exactly once —
+	// three rows on one code are still one entry. RA05A/RA06A carry no
+	// eea_code at all: the empty string is not a code that can collide.
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy: minimalHierarchy +
+			"RA02A,alliance,Doppelverband,Braun 1990,RA01,TST-01A\n" +
+			"RA03A,alliance,Drittverband,Braun 1991,RA01,TST-01A\n" +
+			"RA04A,alliance,Viertverband,Braun 1992,RA01,MOO-01A\n" +
+			"RA05A,alliance,Leerverband,Braun 1993,RA01,\n" +
+			"RA06A,alliance,Zweitleerverband,Braun 1994,RA01,\n",
+		eunis: "id,rank,name,parent_id\n",
+		links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz doppelter EEA-Codes durch")
+	}
+	want := []string{"MOO-01A", "TST-01A"}
+	if !slices.Equal(rep.EEACodeCollisions, want) {
+		t.Fatalf("EEACodeCollisions = %v, erwartet %v", rep.EEACodeCollisions, want)
+	}
+	for _, code := range want {
+		if strings.Count(err.Error(), code) != 1 {
+			t.Errorf("Fehler = %v, erwartet %s genau einmal", err, code)
+		}
+	}
+}
+
+func TestIngestSyntaxaScheitertAnDoppeltemPrimaercode(t *testing.T) {
+	// Two hierarchy rows on the SAME primary code. The code is the syntaxon's
+	// id, and UpsertSyntaxon resolves a conflict on it with DO UPDATE — so the
+	// later row would silently replace the earlier one's rank, name and parent
+	// while the report counted both. The ingest must fail on it instead.
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy: minimalHierarchy +
+			"CA01A,alliance,Zweitverband,Braun 1990,CA01,MOO-02A\n",
+		eunis: "id,rank,name,parent_id\n",
+		links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz doppeltem Primaercode durch")
+	}
+	if len(rep.PrimaryCodeCollisions) != 1 || rep.PrimaryCodeCollisions[0] != "CA01A" {
+		t.Errorf("PrimaryCodeCollisions = %v, erwartet [CA01A]", rep.PrimaryCodeCollisions)
+	}
+	if strings.Count(err.Error(), "CA01A") != 1 {
+		t.Errorf("Fehler = %v, erwartet CA01A genau einmal", err)
+	}
+	if repo.has("CA01A") {
+		t.Error("CA01A wurde geschrieben, obwohl der Ingest abbrechen sollte")
+	}
+}
+
+func TestIngestSyntaxaNenntJedenDoppeltenPrimaercodeGenauEinmal(t *testing.T) {
+	// Like the eea_code case: every colliding code is named, sorted and once,
+	// so the source can be repaired in one pass.
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy: minimalHierarchy +
+			"RA01A,alliance,Zweitmoosverband,Braun 1990,RA01,MOO-02A\n" +
+			"RA01A,alliance,Drittmoosverband,Braun 1991,RA01,MOO-03A\n" +
+			"CA01A,alliance,Zweitverband,Braun 1992,CA01,TST-02A\n",
+		eunis: "id,rank,name,parent_id\n",
+		links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz doppelter Primaercodes durch")
+	}
+	want := []string{"CA01A", "RA01A"}
+	if !slices.Equal(rep.PrimaryCodeCollisions, want) {
+		t.Fatalf("PrimaryCodeCollisions = %v, erwartet %v", rep.PrimaryCodeCollisions, want)
+	}
+	for _, code := range want {
+		if strings.Count(err.Error(), code) != 1 {
+			t.Errorf("Fehler = %v, erwartet %s genau einmal", err, code)
+		}
+	}
+}
+
+func TestIngestSyntaxaRollbackBeiFehlerhaftemUpsertEunisOnly(t *testing.T) {
+	repo := newFakeRepo()
+	repo.failOn = "UpsertSyntaxon"
+	repo.failOnSyntaxonID = "EIG-01A"
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy:  "code,rank,name,author,parent_code,eea_code\n",
+		eunis:      "id,rank,name,parent_id\nEIG-01A,alliance,Eigenverband Moor 1990,\n",
+		links:      "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz fehlschlagendem EUNIS-Only-Upsert durch")
+	}
+	if !strings.Contains(err.Error(), "upserting eunis-only EIG-01A") {
+		t.Errorf("Fehler = %v, erwartet EUNIS-Only-Kontext", err)
+	}
+	if !repo.rolledBack {
+		t.Error("rolledBack = false, erwartet true nach fehlgeschlagenem Upsert")
+	}
+}
+
+func TestIngestSyntaxaRollbackBeiFehlerhaftemLinkSyntaxon(t *testing.T) {
+	repo := newFakeRepo()
+	repo.failOn = "LinkSyntaxon"
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy:  "code,rank,name,author,parent_code,eea_code\n",
+		eunis:      "id,rank,name,parent_id\nEIG-01A,alliance,Eigenverband Moor 1990,\n",
+		links:      "typology_id,code,syntaxon_id\neunis@2021,T11,EIG-01A\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz fehlschlagendem LinkSyntaxon durch")
+	}
+	if !strings.Contains(err.Error(), "linking T11 to EIG-01A") {
+		t.Errorf("Fehler = %v, erwartet Link-Kontext", err)
+	}
+	if !repo.rolledBack {
+		t.Error("rolledBack = false, erwartet true nach fehlgeschlagenem Link")
+	}
+}
+
+func TestIngestSyntaxaUeberspringtKanteMitUngueltigerTypologyId(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations, hierarchy: minimalHierarchy,
+		eunis: "id,rank,name,parent_id\n",
+		links: "typology_id,code,syntaxon_id\n,T11,CA01A\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if rep.LinksWritten != 0 {
+		t.Errorf("LinksWritten = %d, erwartet 0", rep.LinksWritten)
+	}
+	if rep.SkippedRows != 1 {
+		t.Errorf("SkippedRows = %d, erwartet 1", rep.SkippedRows)
+	}
+}
+
+func TestIngestSyntaxaMeldetCommitFehler(t *testing.T) {
+	repo := newFakeRepo()
+	repo.commitErr = fmt.Errorf("commit boom")
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations, hierarchy: minimalHierarchy,
+		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz Commit-Fehler durch")
+	}
+	if !strings.Contains(err.Error(), "committing syntaxa ingest transaction") {
+		t.Errorf("Fehler = %v, erwartet Commit-Kontext", err)
+	}
+}
+
+// childlessFormations adds a formation no class in minimalHierarchy points
+// at. Shadowing THAT one is the silent case: nothing else references Z, so
+// replacing it with an alliance leaves every parent chain rank-correct and the
+// run commits with a root gone.
+const childlessFormations = minimalFormations +
+	"Z,Vegetation ohne Klassen,phanerogam\n"
+
+// presetHierarchy is an index that already carries a working hierarchy, used
+// where a test must show that an aborted run leaves the existing index alone
+// — the damage first, the diagnosis second.
+func presetHierarchy(repo *fakeRepo) {
+	repo.syntaxa = []domain.Syntaxon{
+		{ID: "C", Rank: domain.SyntaxonRankFormation},
+		{ID: "CA", Rank: domain.SyntaxonRankClass, ParentID: "C"},
+	}
+}
+
+func TestIngestSyntaxaScheitertWennEineHierarchiezeileEineFormationVerdeckt(t *testing.T) {
+	// The hierarchy row R is rank-correct in every other respect (an alliance
+	// under an order), so orphan, cycle and rank checks all pass — and
+	// UpsertSyntaxon's ON CONFLICT(id) DO UPDATE silently replaces formation R
+	// with it. Three sources write into one id namespace; the collision has to
+	// be caught across all of them, not within one file.
+	repo := newFakeRepo()
+	presetHierarchy(repo)
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: childlessFormations,
+		hierarchy: minimalHierarchy +
+			"Z,alliance,Verdeckerverband,Braun 1990,CA01,ZZZ-01A\n",
+		eunis: "id,rank,name,parent_id\n",
+		links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if len(repo.syntaxa) != 2 || repo.committed || repo.rolledBack {
+		t.Errorf("Index = %v (committed=%v rolledBack=%v), erwartet unveraendert und ohne Transaktion",
+			repo.syntaxa, repo.committed, repo.rolledBack)
+	}
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz verdeckter Formation durch")
+	}
+	if len(rep.IDCollisions) != 1 || !strings.HasPrefix(rep.IDCollisions[0], "Z ") {
+		t.Fatalf("IDCollisions = %v, erwartet einen Eintrag zu Z", rep.IDCollisions)
+	}
+	for _, want := range []string{fileFormations, fileHierarchy} {
+		if !strings.Contains(rep.IDCollisions[0], want) {
+			t.Errorf("IDCollisions[0] = %q benennt %s nicht", rep.IDCollisions[0], want)
+		}
+	}
+	if !strings.Contains(err.Error(), rep.IDCollisions[0]) {
+		t.Errorf("Fehler = %v, erwartet die Kollision %q", err, rep.IDCollisions[0])
+	}
+}
+
+func TestIngestSyntaxaScheitertWennEineEEAZeileEineFormationVerdeckt(t *testing.T) {
+	// Same namespace, third source: syntaxa.csv writes last, so its id wins
+	// over the formation — and every habitat-type edge pointing at C then
+	// means the EEA row instead of the root of the navigation.
+	repo := newFakeRepo()
+	presetHierarchy(repo)
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: childlessFormations,
+		hierarchy:  minimalHierarchy,
+		// The name matches the FloraVeg alliance CA01A, so the row even
+		// resolves a parent of the right rank: nothing but this check stands
+		// between it and a committed index whose root Z is an alliance.
+		eunis: "id,rank,name,parent_id\nZ,alliance,Testverband Moor 1970,\n",
+		links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if len(repo.syntaxa) != 2 || repo.committed || repo.rolledBack {
+		t.Errorf("Index = %v (committed=%v rolledBack=%v), erwartet unveraendert und ohne Transaktion",
+			repo.syntaxa, repo.committed, repo.rolledBack)
+	}
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz verdeckter Formation durch")
+	}
+	if len(rep.IDCollisions) != 1 || !strings.Contains(rep.IDCollisions[0], fileEunisSyntaxa) {
+		t.Fatalf("IDCollisions = %v, erwartet einen Eintrag zu %s", rep.IDCollisions, fileEunisSyntaxa)
+	}
+}
+
+func TestIngestSyntaxaMeldetJedeVerdeckteIDGenauEinmal(t *testing.T) {
+	// One pass must repair the source, so every claimed id is named once and
+	// sorted — like the eea- and primary-code collisions before it.
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy: minimalHierarchy +
+			"R,alliance,Verdeckerverband,Braun 1990,CA01,ZZZ-01A\n",
+		eunis: "id,rank,name,parent_id\nC,alliance,Eigenverband Moor 1990,\n" +
+			"CA01A,alliance,Zweiteigenverband Moor 1991,\n",
+		links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz verdeckter IDs durch")
+	}
+	if len(rep.IDCollisions) != 3 {
+		t.Fatalf("IDCollisions = %v, erwartet drei Eintraege", rep.IDCollisions)
+	}
+	for i, prefix := range []string{"C ", "CA01A ", "R "} {
+		if !strings.HasPrefix(rep.IDCollisions[i], prefix) {
+			t.Errorf("IDCollisions[%d] = %q, erwartet Praefix %q", i, rep.IDCollisions[i], prefix)
+		}
+	}
+}
+
+func TestIngestSyntaxaScheitertAnZweiEEAZeilenMitDerselbenId(t *testing.T) {
+	// The third source against itself: both rows are kept (neither id is a
+	// key of byEEA), both are written, and ON CONFLICT(id) DO UPDATE merges
+	// them into one syntaxon — the later row winning rank and name while
+	// EunisOnly counts two. Every edge in habitat_type_syntaxa.csv pointing
+	// at the id then means whichever row came last in the file.
+	repo := newFakeRepo()
+	presetHierarchy(repo)
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy:  minimalHierarchy,
+		eunis: "id,rank,name,parent_id\n" +
+			"EIG-01A,alliance,Eigenverband Moor 1990,\n" +
+			"EIG-01A,order,Zweiteigenordnung Moor 1991,\n",
+		links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz doppelter EEA-Id durch")
+	}
+	if len(repo.syntaxa) != 2 || repo.committed || repo.rolledBack {
+		t.Errorf("Index = %v (committed=%v rolledBack=%v), erwartet unveraendert und ohne Transaktion",
+			repo.syntaxa, repo.committed, repo.rolledBack)
+	}
+	if len(rep.IDCollisions) != 1 || !strings.HasPrefix(rep.IDCollisions[0], "EIG-01A ") {
+		t.Fatalf("IDCollisions = %v, erwartet einen Eintrag zu EIG-01A", rep.IDCollisions)
+	}
+	// The file is named once per claim, so the report says which source has
+	// to be repaired and that it collides with itself.
+	if got := strings.Count(rep.IDCollisions[0], fileEunisSyntaxa); got != 2 {
+		t.Errorf("IDCollisions[0] = %q nennt %s %d-mal, erwartet zweimal",
+			rep.IDCollisions[0], fileEunisSyntaxa, got)
+	}
+	if !strings.Contains(err.Error(), rep.IDCollisions[0]) {
+		t.Errorf("Fehler = %v, erwartet die Kollision %q", err, rep.IDCollisions[0])
+	}
+}
+
+func TestIngestSyntaxaMeldetKeineKollisionFuerEineNieGeschriebeneEEAZeile(t *testing.T) {
+	// The EEA row C is never written: a hierarchy row carries C as its
+	// eea_code, so it already stands in the index under its primary code CB.
+	// The check must look at what actually reaches the table, not at what the
+	// files hold — otherwise it fails a run that writes nothing twice.
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy:  minimalHierarchy + "CB,class,Zweitklasse,Moor 1955,,C\n",
+		eunis:      "id,rank,name,parent_id\nC,alliance,Eigenverband Moor 1990,\n",
+		links:      "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err != nil {
+		t.Fatalf("IngestSyntaxa: %v", err)
+	}
+	if len(rep.IDCollisions) != 0 {
+		t.Errorf("IDCollisions = %v, erwartet leer", rep.IDCollisions)
+	}
+	if got := repo.syntaxonByID("C"); got.Rank != domain.SyntaxonRankFormation {
+		t.Errorf("C = %+v, erwartet die Formation", got)
+	}
+}
+
+func TestIngestSyntaxaScheitertVorDerTransaktionAnUnlesbarerEEADatei(t *testing.T) {
+	// syntaxa.csv is read before the transaction opens, because its rows are
+	// the third claimant of the syntaxon id namespace. A header this ingest
+	// cannot use therefore fails the run without the index being touched at
+	// all — no clear, no rollback.
+	repo := newFakeRepo()
+	presetHierarchy(repo)
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy:  minimalHierarchy,
+		eunis:      "id,rank,name\nEIG-01A,alliance,Eigenverband Moor 1990\n",
+		links:      "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz fehlender Spalte in syntaxa.csv durch")
+	}
+	if !strings.Contains(err.Error(), fileEunisSyntaxa) || !strings.Contains(err.Error(), "parent_id") {
+		t.Errorf("Fehler = %v, erwartet Datei und fehlende Spalte", err)
+	}
+	if repo.committed || repo.rolledBack {
+		t.Errorf("erwartet keine Transaktion, committed=%v rolledBack=%v", repo.committed, repo.rolledBack)
+	}
+	if len(repo.syntaxa) != 2 {
+		t.Errorf("Index = %v, erwartet unveraendert", repo.syntaxa)
+	}
+}

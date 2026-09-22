@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -18,7 +17,6 @@ import (
 	"github.com/jobrunner/situs/internal/application"
 	"github.com/jobrunner/situs/internal/config"
 	"github.com/jobrunner/situs/internal/domain"
-	"github.com/jobrunner/situs/internal/ports/output"
 )
 
 // hostusDistributionPause is the gap between two hostus concept requests
@@ -28,12 +26,6 @@ import (
 // real service: 0.07s works, and the index's 3135 concepts take about four
 // minutes — an ingest run is offline maintenance, not latency-critical.
 const hostusDistributionPause = 70 * time.Millisecond
-
-// maxLoggedConceptFailures caps how many individual per-concept failures get
-// their own log line. Beyond that, the run-end aggregate line (which always
-// fires once len(failed) > 0) says how many there were — a real outage on
-// this call must not put thousands of nearly identical lines in the log.
-const maxLoggedConceptFailures = 3
 
 // factsheetSource names the artifact behind every ingested description, so a
 // reader can tell which factsheet version stands behind the text. Pinned in
@@ -45,76 +37,12 @@ const factsheetSource = "floraveg:eunis-habitat-factsheets:2021-06-01"
 // and its own species data. situs wrote the wording; these are its sources.
 const annex1DescriptionSource = "situs:derived-from:eur28+eunis@2021"
 
-// pacedDistributionSource wraps a DistributionSource that has no pacing of
-// its own (Areas issues one hostus request per concept) and spaces those
-// requests out, one concept at a time, so a full ingest run does not fail in
-// a wall of 429s.
-//
-// It also tolerates individual concept requests failing instead of
-// discarding the whole batch: a timeout on the last few hundred concepts must
-// not throw away minutes of work and leave the index unfiltered.
-// FailedConcepts reports how many of the last Areas call's requests were
-// tolerated this way.
-// A canceled/expired context is the one failure that is not tolerated —
-// that is the run being told to stop, not a data problem, and it must fail
-// here, not resurface as an unrelated error two ingest steps later. If every
-// single request fails, Areas reports that as a whole-batch failure (nil
-// map, error) so IngestDistribution treats it exactly like the previous
-// all-or-nothing behavior: zeros in the report, plus the warning — and
-// FailedConcepts resets to 0 for that call, since the count only means
-// something for a call that otherwise returned a usable partial result.
-type pacedDistributionSource struct {
-	src    output.DistributionSource
-	pause  time.Duration
-	failed int
-}
-
-func (p *pacedDistributionSource) Areas(ctx context.Context, conceptIDs []string) (map[string][]domain.Area, error) {
-	out := map[string][]domain.Area{}
-	p.failed = 0
-	var lastErr error
-	for i, id := range conceptIDs {
-		if i > 0 {
-			select {
-			case <-ctx.Done():
-				return out, ctx.Err()
-			case <-time.After(p.pause):
-			}
-		}
-		areas, err := p.src.Areas(ctx, []string{id})
-		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return out, err
-			}
-			p.failed++
-			lastErr = err
-			if p.failed <= maxLoggedConceptFailures {
-				slog.WarnContext(ctx, "distribution request for one concept failed, continuing with the rest",
-					"concept_id", id, "error", err)
-			}
-			continue
-		}
-		for k, v := range areas {
-			out[k] = v
-		}
-	}
-	if p.failed > 0 {
-		slog.WarnContext(ctx, "some distribution requests failed, the index will be partially filtered",
-			"failed", p.failed, "requested", len(conceptIDs))
-	}
-	if len(conceptIDs) > 0 && p.failed == len(conceptIDs) {
-		err := fmt.Errorf("all %d distribution requests failed, last error: %w", p.failed, lastErr)
-		p.failed = 0
-		return nil, err
-	}
-	return out, nil
-}
-
-// FailedConcepts reports how many concept requests the last Areas call
-// tolerated instead of aborting on. 0 both when nothing failed and when
-// everything failed (see the type doc comment) — it answers "how many were
-// skipped in an otherwise-successful run", not "was there any failure".
-func (p *pacedDistributionSource) FailedConcepts() int { return p.failed }
+// pacedDistributionSource, its Areas/FailedConcepts methods and
+// maxLoggedConceptFailures moved to paced_distribution.go — a cohesive unit
+// in its own right, and it kept this file's per-file complexity sum over
+// the codecharta ratchet's cap. hostusDistributionPause stays here: it is
+// runIngest's wiring decision (how fast THIS command paces the type it
+// constructs), not a property of the type itself.
 
 func newIngestCmd() *cobra.Command {
 	var csvDir, dbPath, crosswalkPath, aggregateMembersPath string
@@ -173,33 +101,59 @@ type ingestOutput struct {
 	DistributionFailed int
 	Localizations      int
 	DerivedLabels      int
-	SyntaxaHierarchy   application.SyntaxaHierarchyReport
+	Syntaxa            application.SyntaxaReport
 	AreaNames          application.AreaReport
-	Descriptions       application.DescriptionReport
-	Traits             application.TraitReport
+	// Territories is the second area-name file, reported separately rather
+	// than summed into AreaNames: 369 WGSRPD areas and 136 territories added
+	// up would be a figure that describes neither.
+	Territories          application.AreaReport
+	SyntaxonDistribution application.SyntaxonDistributionReport
+	Descriptions         application.DescriptionReport
+	Traits               application.TraitReport
 }
 
-// localOverlays bundles the two ingest steps that read nothing but a local
-// CSV and ask no service at all.
+// localOverlays bundles the ingest steps that read nothing but a local CSV
+// and ask no service at all.
 type localOverlays struct {
 	areas        application.AreaReport
+	territories  application.AreaReport
 	descriptions application.DescriptionReport
+	distribution application.SyntaxonDistributionReport
 }
 
-// ingestLocalOverlays writes the area names and the habitat descriptions.
+// ingestLocalOverlays writes the area names, the habitat descriptions and the
+// syntaxon distribution. None of them asks a service; all of them read one
+// local CSV.
+//
 // Area names depend on nothing and nothing depends on them: they are a pure
-// overlay on the area codes the distribution step writes later. Descriptions
-// must run after IngestCSV, because every row is checked against the habitat
-// type it belongs to, and those have to be in the index first.
+// overlay on the area codes the distribution steps write. TWO files, one
+// loader — wgsrpd_areas.csv and evc_territories.csv share the header
+// area_scheme,area_code,name_en, and IngestAreas checks the scheme against
+// the set of known ones, so a second loader would only be a second place for
+// the check to drift.
+//
+// Descriptions must run after IngestCSV, because every row is checked against
+// the habitat type it belongs to. The syntaxon distribution must run after
+// IngestSyntaxa, because a distribution row naming a syntaxon the index does
+// not carry is dropped and reported — which only means something once the
+// syntaxa are there.
 func ingestLocalOverlays(ctx context.Context, db *sqlite.DB, csvDir string) (localOverlays, error) {
 	var out localOverlays
 
-	areaCSV := filepath.Join(csvDir, "wgsrpd_areas.csv")
-	areas, err := application.IngestAreas(ctx, db, areaCSV)
-	if err != nil {
-		return localOverlays{}, fmt.Errorf("ingesting area names from %q: %w", areaCSV, err)
+	for _, src := range []struct {
+		file   string
+		report *application.AreaReport
+	}{
+		{"wgsrpd_areas.csv", &out.areas},
+		{"evc_territories.csv", &out.territories},
+	} {
+		path := filepath.Join(csvDir, src.file)
+		report, err := application.IngestAreas(ctx, db, path)
+		if err != nil {
+			return localOverlays{}, fmt.Errorf("ingesting area names from %q: %w", path, err)
+		}
+		*src.report = report
 	}
-	out.areas = areas
 
 	// Two description files, two kinds of text. The EUNIS factsheets are their
 	// authors' own wording; the Annex I descriptions are written by situs from
@@ -220,6 +174,14 @@ func ingestLocalOverlays(ctx context.Context, db *sqlite.DB, csvDir string) (loc
 		out.descriptions.SkippedUnknownCode += report.SkippedUnknownCode
 	}
 
+	distCSV := filepath.Join(csvDir, "syntaxon_distribution.csv")
+	coverageCSV := filepath.Join(csvDir, "syntaxon_distribution_coverage.csv")
+	distribution, err := application.IngestSyntaxonDistribution(ctx, db, distCSV, coverageCSV)
+	if err != nil {
+		return localOverlays{}, fmt.Errorf("ingesting syntaxon distribution from %q: %w", distCSV, err)
+	}
+	out.distribution = distribution
+
 	return out, nil
 }
 
@@ -239,6 +201,33 @@ func ingestLocalizationFiles(ctx context.Context, db *sqlite.DB, csvDir string) 
 		total += n
 	}
 	return total, nil
+}
+
+// ingestSyntaxaPhase runs the syntaxa ingest and logs its non-fatal
+// warnings, so runIngest itself gains exactly one branch instead of one per
+// warning kind.
+//
+// Runs after IngestCSV (the habitat types must be in the index for the edge
+// check) and before the localization steps. Unlike before, the hierarchy is
+// not an optional addition: without it the index ends up with no syntaxa
+// hierarchy at all, so the ingest fails instead of shipping it.
+func ingestSyntaxaPhase(ctx context.Context, db *sqlite.DB, csvDir string) (application.SyntaxaReport, error) {
+	rep, err := application.IngestSyntaxa(ctx, db, csvDir)
+	if err != nil {
+		return application.SyntaxaReport{}, fmt.Errorf("ingesting syntaxa from %q: %w", csvDir, err)
+	}
+	// No EEACodeCollisions branch here: a colliding eea_code fails
+	// IngestSyntaxa outright, so a report that gets this far carries none.
+	if len(rep.AmbiguousMatches) > 0 {
+		slog.WarnContext(ctx, "syntaxa ingest found ambiguous name matches", "ids", rep.AmbiguousMatches)
+	}
+	if len(rep.UnknownLinkTargets) > 0 {
+		slog.WarnContext(ctx, "syntaxa ingest dropped edges to unknown syntaxa", "targets", rep.UnknownLinkTargets)
+	}
+	if rep.ParentsDerived > 0 {
+		slog.WarnContext(ctx, "syntaxa ingest derived parents from sibling consensus", "count", rep.ParentsDerived)
+	}
+	return rep, nil
 }
 
 // sealIndex runs the two steps that belong after the last write.
@@ -291,13 +280,12 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath, crosswalk
 		return fmt.Errorf("ingesting %q: %w", csvDir, err)
 	}
 
-	// Runs right after the EUNIS alliances are indexed (IngestCSV, above) and
-	// before species/localization/derivation, which do not depend on it and
-	// which it does not depend on.
-	hierarchyCSV := filepath.Join(csvDir, "syntaxa_hierarchy.csv")
-	hierarchyReport, err := application.IngestSyntaxaHierarchy(ctx, db, hierarchyCSV)
+	// Runs right after IngestCSV puts the habitat types in the index (the
+	// edge check needs them) and before species/localization/derivation,
+	// which do not depend on it and which it does not depend on.
+	syntaxa, err := ingestSyntaxaPhase(ctx, db, csvDir)
 	if err != nil {
-		return fmt.Errorf("ingesting syntaxa hierarchy from %q: %w", hierarchyCSV, err)
+		return err
 	}
 
 	overlays, err := ingestLocalOverlays(ctx, db, csvDir)
@@ -350,17 +338,19 @@ func runIngest(cmd *cobra.Command, cfg *config.Config, csvDir, dbPath, crosswalk
 	}
 
 	out := ingestOutput{
-		IngestReport:       report,
-		Species:            speciesReport,
-		ResolutionRate:     speciesReport.ResolutionRate(),
-		Distribution:       distributionReport,
-		DistributionFailed: distSrc.FailedConcepts(),
-		Localizations:      localizations,
-		DerivedLabels:      derivedLabels,
-		SyntaxaHierarchy:   hierarchyReport,
-		AreaNames:          overlays.areas,
-		Descriptions:       overlays.descriptions,
-		Traits:             traitReport,
+		IngestReport:         report,
+		Species:              speciesReport,
+		ResolutionRate:       speciesReport.ResolutionRate(),
+		Distribution:         distributionReport,
+		DistributionFailed:   distSrc.FailedConcepts(),
+		Localizations:        localizations,
+		DerivedLabels:        derivedLabels,
+		Syntaxa:              syntaxa,
+		AreaNames:            overlays.areas,
+		Territories:          overlays.territories,
+		SyntaxonDistribution: overlays.distribution,
+		Descriptions:         overlays.descriptions,
+		Traits:               traitReport,
 	}
 	enc := json.NewEncoder(cmd.OutOrStdout())
 	enc.SetIndent("", "  ")

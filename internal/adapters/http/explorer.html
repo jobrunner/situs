@@ -41,6 +41,9 @@
                      font:inherit; cursor:pointer; }
   .hits button.hit:hover, .hits button.hit:focus-visible { background:rgba(128,128,128,.12); }
   .note { font-size:.8rem; color:var(--muted); margin-top:.5rem; }
+  .crumbs { margin:0 0 .5rem; font-size:.9rem; }
+  .crumbs button.hit { display:inline; width:auto; padding:0 .15rem; color:var(--accent); }
+  #syn-nav-view { border-top:1px solid var(--line); margin-top:.75rem; padding-top:.75rem; }
 </style>
 </head>
 <body>
@@ -192,6 +195,31 @@
   <pre></pre>
 </section>
 
+<section class="panel" id="syn-nav">
+  <h2>Syntaxa-Navigation — GET /v1/syntaxa und GET /v1/syntaxon/{id}</h2>
+  <div class="row">
+    <div>
+      <label for="syn-nav-group">life_form_group</label>
+      <select id="syn-nav-group">
+        <option value="">—</option>
+        <option value="phanerogam">phanerogam</option>
+        <option value="bryophyte_lichen">bryophyte_lichen</option>
+        <option value="algae">algae</option>
+      </select>
+    </div>
+    <button onclick="loadFormations()">Formationen laden</button>
+    <button class="secondary" onclick="toggleFormat('syn-nav')">formatiert ⇄ JSON</button>
+  </div>
+  <p class="note">
+    Ein Klick lädt das jeweilige Syntaxon und zeigt Brotkrumenzeile, aktuelle
+    Einheit und Kinder. Die gerenderte Ansicht steht neben dem Roh-JSON, nicht
+    an seiner Stelle — beides bleibt einsehbar.
+  </p>
+  <div class="url"></div>
+  <div id="syn-nav-view"></div>
+  <pre></pre>
+</section>
+
 <section class="panel" id="syn-habitat">
   <h2>Syntaxon → Habitattypen — GET /v1/syntaxon/{id}/habitat-types</h2>
   <div class="row">
@@ -224,6 +252,9 @@ async function call(panel, url, init) {
     out.dataset.raw = JSON.stringify(body, null, 2);
     out.textContent = out.dataset.raw;
     if (!res.ok) { box.textContent += `  → HTTP ${res.status}`; }
+    // Returned so a panel can additionally render the answer without fetching
+    // it a second time. Every other panel ignores the value.
+    return body;
   } catch (err) {
     out.textContent = "Anfrage fehlgeschlagen: " + err;
   }
@@ -388,6 +419,99 @@ function runSynHabitat() {
   if (lang) { params.set("lang", lang); }
   const url = withQuery(`/v1/syntaxon/${encodeURIComponent(id)}/habitat-types`, params);
   call("syn-habitat", url);
+}
+
+// The navigation panel is the first one with a RENDERED view. It needs a target
+// element of its own: call() overwrites the <pre>'s textContent unconditionally
+// and toggleFormat() re-renders out.dataset.raw alone — a click path inside the
+// <pre> would be gone on the next request or format switch. The raw JSON
+// therefore stays where every other panel keeps it, and the rendered view sits
+// next to it in #syn-nav-view.
+async function loadFormations() {
+  const params = new URLSearchParams();
+  const group = document.getElementById("syn-nav-group").value;
+  if (group) { params.set("life_form_group", group); }
+  const body = await call("syn-nav", withQuery("/v1/syntaxa", params));
+  const view = document.getElementById("syn-nav-view");
+  view.innerHTML = "";
+  if (!Array.isArray(body)) { return; }
+  view.appendChild(childList(body, "Formationen"));
+}
+
+// One navigation step. Nothing is computed that the response does not carry
+// itself: ancestors arrives outermost-first and is printed in that order.
+async function openSyntaxon(id) {
+  const params = new URLSearchParams();
+  const lang = document.getElementById("g-lang").value;
+  if (lang) { params.set("lang", lang); }
+  const body = await call("syn-nav", withQuery(`/v1/syntaxon/${encodeURIComponent(id)}`, params));
+  renderSyntaxon(body);
+}
+
+function renderSyntaxon(s) {
+  const view = document.getElementById("syn-nav-view");
+  view.innerHTML = "";
+  if (!s || !s.id) { return; }
+
+  const crumbs = document.createElement("div");
+  crumbs.className = "crumbs";
+  for (const a of s.ancestors) {
+    crumbs.appendChild(syntaxonButton(a));
+    crumbs.appendChild(document.createTextNode(" › "));
+  }
+  const here = document.createElement("strong");
+  here.textContent = `${s.id} — ${s.name}${s.author ? " " + s.author : ""} (${s.rank})`;
+  crumbs.appendChild(here);
+  view.appendChild(crumbs);
+
+  if (s.life_form_group) {
+    const g = document.createElement("p");
+    g.className = "note";
+    g.textContent = "Lebensform-Gruppe: " + s.life_form_group;
+    view.appendChild(g);
+  }
+  if (s.direct_habitat_type_count > 0) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = `${s.direct_habitat_type_count} verknüpfte Habitattyp(en) abrufen`;
+    // Fills the existing panel and fires its request, instead of presenting
+    // the same answer a second time here.
+    btn.onclick = () => {
+      document.getElementById("syn-habitat-id").value = s.id;
+      runSynHabitat();
+    };
+    view.appendChild(btn);
+  }
+  view.appendChild(childList(s.children, "Kinder"));
+}
+
+// The children (or the formations) as a clickable list. An empty list is SHOWN
+// as empty rather than hidden: an alliance without children is the lower bound
+// of the data, and a panel that renders nothing there looks broken.
+function childList(items, caption) {
+  const wrap = document.createElement("div");
+  const head = document.createElement("p");
+  head.className = "note";
+  head.textContent = items.length ? `${caption} (${items.length})` : `${caption}: keine`;
+  wrap.appendChild(head);
+  const ul = document.createElement("ul");
+  ul.className = "hits";
+  for (const c of items) {
+    const li = document.createElement("li");
+    li.appendChild(syntaxonButton(c));
+    ul.appendChild(li);
+  }
+  wrap.appendChild(ul);
+  return wrap;
+}
+
+function syntaxonButton(s) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "hit";
+  btn.textContent = `${s.id} — ${s.name}`;
+  btn.onclick = () => openSyntaxon(s.id);
+  return btn;
 }
 
 // Both habitat-type panels take a typology id. Filled from one shared fetch

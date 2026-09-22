@@ -43,12 +43,27 @@ CREATE INDEX IF NOT EXISTS idx_crosswalk_to
   ON habitat_type_crosswalk(to_typology, to_code);
 
 CREATE TABLE IF NOT EXISTS syntaxon (
-  id        TEXT PRIMARY KEY,
-  rank      TEXT NOT NULL,
-  name      TEXT NOT NULL,
-  author    TEXT NOT NULL DEFAULT '',
-  parent_id TEXT NOT NULL DEFAULT ''
+  id                TEXT PRIMARY KEY,
+  rank              TEXT NOT NULL,
+  name              TEXT NOT NULL,
+  author            TEXT NOT NULL DEFAULT '',
+  parent_id         TEXT NOT NULL DEFAULT '',
+  -- The EEA-EUNIS code of the same syntaxon, from the parenthesized part
+  -- of the FloraVeg code cell. It is the join key between the two sources
+  -- and stays in the index so a client can resolve an old code.
+  eea_code          TEXT NOT NULL DEFAULT '',
+  source            TEXT NOT NULL DEFAULT 'evc'
+                    CHECK (source IN ('', 'evc', 'eunis')),
+  parent_provenance TEXT NOT NULL DEFAULT 'official'
+                    CHECK (parent_provenance IN ('', 'official', 'derived')),
+  -- Only set on formation rows: the group is a property of the formation,
+  -- and a correction would otherwise have to be propagated across 1882
+  -- rows. A filter joins at most three levels upward.
+  life_form_group   TEXT NOT NULL DEFAULT ''
+                    CHECK (life_form_group IN ('', 'phanerogam', 'bryophyte_lichen', 'algae'))
 );
+CREATE INDEX IF NOT EXISTS idx_syntaxon_parent ON syntaxon(parent_id);
+CREATE INDEX IF NOT EXISTS idx_syntaxon_rank   ON syntaxon(rank);
 
 CREATE TABLE IF NOT EXISTS habitat_type_syntaxon (
   typology_id TEXT NOT NULL,
@@ -96,6 +111,31 @@ CREATE TABLE IF NOT EXISTS species_distribution (
 );
 CREATE INDEX IF NOT EXISTS idx_species_distribution_area
   ON species_distribution(area_scheme, area_code);
+
+-- Which territories a syntaxon occurs in. One row per OCCUPIED cell of the
+-- source table: absence is the absence of a row, exactly as in
+-- species_distribution.
+CREATE TABLE IF NOT EXISTS syntaxon_distribution (
+  syntaxon_id TEXT NOT NULL,
+  area_scheme TEXT NOT NULL,
+  area_code   TEXT NOT NULL,
+  occurrence  TEXT NOT NULL CHECK (occurrence IN ('verified', 'uncertain')),
+  PRIMARY KEY (syntaxon_id, area_scheme, area_code)
+);
+CREATE INDEX IF NOT EXISTS idx_syntaxon_distribution_area
+  ON syntaxon_distribution(area_scheme, area_code);
+
+-- Which syntaxa the source makes any statement about at all. WITHOUT this
+-- table "does not occur" cannot be told from "nobody looked" — an alliance
+-- with 136 empty cells looks exactly like one the source does not list. The
+-- source covers vascular-plant dominated vegetation only: measured, 212 of
+-- the index's 1326 alliances have no row here, including every bryophyte,
+-- lichen and algal one.
+CREATE TABLE IF NOT EXISTS syntaxon_distribution_coverage (
+  syntaxon_id TEXT NOT NULL,
+  area_scheme TEXT NOT NULL,
+  PRIMARY KEY (syntaxon_id, area_scheme)
+);
 
 -- Pflanzenökologische Zeigerwerte (EIVE, Tichý, Midolo). Jede Zeile ist ein
 -- Wert einer Dimension in einem Vokabular für ein Konzept; niche_width/

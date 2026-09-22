@@ -47,8 +47,8 @@ Verbreitung gegen einen laufenden hostus.
 | Habitattypen (über `eunis@2021` + `eunis@2012` + `annex1`) | **7937** |
 | Maximales Level der eunis@2021-Klassifikationshierarchie | **8** |
 | Crosswalk-Zeilen (Versions- **und** Anhang-I-Crosswalk) | **4307** |
-| Syntaxa | **1050** |
-| Habitattyp↔Syntaxon-Verknüpfungen | **1283** |
+| Syntaxa (`syntaxon`, nach Rang) | 25 Formationen, 150 Klassen, 381 Ordnungen, **1326** Verbände (1882 gesamt) |
+| Habitattyp↔Syntaxon-Verknüpfungen | **1282** |
 | Zeilen in `species_roles.csv` | **13791** |
 
 Die Crosswalks sind ausschließlich auf **Level 3** befüllt, obwohl die
@@ -76,42 +76,367 @@ aufgenommen, statt seine Zeilen zu verwerfen.
 
 ## Syntaxa-Tiefe (offener Punkt 1)
 
-Vorkommende Ränge: **`alliance`** (Verband) und **`order`** (Ordnung). Der
-Verband ist praktisch durchgehend das Ende; gemessen gibt es genau **eine**
-Ausnahme auf Ordnungs-Ebene (`Moltkeetalia petraeae`). **Assoziationen kommen
-nicht vor** und sind in keiner freien paneuropäischen Quelle verfügbar — das ist
-die dokumentierte Decke, kein Versäumnis.
+!!! info "Referenzlauf: 2026-09-21, Syntaxa-Quellenumkehr"
 
-### Volle Hierarchie via FloraVeg.EU (2026-08-30)
+    Die Zahlen dieses Abschnitts stammen aus einem vollständigen
+    `situs ingest`-Lauf am 2026-09-21 gegen die realen EEA-/FloraVeg-Artefakte
+    (Task 9 des Plans `2026-09-21-syntaxa-quellenumkehr`), **nicht** mehr aus
+    dem Referenzlauf vom 2026-09-16. FloraVeg.EU (die EuroVegChecklist) ist
+    seither die **Primärquelle** der Syntaxa-Hierarchie; die EEA-EUNIS-Zuordnung
+    liefert nur noch die Habitattyp-Kanten und die Verbände, die FloraVeg nicht
+    führt. Die Auflösungsquoten in „Namensauflösung", „Verbreitung" und
+    „Zeigerwerte" unten sind von dieser Umkehrung unberührt und bleiben am
+    2026-09-16-Lauf gemessen.
+
+Vorkommende Ränge: **`formation`** (die Wurzel — die 25
+EuroVegChecklist-Sektionen A–Y), **`class`**, **`order`**, **`alliance`**.
+Jede Nicht-Formations-Zeile hat einen `parent_id`, der in höchstens drei
+Schritten eine Formation erreicht — geprüft am realen Index (siehe unten) und
+durch `internal/adapters/sqlite/hierarchy_integrity_test.go` als
+Fixture-Integritätstest festgehalten. Der Verband ist praktisch durchgehend
+das Ende der EUNIS-Seite; **Assoziationen kommen nicht vor** und sind in
+keiner freien paneuropäischen Quelle verfügbar — das ist die dokumentierte
+Decke, kein Versäumnis.
+
+### Volle Hierarchie via FloraVeg.EU als Primärquelle
 
 `pipelines/eurovegchecklist/` lädt die EuroVegChecklist (Mucina et al. 2016 +
-Updates, Version 4) und liefert Klasse/Ordnung/Verband mit Codes und
-Autorschaft. Gemessen gegen die reale Datei: **1841** Zeilen, **150**
-Klassen, **381** Ordnungen, **1310** Verbände (siehe
-`pipelines/eurovegchecklist/out/report.json`) — deckungsgleich mit den Zahlen
-aus `docs/research/situs-eea-eunis-2021-spike.md`.
+Updates, Version 4) und liefert Klasse/Ordnung/Verband mit Codes, Autorschaft
+und EEA-Code. `data/syntaxa_formations.csv` liefert die 25 Formationszeilen
+(Sektionen A–Y mit Lebensform-Gruppe). Beide sind seit der Quellenumkehr
+**Pflichtquellen** — ihr Fehlen bricht den Ingest ab, statt einen Index ohne
+Hierarchie stillschweigend zu bauen.
 
-Von den **1050** EUNIS-Verbänden im Index (1049 Rang `alliance` + die eine
-`Moltkeetalia petraeae`-Ausnahme auf Rang `order`) fanden **1011** einen
-FloraVeg-Namenstreffer (Name + Author + ParentID von FloraVeg übernommen —
-der historische EUNIS-Kombi-String wird dabei durch FloraVegs sauberen Namen
-ersetzt), **38** blieben ohne Treffer (Name bleibt der historische
-EUNIS-Kombi-String, `Author=""`), **0** Mehrfachtreffer wurden nicht geraten
-(`AmbiguousMatches`).
+Gemessen gegen `out/situs-neu.sqlite`, gebaut mit `go run ./cmd/situs ingest
+--csv-dir out/ingest-input --db out/situs-neu.sqlite`:
 
-Gemessen mit einem echten `situs ingest`-Lauf gegen beide Pipelines; der
-Referenzlauf 2026-09-16 bestätigt dieselben Zahlen (die Auflösungsquoten
-stehen im Abschnitt „Namensauflösung" unten):
+```sql
+SELECT rank, COUNT(*) FROM syntaxon GROUP BY 1 ORDER BY 1;
+-- formation|25
+-- class|150
+-- order|381
+-- alliance|1326
+
+SELECT COUNT(*) FROM syntaxon WHERE rank<>'formation' AND parent_id='';
+-- 0  (keine Waise)
+
+SELECT COUNT(*) FROM syntaxon WHERE parent_provenance='derived';
+-- 10  (Geschwisterkonsens)
+
+SELECT COUNT(*) FROM syntaxon WHERE source='eunis';
+-- 16  (EEA-eigene Zeilen ohne FloraVeg-Gegenstück)
+```
+
+Von den **1326** Verbänden im Index sind **1310** aus der FloraVeg-Hierarchie
+direkt übernommen (Name, Author, ParentID stammen von FloraVeg) und **16** rein
+EEA-eigen (`source='eunis'`, historischer EUNIS-Kombi-String, `Author=""`).
+Von diesen 16 fanden **6** ihren Elternteil per Namensabgleich gegen die
+FloraVeg-Verbandsnamen (`parent_provenance='official'`), **10** per
+Geschwisterkonsens innerhalb ihrer EEA-Ordnungsgruppe
+(`parent_provenance='derived'`) — keiner blieb Waise.
+
+Der wörtliche `Syntaxa`-Block aus dem Ingest-Report (`SyntaxaReport`, ersetzt
+seit dieser Umkehrung das frühere Feldpaar `Syntaxa`/`SyntaxonLinks` von
+`IngestReport`):
 
 ```json
-"SyntaxaHierarchy": {
+"Syntaxa": {
+  "FormationsWritten": 25,
   "ClassesWritten": 150,
   "OrdersWritten": 381,
-  "AlliancesMatched": 1011,
-  "AlliancesUnmatched": 38,
-  "AmbiguousMatches": null
+  "AlliancesWritten": 1310,
+  "EunisOnly": 16,
+  "LinksWritten": 1283,
+  "LinksRemapped": 1265,
+  "ParentsByName": 6,
+  "ParentsDerived": 10,
+  "Orphans": null,
+  "AmbiguousMatches": null,
+  "UnknownLinkTargets": null,
+  "SkippedRows": 0
 }
 ```
+
+`SkippedUnknownSection` und `SkippedPattern` sind seit der letzten
+Review-Runde entfernt: keines der beiden wurde je befüllt.
+
+`EEACodeCollisions` fehlt im obigen Block, weil der gemessene Lauf älter ist
+als das Feld; für diese Daten wäre es `null`.
+`pipelines/eurovegchecklist/xlsx_to_csv.py` bricht die Konvertierung ab,
+sobald zwei Primärcodes denselben EEA-Code beanspruchen — aber der Go-Ingest
+liest CSV direkt, und eine handeditierte oder anders erzeugte Datei umgeht
+diese Absicherung. Trägt die Hierarchie denselben EEA-Code doppelt, **bricht
+der Ingest ab**, bevor die Transaktion beginnt — die Fehlermeldung und
+`EEACodeCollisions` nennen jeden kollidierenden Code genau einmal, damit die
+Quelle in einem Durchgang zu reparieren ist. Grund: Der EEA-Code ist der
+Migrationspfad von den alten IDs (`GET /v1/syntaxon/PAP-01A`), ein doppelt
+vergebener Code löst eine alte ID auf ein beliebiges der beanspruchenden
+Syntaxa auf.
+
+`AlliancesWritten` (1310) zählt nur die FloraVeg-Hierarchiezeilen; zusammen mit
+`EunisOnly` (16) ergibt das die 1326 Verbandszeilen der `syntaxon`-Tabelle.
+`LinksWritten` (1283) zählt Schreibversuche, nicht die am Ende distinkten
+Zeilen — der EEA-Code-Join löst eine EEA-Kante auf FloraVegs Primärcode auf und
+kann sie damit auf dieselbe Zielkante schreiben wie eine bereits vorhandene
+FloraVeg-Kante (siehe den `U36`/`ASP-03`/`KC03`-Sonderfall unten); die
+`habitat_type_syntaxon`-Tabelle selbst trägt danach **1282** Zeilen.
+
+### Der stille Namensabgleichsfehler: `AMM-02B` → `JD02`, nicht `JE01`
+
+Der EEA-Code-Join löst EEA-Kanten über den EEA-Code auf FloraVegs Primärcode
+auf. Gemessen am Nachfolger von `eea_code='AMM-02B'`:
+
+```sql
+SELECT id, parent_id FROM syntaxon WHERE eea_code='AMM-02B';
+-- JD02B|JD02
+```
+
+`JD02` ist korrekt — der alte, auf reinem Namensvergleich beruhende Abgleich
+hätte hier still `JE01` geliefert (ein Nachbarcode mit ähnlichem, aber
+falschem Namen). Der EEA-Code-Join über die eindeutige EEA-ID vermeidet genau
+diese Fehlklasse.
+
+### Kryptogamen-Verbände (Sektionen R–Y)
+
+Verbände, deren Formation (über Klasse → Ordnung → Verband) in den
+EuroVegChecklist-Sektionen R–Y liegt (Kryptogamen- und Algenvegetation, nicht
+Phanerogamen):
+
+```sql
+SELECT COUNT(*) FROM syntaxon a
+  JOIN syntaxon o ON o.id=a.parent_id JOIN syntaxon c ON c.id=o.parent_id
+  WHERE a.rank='alliance' AND c.parent_id IN ('R','S','T','U','V','W','X','Y');
+-- 190
+```
+
+Vor der Quellenumkehr trug der Index hier **2** Verbände (die EEA-Zuordnung
+kennt die Kryptogamen-Sektionen praktisch nicht); die FloraVeg-Hierarchie
+liefert die vollen **190**.
+
+### Kanten vor und nach der Umkehrung: keine verlorene EUNIS-Zuordnung
+
+`habitat_type_syntaxon` trägt vor und nach der Umkehrung dieselbe Zeilenzahl:
+
+| Index | `habitat_type_syntaxon` | `code='U36'` |
+|---|---|---|
+| `situs.sqlite` (vor der Umkehrung) | **1282** | **15** |
+| `out/situs-neu.sqlite` (nach der Umkehrung) | **1282** | **15** |
+
+Keine EUNIS-Zuordnung ging verloren. Die eine dokumentierte Ausnahme der
+Zusage ist bereits in beiden Zahlen aufgegangen: `U36` verlinkte vor der
+Umkehrung sowohl auf `ASP-03` als auch (separat) auf `KC03`; nach der
+Umkehrung bildet der EEA-Code-Join `ASP-03` auf `KC03` ab, die beiden Kanten
+fallen auf eine zusammen — `U36` trägt in beiden Ständen 15 Kanten, nicht 16
+und nicht 14.
+
+### Navigation über `GET /v1/syntaxa` und `GET /v1/syntaxon/{id}`
+
+Gemessen am Referenzindex (`out/situs-neu.sqlite`, 2026-09-21), rein über die
+HTTP-Routen der Syntaxa-Navigation — beginnend bei `GET /v1/syntaxa` (ohne
+Parameter) und ausschließlich `children` aus `GET /v1/syntaxon/{id}`
+verfolgend, ohne eine einzige ID im Voraus zu kennen:
+
+| Größe | Route/Filter | Gemessen |
+|---|---|---|
+| Formationen | `GET /v1/syntaxa` | **25** |
+| Klassen | `GET /v1/syntaxa?rank=class` | **150** |
+| Ordnungen | `GET /v1/syntaxa?rank=order` | **381** |
+| Verbände | `GET /v1/syntaxa?rank=alliance` | **1326** |
+| Moos-/Flechtenverbände | `GET /v1/syntaxa?rank=alliance&life_form_group=bryophyte_lichen` | **137** |
+| Algenverbände | `GET /v1/syntaxa?rank=alliance&life_form_group=algae` | **53** |
+| über `children` erreichbare Zeilen (davon Verbände) | reines Verfolgen von `children` ab den 25 Formationen | **1882** (davon **1326** Verbände) |
+
+Jeder Verband erreicht seine Formation in genau drei Schritten (`ancestors`
+hat für jeden Verband die Länge 3, für jede andere Zeile höchstens 3); keine
+Assertion des Messskripts schlägt an. Die Summe der über `children`
+erreichbaren Zeilen (1882) deckt sich mit der SQL-gemessenen Gesamtzahl aus
+der Tabelle „Umfang des Index" oben — die HTTP-Navigation lässt keine Zeile
+aus.
+
+## Verbreitung der Syntaxa (`syntaxon_distribution`)
+
+!!! info "Referenzlauf: 2026-09-22, Syntaxa-Verbreitung (Task 12)"
+
+    Die Zahlen dieses Abschnitts stammen aus einem vollständigen
+    `situs ingest`-Lauf gegen `out/situs-neu.sqlite`, gebaut mit
+    `bash pipelines/evc-distribution/build.sh` gefolgt von
+    `go run ./cmd/situs ingest --csv-dir out/ingest-input --db out/situs-neu.sqlite`.
+    Die Artenrollen- und Zeigerwert-Zahlen dieses Laufs sind **nicht**
+    vergleichbar mit dem Referenzlauf oben: hostus war in dieser Umgebung nicht
+    erreichbar, entsprechend blieben Artenauflösung und Zeigerwerte auf 0 —
+    unerheblich für diesen Abschnitt, der ausschließlich die Syntaxa-Seite misst.
+
+Preislerová et al. bilden 1115 europäische Vegetationsverbände über 136
+Territorien ab (Zenodo Record
+[11580949](https://zenodo.org/records/11580949), CC-BY 4.0). Zitiert werden
+**beide** Veröffentlichungen, wie es die Lizenz verlangt:
+
+- Preislerová Z. et al. (2022) Distribution maps of vegetation alliances in
+  Europe. *Applied Vegetation Science* 25: e12642.
+  <https://doi.org/10.1111/avsc.12642>
+- Preislerová Z. et al. (2024) Structural, ecological and biogeographical
+  attributes of European vegetation alliances. *Applied Vegetation Science*
+  27: e12766. <https://doi.org/10.1111/avsc.12766>
+
+### Die Pipeline, gemessen gegen das gepinnte Artefakt
+
+```bash
+bash pipelines/evc-distribution/build.sh
+```
+
+```json
+{
+  "alliances": 1115,
+  "covered": 1115,
+  "skipped_rows": 0,
+  "slug_collisions": [],
+  "summary_rows": 4,
+  "territories": 136,
+  "uncertain": 1920,
+  "value_histogram": {"": 140112, "1": 9608, "U": 1920},
+  "verified": 9608,
+  "written": 11528
+}
+```
+
+Die Wertemenge der Quellzellen ist bei diesem Lauf **erneut gemessen**, nicht
+angenommen: genau drei Werte kommen vor (leer = Abwesenheit, `1` = `verified`,
+`U` = `uncertain`) — die Zusage aus Abschnitt 9 der Design-Spec.
+
+### Der Ingest-Report, wörtlich
+
+```json
+"Territories": {"Areas": 136, "SkippedRows": 0},
+"SyntaxonDistribution": {
+  "Written": 11525,
+  "Verified": 9605,
+  "Uncertain": 1920,
+  "Covered": 1114,
+  "SkippedRows": 0,
+  "UnknownSyntaxa": ["CI01E"]
+}
+```
+
+`Written` (11525) und `Verified` (9605) liegen **3 unter** den Pipeline-Zahlen
+(11528, 9608): genau die drei Zeilen, die der Ingest für `CI01E` (die Pipeline
+liest 3 Vorkommenszeilen für diesen Code) verwirft, weil die Hierarchie diesen
+Code nicht führt — siehe `TestIngestSyntaxonDistributionVerwirftUnbekanntenCodeUndMeldetIhn`.
+`SkippedRows` bleibt `0`: eine verworfene Zeile wegen unbekannten Syntaxons ist
+kein *malformed row*, sondern eine benannte Fassungsdrift, und zählt deshalb in
+`UnknownSyntaxa`, nicht in `SkippedRows`.
+
+`NonAllianceSyntaxa` (Zeilen zu einer ID, die der Index kennt, aber nicht als
+Verband führt) ist am Referenzstand leer — gemessen, nicht angenommen:
+
+```sql
+SELECT COUNT(*) FROM syntaxon_distribution d
+  JOIN syntaxon s ON s.id = d.syntaxon_id WHERE s.rank <> 'alliance';
+-- 0
+SELECT COUNT(*) FROM syntaxon_distribution_coverage c
+  JOIN syntaxon s ON s.id = c.syntaxon_id WHERE s.rank <> 'alliance';
+-- 0
+```
+
+### Der Index, abgefragt
+
+```sql
+SELECT COUNT(*) FROM syntaxon_distribution;
+-- 11525
+SELECT occurrence, COUNT(*) FROM syntaxon_distribution GROUP BY 1 ORDER BY 1;
+-- uncertain|1920
+-- verified|9605
+SELECT COUNT(*) FROM syntaxon_distribution_coverage;
+-- 1114
+SELECT COUNT(DISTINCT area_code) FROM syntaxon_distribution;
+-- 136
+SELECT COUNT(*) FROM area WHERE area_scheme='evc_territory';
+-- 136
+SELECT COUNT(*) FROM area WHERE area_scheme='wgsrpd_l3';
+-- 369
+SELECT COUNT(*) FROM syntaxon s WHERE s.rank='alliance' AND NOT EXISTS (
+  SELECT 1 FROM syntaxon_distribution_coverage v WHERE v.syntaxon_id=s.id);
+-- 212
+SELECT COUNT(*) FROM syntaxon a
+  JOIN syntaxon o ON o.id=a.parent_id JOIN syntaxon c ON c.id=o.parent_id
+  JOIN syntaxon_distribution_coverage v ON v.syntaxon_id=a.id
+  WHERE a.rank='alliance' AND c.parent_id IN ('R','S','T','U','V','W','X','Y');
+-- 0
+SELECT COUNT(*) FROM syntaxon_distribution d
+  LEFT JOIN syntaxon s ON s.id=d.syntaxon_id WHERE s.id IS NULL;
+-- 0
+SELECT COUNT(DISTINCT d.syntaxon_id) FROM syntaxon_distribution d
+  LEFT JOIN syntaxon_distribution_coverage v
+    ON v.syntaxon_id=d.syntaxon_id AND v.area_scheme=d.area_scheme
+  WHERE v.syntaxon_id IS NULL;
+-- 0
+```
+
+Die beiden letzten Nullen sind die eigentlichen Zusagen dieses Teilprojekts:
+kein Verweis der Verbreitungstabelle zeigt ins Leere, und keine
+Verbreitungszeile existiert ohne ihre Coverage-Zeile — sonst wäre `absence` für
+dieses Syntaxon wieder nicht von `unknown` zu unterscheiden.
+
+### 212 Verbände ohne jede Aussage — 190 davon Kryptogamen
+
+```sql
+SELECT f.life_form_group, COUNT(*) FROM syntaxon a
+  JOIN syntaxon o ON o.id=a.parent_id JOIN syntaxon c ON c.id=o.parent_id
+  JOIN syntaxon f ON f.id=c.parent_id
+  WHERE a.rank='alliance' AND NOT EXISTS (
+    SELECT 1 FROM syntaxon_distribution_coverage v WHERE v.syntaxon_id=a.id)
+  AND f.id IN ('R','S','T','U','V','W','X','Y')
+  GROUP BY 1;
+-- algae|53
+-- bryophyte_lichen|137
+```
+
+**137** Moos-/Flechtenverbände und **53** Algenverbände tragen keine Aussage —
+zusammen die **190** Kryptogamen-Verbände, für die die Quelle prinzipbedingt
+nichts sagt (sie deckt nur Gefäßpflanzen-Vegetation ab). Die verbleibenden
+**22** sind vaskuläre Verbände ohne Aussage:
+
+```sql
+SELECT s.id FROM syntaxon a
+  JOIN syntaxon o ON o.id=a.parent_id JOIN syntaxon c ON c.id=o.parent_id
+  JOIN syntaxon s ON s.id=a.id
+  WHERE a.rank='alliance' AND NOT EXISTS (
+    SELECT 1 FROM syntaxon_distribution_coverage v WHERE v.syntaxon_id=a.id)
+  AND c.parent_id NOT IN ('R','S','T','U','V','W','X','Y')
+  ORDER BY s.id;
+-- AMM-01B, AMM-01C, CRU-01A, CRU-01B, CRU-01C, CRU-01D, CRU-02A, CRU-02B,
+-- CRU-02C, CRU-03A, CRU-03B, CRU-03C, CT06A, DA12A, DA13A, DD01A, DD01B,
+-- DD01C, GER-02E, NAR-01E, QUI-01F, TUB-03D
+```
+
+**Abweichung von der Aufgabenstellung:** die Vorgabe für diesen Task nannte
+hier namentlich nur sechs Verbände (`CT06A`, `DA12A`, `DA13A`, `DD01A`,
+`DD01B`, `DD01C`). Das reale, gemessene Bild ist größer: **22**, nicht 6. Die
+16 zusätzlichen (`AMM-*`, `CRU-*`, `GER-02E`, `NAR-01E`, `QUI-01F`, `TUB-03D`)
+tragen durchweg einen EEA-eigenen EEA-Code-Stil statt eines FloraVeg-Primärcodes
+und sind plausibel Verbände, die die EVC-Verbreitungsquelle strukturell nicht
+führen kann (kein FloraVeg-Primärcode, an dem die Pipeline andocken könnte),
+nicht bloß zufällig ohne Daten geblieben. Die 6 genannten bleiben Teil der 22
+und sind namentlich unverändert dieselben. Die Summe 190 + 22 = 212 ist
+gemessen und schließt.
+
+### Der Fassungsunterschied: EVC 3 gegen EVC 4, und `CI01E`
+
+Die Verbreitungsdatei nennt sich selbst, laut ihrem "Read me"-Blatt, Version 2
+(2024-06-12) und referenziert damit **EuroVegChecklist-Fassung 3**
+(2024-06-12). Die Hierarchie-Datei dagegen heißt
+`List_of_European_vegetation_units_version_4.xlsx` und trägt in ihren
+Spaltenköpfen selbst den Stand `EVC, version 2025-06-12` — zwei gemessene
+Angaben, die **Verschiedenes** meinen (Dateifassung gegen internen EVC-Stand)
+und deshalb nebeneinander stehen, nicht zu einer Zahl verrechnet werden.
+
+Die belastbare Aussage über die Überdeckung ist nicht die Differenz der
+Versionsnummern, sondern die gemessene **1114 / 1115**: von den 1115
+Verbänden, die die Verbreitungsquelle führt, kennt die (neuere) Hierarchie
+1114 unter demselben Primärcode. Der eine fehlende ist `CI01E`
+(`Campanulo-Nardion`, EEA-Code `NAR-01E`) — der Ingest verwirft seine drei
+Vorkommenszeilen und meldet ihn namentlich in `UnknownSyntaxa`, statt ihn
+stillschweigend zu verwerfen oder eine leere Liste zu melden, die die
+Fassungsdrift verschwiegen hätte.
 
 ## Anhang-I-Abdeckung (offener Punkt 5)
 

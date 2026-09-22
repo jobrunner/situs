@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Convert the pinned FloraVeg.EU EuroVegChecklist XLSX into
-syntaxa_hierarchy.csv (code|rank|name|author|parent_code).
+syntaxa_hierarchy.csv (code|rank|name|author|parent_code|eea_code).
 
 Same rationale as pipelines/eunis/xlsx_to_csv.py: an .xlsx is a zip of XML the
 stdlib reads, so no spreadsheet library joins situs' dependency list.
@@ -23,8 +23,11 @@ NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 _R_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
 
 CSV_HEADERS = {
-    "syntaxa_hierarchy.csv": ["code", "rank", "name", "author", "parent_code"],
+    "syntaxa_hierarchy.csv": ["code", "rank", "name", "author", "parent_code", "eea_code"],
 }
+
+# Every file convert() writes, cleared before the run — see clear_outputs.
+OUTPUT_FILES = ["syntaxa_hierarchy.csv", "report.json"]
 
 # Maps a row's rank to its counter key in the report dict below. Explicit on
 # purpose: string-arithmetic pluralization ("class" -> "classes" vs. plain
@@ -59,26 +62,55 @@ _CLASS_RE = re.compile(r"^[A-Z]{2}$")
 _ORDER_RE = re.compile(r"^[A-Z]{2}[0-9]{2}$")
 _ALLIANCE_RE = re.compile(r"^[A-Z]{2}[0-9]{2}[A-Z]$")
 
-# The real FloraVeg export's Code cell carries both the primary EVC code and a
-# legacy/alternate code in parentheses, e.g. "AA01A (KOB-01A)". Only the
-# primary code follows the class/order/alliance pattern this pipeline derives
-# rank and parent from, so it is extracted here — the parenthesized alternate
-# is dropped, since the five-column CSV schema has no place for it.
-_CODE_CELL_RE = re.compile(r"^(\S+)\s*\([^)]*\)\s*$")
+# The real FloraVeg export's Code cell carries the primary EVC code plus the
+# historical EEA code in parentheses, e.g. "AA01A (PAP-01A)". That
+# parenthesized part IS the EEA-EUNIS source's own code scheme and therefore
+# the exact join key between both sources — hence it is output, not dropped.
+_CODE_CELL_RE = re.compile(r"^(\S+)\s*\(([^)]*)\)\s*$")
 
 
-def primary_code(cell):
-    """Strip a trailing "(ALT-CODE)" annotation off a Code cell, if present.
-    A cell with no such annotation (e.g. the in-memory test fixtures) is
-    returned unchanged."""
+def split_code(cell):
+    """Split a Code cell into (primary code, eea code). A cell with no
+    parenthesized part yields an empty eea code — not an error."""
     cell = cell.strip()
     m = _CODE_CELL_RE.match(cell)
-    return m.group(1) if m else cell
+    if m:
+        return m.group(1), m.group(2).strip()
+    return cell, ""
 
 
 class HeaderError(RuntimeError):
     """A data sheet is missing a column a parser needs — fail loudly instead
     of silently defaulting every cell to empty."""
+
+
+class CodeCollisionError(RuntimeError):
+    """A code column of the output claims one value twice. Both concrete
+    collisions below stop the pipeline for the same reason — a collision is a
+    data defect, not a warning to note and carry on past — so main() catches
+    this one class instead of growing a branch per check."""
+
+
+class PrimaryCodeCollisionError(CodeCollisionError):
+    """Two rows claim the same primary EVC code. That code IS the syntaxon's
+    identity: IngestSyntaxa writes it as the row's id and UpsertSyntaxon
+    resolves a conflict on it with ON CONFLICT(id) DO UPDATE, so emitting both
+    rows would merge two vegetation units into one — the later row winning
+    rank, name and parent — while the report still counted both, and every
+    parent_code and habitat-type edge pointing at the code would mean
+    whichever row came last in the file."""
+
+
+class EEACodeCollisionError(CodeCollisionError):
+    """Two different primary codes claim the same eea_code (the historical
+    EEA-EUNIS code in parentheses). That code is the join key
+    IngestSyntaxa's byEEA map uses to resolve an EEA edge onto its FloraVeg
+    primary code and to relink a stale eea code (see syntaxa_ingest.go); a
+    second primary code claiming the same key would make that resolution
+    pick one of the two at random ("last one wins" in a Go map iteration).
+    Failing here, at conversion time, is the ONE place this is checked —
+    mirrors SlugCollisionError in pipelines/evc-distribution/xlsx_to_csv.py,
+    which aborts for the analogous reason."""
 
 
 def _shared_strings(zf):
@@ -101,14 +133,31 @@ def _cell_text(c, shared):
     return v.text
 
 
+def col_index(ref):
+    """Convert a cell reference's column part ("AB7") into a 0-based column
+    index. Excel omits empty cells from the XML; without this conversion, a
+    gap would shift every following column."""
+    n = 0
+    for ch in ref:
+        if not ch.isalpha():
+            break
+        n = n * 26 + (ord(ch.upper()) - 64)
+    return n - 1
+
+
 def read_sheet(src, sheet_path):
-    """Return the sheet as a list of equal-length string rows."""
+    """Return the sheet as a list of equal-length string rows, each cell at
+    the column its own r-attribute names."""
     with zipfile.ZipFile(src) as zf:
         shared = _shared_strings(zf)
         root = ET.fromstring(zf.read(sheet_path))
     rows = []
     for row in root.iter(f"{{{NS['m']}}}row"):
-        rows.append([_cell_text(c, shared) for c in row.findall("m:c", NS)])
+        cells = {}
+        for c in row.findall("m:c", NS):
+            cells[col_index(c.get("r") or "A")] = _cell_text(c, shared)
+        width = max(cells) + 1 if cells else 0
+        rows.append([cells.get(i, "") for i in range(width)])
     width = max((len(r) for r in rows), default=0)
     for r in rows:
         r.extend([""] * (width - len(r)))
@@ -170,10 +219,40 @@ def rank_and_parent(code):
     return "", ""
 
 
+def clear_outputs(out_dir):
+    """Remove this pipeline's own outputs before the run.
+
+    Same rule as pipelines/evc-distribution/build.sh: scripts/collect-ingest-
+    input.sh goes by file presence, so a run that fails in the parser would
+    otherwise publish the previous run's CSV into the next ingest as if it
+    were current. After this point out/ holds the result of this run or
+    nothing at all.
+
+    It lives in the converter, not in a build.sh, because this pipeline has
+    none — the documented invocation is python3 xlsx_to_csv.py, so this is the
+    one place every run passes through. Only the files listed below are
+    touched; anything else in out_dir, and artifacts/ in particular, is not
+    this function's business.
+    """
+    for name in OUTPUT_FILES:
+        try:
+            os.remove(os.path.join(out_dir, name))
+        except FileNotFoundError:
+            pass
+
+
 def convert(xlsx_path, out_dir):
+    clear_outputs(out_dir)
     rows_out = []
     counts = {"classes": 0, "orders": 0, "alliances": 0}
     skipped = []
+    # Tracks which primary code first claimed an eea_code, so a second,
+    # different primary code claiming the same eea_code is a real collision —
+    # not just the same row's eea_code seen twice.
+    alt_seen = {}
+    # The primary code, unlike the eea_code, is the row's own identity: a
+    # second claim is a collision however the rest of the row reads.
+    code_seen = {}
 
     for sheet_name, sheet_path in _data_sheets(xlsx_path):
         rows = read_sheet(xlsx_path, sheet_path)
@@ -185,11 +264,22 @@ def convert(xlsx_path, out_dir):
             raw_code = _cell(row, idx, "Code")
             if not raw_code:
                 continue
-            code = primary_code(raw_code)
+            code, alt = split_code(raw_code)
             rank, parent_code = rank_and_parent(code)
             if not rank:
                 skipped.append((sheet_name, code))
                 continue
+            if code in code_seen:
+                raise PrimaryCodeCollisionError(
+                    f"{xlsx_path} [{sheet_name}]: code {code!r} is claimed twice, "
+                    f"first in sheet {code_seen[code]!r}")
+            code_seen[code] = sheet_name
+            if alt:
+                if alt in alt_seen and alt_seen[alt] != code:
+                    raise EEACodeCollisionError(
+                        f"{xlsx_path} [{sheet_name}]: eea_code {alt!r} is claimed by both "
+                        f"{alt_seen[alt]!r} and {code!r}")
+                alt_seen[alt] = code
             counts[_RANK_COUNTER_KEY[rank]] += 1
             rows_out.append({
                 "code": code,
@@ -197,6 +287,7 @@ def convert(xlsx_path, out_dir):
                 "name": _cell(row, idx, "Name"),
                 "author": _cell(row, idx, "Author"),
                 "parent_code": parent_code,
+                "eea_code": alt,
             })
 
     for sheet_name, code in skipped:
@@ -216,6 +307,7 @@ def convert(xlsx_path, out_dir):
         "alliances": counts["alliances"],
         "total_rows": len(rows_out),
         "skipped_rows": len(skipped),
+        "eea_codes": sum(1 for r in rows_out if r["eea_code"]),
     }
     with open(os.path.join(out_dir, "report.json"), "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False, sort_keys=True)
@@ -230,7 +322,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         report = convert(args.xlsx, args.out_dir)
-    except HeaderError as exc:
+    except (HeaderError, CodeCollisionError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)
     print(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True))

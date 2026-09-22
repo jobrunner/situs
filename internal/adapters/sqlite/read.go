@@ -158,7 +158,16 @@ func (d *DB) appendAreasForChunk(ctx context.Context, out map[string][]string, c
 // KnownAreaCodes lists the distinct area codes the index has data for, in a
 // given scheme. The read side validates an area filter against this: an
 // unknown code becomes an error, not a silent "does not occur" answer.
+//
+// Per scheme from its own table, for the same reason AreasWithData branches:
+// without this, every evc_territory code would be rejected as unknown and the
+// ?area= filter on /v1/syntaxa could not answer a single valid request.
 func (d *DB) KnownAreaCodes(ctx context.Context, scheme string) ([]string, error) {
+	if scheme == domain.SchemeEVCTerritory {
+		return d.queryStrings(ctx, "syntaxon area codes",
+			`SELECT DISTINCT area_code FROM syntaxon_distribution
+			 WHERE area_scheme = ? ORDER BY area_code`, scheme)
+	}
 	return d.queryStrings(ctx, "area codes",
 		`SELECT DISTINCT area_code FROM species_distribution
 		 WHERE area_scheme = ? ORDER BY area_code`, scheme)

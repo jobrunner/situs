@@ -417,6 +417,25 @@ func TestQueryService_SyntaxonHabitatTypes(t *testing.T) {
 	}
 }
 
+// TestQueryService_SyntaxonHabitatTypesFindetUeberDenEEACode covers the
+// fallback this task extended onto SyntaxonHabitatTypes: a client holding the
+// old EEA-EUNIS id must see the same habitat-type edges as under the current
+// id — the habitat-type lookup has to run against the RESOLVED id, not the
+// one that was passed in, or the edge query finds nothing under the old code.
+func TestQueryService_SyntaxonHabitatTypesFindetUeberDenEEACode(t *testing.T) {
+	repo := seedQueryRepo()
+	repo.syntaxa[0].EEACode = "PAP-01A"
+	q := NewQueryService(repo)
+
+	got, err := q.SyntaxonHabitatTypes(context.Background(), "PAP-01A", "de")
+	if err != nil {
+		t.Fatalf("SyntaxonHabitatTypes: %v", err)
+	}
+	if len(got) != 1 || got[0].Code != "R22" {
+		t.Fatalf("got %+v, want the same linked type as under the current id BRO-01A", got)
+	}
+}
+
 // A syntaxon that exists but is linked to nothing answers with an empty list —
 // that is different from not existing at all.
 func TestQueryService_SyntaxonWithoutLinksIsAnEmptyList(t *testing.T) {
@@ -674,6 +693,21 @@ func (r *fakeRepo) Syntaxon(_ context.Context, id string) (domain.Syntaxon, erro
 	return domain.Syntaxon{}, fmt.Errorf("fakeRepo: syntaxon %q: %w", id, output.ErrNotFound)
 }
 
+func (r *fakeRepo) SyntaxonByEEACode(_ context.Context, code string) (domain.Syntaxon, error) {
+	if r.syntaxonByEEACodeErr != nil {
+		return domain.Syntaxon{}, r.syntaxonByEEACodeErr
+	}
+	if r.syntaxonErr != nil {
+		return domain.Syntaxon{}, r.syntaxonErr
+	}
+	for _, s := range r.syntaxa {
+		if s.EEACode == code {
+			return s, nil
+		}
+	}
+	return domain.Syntaxon{}, fmt.Errorf("fakeRepo: syntaxon with eea_code %q: %w", code, output.ErrNotFound)
+}
+
 func (r *fakeRepo) Syntaxa(_ context.Context, key domain.HabitatTypeKey) ([]domain.Syntaxon, error) {
 	if r.syntaxaErr != nil {
 		return nil, r.syntaxaErr
@@ -689,6 +723,117 @@ func (r *fakeRepo) Syntaxa(_ context.Context, key domain.HabitatTypeKey) ([]doma
 			}
 		}
 	}
+	return out, nil
+}
+
+func (r *fakeRepo) SyntaxonChildren(_ context.Context, parentID string) ([]domain.Syntaxon, error) {
+	if r.syntaxonChildrenErr != nil {
+		return nil, r.syntaxonChildrenErr
+	}
+	out := []domain.Syntaxon{}
+	for _, s := range r.syntaxa {
+		if s.ParentID == parentID {
+			out = append(out, s)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
+
+// SyntaxonAncestors mirrors the sqlite adapter including the distinction that
+// matters: an unknown start id wraps output.ErrNotFound, a dangling parent_id
+// does not. A fake that collapsed the two would let a 404-for-an-existing-id
+// bug pass the use-case test.
+func (r *fakeRepo) SyntaxonAncestors(ctx context.Context, id string) ([]domain.Syntaxon, error) {
+	if r.syntaxonAncestorsErr != nil {
+		return nil, r.syntaxonAncestorsErr
+	}
+	current, err := r.Syntaxon(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	out := []domain.Syntaxon{}
+	for steps := 0; current.ParentID != ""; steps++ {
+		if steps == 3 {
+			return nil, fmt.Errorf("fakeRepo: syntaxon %q has more than 3 ancestors", id)
+		}
+		parent, perr := r.Syntaxon(ctx, current.ParentID)
+		if perr != nil {
+			return nil, fmt.Errorf("fakeRepo: syntaxon %q has parent_id %q, which no row carries",
+				current.ID, current.ParentID)
+		}
+		out = append(out, parent)
+		current = parent
+	}
+	slices.Reverse(out)
+	return out, nil
+}
+
+func (r *fakeRepo) HabitatTypeCountForSyntaxon(_ context.Context, syntaxonID string) (int, error) {
+	if r.habitatTypeCountErr != nil {
+		return 0, r.habitatTypeCountErr
+	}
+	n := 0
+	for _, link := range r.syntaxaLinks {
+		if link.syntaxonID == syntaxonID {
+			n++
+		}
+	}
+	return n, nil
+}
+
+// SyntaxaByRank mirrors the adapter's contract: rank filter, then — if a group
+// was asked for — the group of the formation the parent_id chain reaches. It
+// walks the chain itself rather than reading a seeded answer, so a test cannot
+// pass by seeding a group onto a non-formation row.
+func (r *fakeRepo) SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string) ([]domain.Syntaxon, error) {
+	if r.syntaxaByRankErr != nil {
+		return nil, r.syntaxaByRankErr
+	}
+	out := []domain.Syntaxon{}
+	for _, s := range r.syntaxa {
+		if s.Rank != rank {
+			continue
+		}
+		if lifeFormGroup != "" && r.formationGroupOf(ctx, s) != lifeFormGroup {
+			continue
+		}
+		out = append(out, s)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
+
+// formationGroupOf walks parent_id to the root and returns its group, or "" if
+// the chain breaks or exceeds the measured depth.
+func (r *fakeRepo) formationGroupOf(ctx context.Context, s domain.Syntaxon) string {
+	current := s
+	for steps := 0; current.ParentID != ""; steps++ {
+		if steps == 3 {
+			return ""
+		}
+		parent, err := r.Syntaxon(ctx, current.ParentID)
+		if err != nil {
+			return ""
+		}
+		current = parent
+	}
+	return current.LifeFormGroup
+}
+
+func (r *fakeRepo) SyntaxonRanks(_ context.Context) ([]string, error) {
+	if r.syntaxonRanksErr != nil {
+		return nil, r.syntaxonRanksErr
+	}
+	seen := map[string]bool{}
+	out := []string{}
+	for _, s := range r.syntaxa {
+		if !seen[s.Rank] {
+			seen[s.Rank] = true
+			out = append(out, s.Rank)
+		}
+	}
+	sort.Strings(out)
 	return out, nil
 }
 
@@ -1185,6 +1330,47 @@ func TestIndexInfo_ReportsTheBackboneTheIndexWasBuiltFrom(t *testing.T) {
 	}
 }
 
+func TestIndexInfoMisstSyntaxaVerbreitung(t *testing.T) {
+	repo := newFakeRepo()
+	repo.syntaxonCoverage = append(repo.syntaxonCoverage,
+		fakeSyntaxonCoverage{SyntaxonID: "CA01A", Scheme: domain.SchemeEVCTerritory},
+		fakeSyntaxonCoverage{SyntaxonID: "CA01B", Scheme: domain.SchemeEVCTerritory},
+	)
+	q := NewQueryService(repo)
+
+	info, err := q.IndexInfo(context.Background())
+	if err != nil {
+		t.Fatalf("IndexInfo: %v", err)
+	}
+	if info.SyntaxonAreaScheme != domain.SchemeEVCTerritory {
+		t.Errorf("SyntaxonAreaScheme = %q, erwartet evc_territory", info.SyntaxonAreaScheme)
+	}
+	if info.SyntaxaWithDistribution != 2 {
+		t.Errorf("SyntaxaWithDistribution = %d, erwartet 2", info.SyntaxaWithDistribution)
+	}
+	// The existing field keeps its meaning and its name.
+	if info.AreaScheme != domain.SchemeWGSRPDL3 {
+		t.Errorf("AreaScheme = %q, erwartet wgsrpd_l3", info.AreaScheme)
+	}
+}
+
+func TestIndexInfoZaehltNullOhneVerbreitungsingest(t *testing.T) {
+	// Zero is a true statement about this index, not a placeholder.
+	repo := newFakeRepo()
+	q := NewQueryService(repo)
+
+	info, err := q.IndexInfo(context.Background())
+	if err != nil {
+		t.Fatalf("IndexInfo: %v", err)
+	}
+	if info.SyntaxaWithDistribution != 0 {
+		t.Errorf("SyntaxaWithDistribution = %d, erwartet 0", info.SyntaxaWithDistribution)
+	}
+	if info.SyntaxonAreaScheme != domain.SchemeEVCTerritory {
+		t.Errorf("SyntaxonAreaScheme = %q — das Schema ist auch ohne Daten benannt", info.SyntaxonAreaScheme)
+	}
+}
+
 // Both index reads must surface. A self-description that quietly reports zeros
 // after a failed read would be worse than no answer: a client would conclude
 // "wrong backbone" from a broken database.
@@ -1195,6 +1381,7 @@ func TestIndexInfo_SurfacesEitherFailingRead(t *testing.T) {
 	}{
 		{"concept ids", func(r *fakeRepo, err error) { r.conceptIDsErr = err }},
 		{"known area codes", func(r *fakeRepo, err error) { r.areasErr = err }},
+		{"syntaxa with coverage", func(r *fakeRepo, err error) { r.syntaxaWithCoverageErr = err }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			wantErr := errors.New("index unreadable")

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/jobrunner/situs/internal/domain"
 	"github.com/jobrunner/situs/internal/ports/output"
@@ -93,6 +94,52 @@ func TestClient_AreasTransportFailureIsUnavailability(t *testing.T) {
 	if _, err := NewClient(srv.URL, srv.Client(), 50, "wcvp").
 		Areas(context.Background(), []string{"wcvp:concept:1"}); !errors.Is(err, output.ErrResolverUnavailable) {
 		t.Errorf("error = %v, want it to wrap output.ErrResolverUnavailable", err)
+	}
+}
+
+// An http.Client.Timeout fires as an error whose chain contains
+// context.DeadlineExceeded even though the caller's ctx never expired. The
+// callers (pacedDistributionSource, IngestDistribution) read that chain to
+// tell "this run was told to stop" from "one request was slow", so the
+// adapter must not hand them a timeout dressed as a deadline.
+func TestClient_AreasClientTimeoutIsUnavailabilityNotAnExpiredContext(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		<-release
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"distribution":[]}`))
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	slow := &http.Client{Transport: srv.Client().Transport, Timeout: 20 * time.Millisecond}
+	_, err := NewClient(srv.URL, slow, 50, "wcvp").Areas(context.Background(), []string{"wcvp:concept:1"})
+	if !errors.Is(err, output.ErrResolverUnavailable) {
+		t.Errorf("error = %v, want it to wrap output.ErrResolverUnavailable", err)
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("error = %v, want it NOT to satisfy errors.Is(context.DeadlineExceeded) while the caller's ctx is alive", err)
+	}
+}
+
+// The converse: when the caller's own ctx really is done, that IS the news.
+// The error must carry it so the caller can abort instead of treating the
+// cancellation as one more unavailable upstream.
+func TestClient_AreasReportsAnExpiredContextAsSuch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"distribution":[]}`))
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := NewClient(srv.URL, srv.Client(), 50, "wcvp").Areas(ctx, []string{"wcvp:concept:1"})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("error = %v, want it to carry context.Canceled", err)
+	}
+	if errors.Is(err, output.ErrResolverUnavailable) {
+		t.Errorf("error = %v, want a canceled run NOT to be reported as an unavailable upstream", err)
 	}
 }
 

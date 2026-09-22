@@ -264,87 +264,237 @@ func TestIngestTx_UpsertSyntaxonRoundTripsAuthor(t *testing.T) {
 	}
 }
 
-// withTx begins a transaction on db, runs fn, and commits — the shared shape
-// of every ingest step in this test, so a caller states only what changes.
-func withTx(ctx context.Context, t *testing.T, db *DB, fn func(tx output.IngestTx) error) {
-	t.Helper()
+func TestUpsertSyntaxonSchreibtAlleFelder(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
 	tx, err := db.Begin(ctx)
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	if err := fn(tx); err != nil {
-		t.Fatalf("ingest step: %v", err)
+	want := domain.Syntaxon{
+		ID: "CA01A", Rank: domain.SyntaxonRankAlliance, Name: "Test-Verband",
+		Author: "Koch 1970", ParentID: "CA01", EEACode: "TST-01A",
+		Source: domain.SyntaxonSourceEVC, ParentProvenance: domain.ParentProvenanceOfficial,
+	}
+	if err := tx.UpsertSyntaxon(want); err != nil {
+		t.Fatalf("UpsertSyntaxon: %v", err)
 	}
 	if err := tx.Commit(); err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
-}
-
-// assertSyntaxonAuthorAndRank fetches id and checks that UpsertSyntaxonAuthor
-// set Name/Author/ParentID as wanted without touching Rank.
-func assertSyntaxonAuthorAndRank(ctx context.Context, t *testing.T, db *DB, id, wantAuthor, wantParentID, wantRank, wantName string) {
-	t.Helper()
-	got, err := db.Syntaxon(ctx, id)
+	got, err := db.Syntaxon(ctx, "CA01A")
 	if err != nil {
 		t.Fatalf("Syntaxon: %v", err)
 	}
-	if got.Author != wantAuthor || got.ParentID != wantParentID || got.Name != wantName {
-		t.Errorf("got = %+v, want Author=%q ParentID=%q Name=%q", got, wantAuthor, wantParentID, wantName)
-	}
-	if got.Rank != wantRank {
-		t.Errorf("got = %+v, want Rank untouched (%q)", got, wantRank)
+	if got != want {
+		t.Errorf("Syntaxon = %+v, erwartet %+v", got, want)
 	}
 }
 
-// assertSyntaxonParentID fetches id and checks only ParentID — used for the
-// empty-parentID call, which must leave a previously set ParentID untouched.
-func assertSyntaxonParentID(ctx context.Context, t *testing.T, db *DB, id, wantParentID string) {
-	t.Helper()
-	got, err := db.Syntaxon(ctx, id)
+func TestSetSyntaxonParentSetztNurElternteilUndProvenienz(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertSyntaxon(domain.Syntaxon{
+		ID: "NAR-01E", Rank: domain.SyntaxonRankAlliance, Name: "Campanulo-Nardion",
+		Source: domain.SyntaxonSourceEUNIS, ParentProvenance: domain.ParentProvenanceOfficial,
+	}); err != nil {
+		t.Fatalf("UpsertSyntaxon: %v", err)
+	}
+	if err := tx.SetSyntaxonParent("NAR-01E", "CI01", domain.ParentProvenanceDerived); err != nil {
+		t.Fatalf("SetSyntaxonParent: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.Syntaxon(ctx, "NAR-01E")
 	if err != nil {
 		t.Fatalf("Syntaxon: %v", err)
 	}
-	if got.ParentID != wantParentID {
-		t.Errorf("ParentID = %q after empty-parentID call, want it untouched (%q)", got.ParentID, wantParentID)
+	if got.ParentID != "CI01" || got.ParentProvenance != domain.ParentProvenanceDerived {
+		t.Errorf("ParentID/Provenienz = %q/%q, erwartet CI01/derived", got.ParentID, got.ParentProvenance)
+	}
+	if got.Name != "Campanulo-Nardion" {
+		t.Errorf("Name wurde angefasst: %q", got.Name)
 	}
 }
 
-func TestIngestTx_UpsertSyntaxonAuthor(t *testing.T) {
+// An UPDATE that matches no row is not an error to SQLite, so the adapter
+// used to report success for an id the index does not carry: the application
+// then recorded the parent in its in-memory graph, passed the orphan, cycle
+// and rank checks on it, and committed a parentless syntaxon. The fake
+// repository in internal/application has always failed on an unknown id —
+// the real one must too, or the tests measure the fake.
+func TestSetSyntaxonParentMeldetUnbekannteID(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback() })
 
-	withTx(ctx, t, db, func(tx output.IngestTx) error {
-		return tx.UpsertSyntaxon(domain.Syntaxon{ID: "arrhenatherion", Rank: "alliance", Name: "Arrhenatherion"})
-	})
-
-	withTx(ctx, t, db, func(tx output.IngestTx) error {
-		return tx.UpsertSyntaxonAuthor("arrhenatherion", "Arrhenatherion elatioris", "Koch 1926", "AA01")
-	})
-	assertSyntaxonAuthorAndRank(ctx, t, db, "arrhenatherion", "Koch 1926", "AA01", "alliance", "Arrhenatherion elatioris")
-
-	// A second call with an empty parentID must not clear the one just set,
-	// but name/author DO update on every call.
-	withTx(ctx, t, db, func(tx output.IngestTx) error {
-		return tx.UpsertSyntaxonAuthor("arrhenatherion", "Arrhenatherion elatioris", "Koch 1926 emend.", "")
-	})
-	assertSyntaxonParentID(ctx, t, db, "arrhenatherion", "AA01")
-	assertSyntaxonAuthorAndRank(ctx, t, db, "arrhenatherion", "Koch 1926 emend.", "AA01", "alliance", "Arrhenatherion elatioris")
+	err = tx.SetSyntaxonParent("GIBT-ES-NICHT", "CI01", domain.ParentProvenanceDerived)
+	if err == nil {
+		t.Fatal("SetSyntaxonParent meldete Erfolg fuer eine ID, die der Index nicht traegt")
+	}
+	if !strings.Contains(err.Error(), "GIBT-ES-NICHT") {
+		t.Errorf("Fehler = %v, erwartet die ID im Text", err)
+	}
 }
 
-// UpsertSyntaxonAuthor only ever enriches a row its caller just read back
-// from the index — an id matching zero rows means the index changed under
-// the ingest or the caller drifted out of sync, and must surface as an
-// error rather than a silent no-op.
-func TestIngestTx_UpsertSyntaxonAuthor_UnknownIDIsAnError(t *testing.T) {
+// ClearSyntaxa empties both tables, in the order the edges reference the
+// rows: habitat_type_syntaxon first, then syntaxon.
+func TestClearSyntaxaLeertBeideTabellen(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertSyntaxon(domain.Syntaxon{ID: "ASP-03", Rank: domain.SyntaxonRankAlliance,
+		Name: "X", Source: domain.SyntaxonSourceEUNIS, ParentProvenance: domain.ParentProvenanceOfficial}); err != nil {
+		t.Fatalf("UpsertSyntaxon: %v", err)
+	}
+	key := domain.HabitatTypeKey{Typology: domain.DefaultTypologyID, Code: "U36"}
+	if err := tx.LinkSyntaxon(key, "ASP-03"); err != nil {
+		t.Fatalf("LinkSyntaxon: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	tx, err = db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.ClearSyntaxa(); err != nil {
+		t.Fatalf("ClearSyntaxa: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	all, err := db.AllSyntaxa(ctx)
+	if err != nil {
+		t.Fatalf("AllSyntaxa: %v", err)
+	}
+	if len(all) != 0 {
+		t.Errorf("syntaxon nach ClearSyntaxa = %v, erwartet leer", all)
+	}
+	keys, err := db.HabitatTypeKeysForSyntaxon(ctx, "ASP-03")
+	if err != nil {
+		t.Fatalf("HabitatTypeKeysForSyntaxon: %v", err)
+	}
+	if len(keys) != 0 {
+		t.Errorf("habitat_type_syntaxon nach ClearSyntaxa = %v, erwartet leer", keys)
+	}
+}
+
+// ClearSyntaxa's two statements have separate error-wrap branches — pin the
+// second one (DELETE FROM syntaxon) with a trigger that blocks only that
+// table, so the leading DELETE FROM habitat_type_syntaxon succeeds and only
+// the second statement fails.
+func TestClearSyntaxaWrapsAnErrorFromTheSyntaxonDelete(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	// A trigger only fires for a row it actually deletes: seed one syntaxon
+	// row first, or the DELETE affects nothing and the trigger never runs.
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO syntaxon (id, rank, name, source, parent_provenance)
+		 VALUES ('ASP-03', 'alliance', 'X', 'eunis', 'official')`); err != nil {
+		t.Fatalf("seeding syntaxon: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`CREATE TRIGGER block_delete BEFORE DELETE ON syntaxon
+		 BEGIN SELECT RAISE(ABORT, 'blocked'); END`); err != nil {
+		t.Fatalf("creating trigger: %v", err)
+	}
 
 	tx, err := db.Begin(ctx)
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	if err := tx.UpsertSyntaxonAuthor("does-not-exist", "X", "Koch 1926", "AA01"); err == nil {
-		t.Fatal("UpsertSyntaxonAuthor(unknown id) = nil error, want an error")
+	err = tx.ClearSyntaxa()
+	if err == nil {
+		t.Fatal("ClearSyntaxa with a blocked syntaxon DELETE = nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "clearing syntaxon") {
+		t.Errorf("error = %q, want it to name the syntaxon DELETE failure", err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+}
+
+// ClearSyntaxonDistribution empties both distribution tables. Neither hangs
+// off a foreign key, so ClearSyntaxa does not reach them — this is the only
+// thing that keeps a repinned artifact from leaving stale rows behind.
+func TestClearSyntaxonDistributionLeertBeideTabellen(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := tx.UpsertSyntaxonDistribution("CA01A", domain.SchemeEVCTerritory, "austria-alps", domain.OccurrenceVerified); err != nil {
+		t.Fatalf("UpsertSyntaxonDistribution: %v", err)
+	}
+	if err := tx.UpsertSyntaxonDistributionCoverage("CA01A", domain.SchemeEVCTerritory); err != nil {
+		t.Fatalf("UpsertSyntaxonDistributionCoverage: %v", err)
+	}
+	if err := tx.ClearSyntaxonDistribution(); err != nil {
+		t.Fatalf("ClearSyntaxonDistribution: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.SyntaxonDistribution(ctx, "CA01A", domain.SchemeEVCTerritory)
+	if err != nil {
+		t.Fatalf("SyntaxonDistribution: %v", err)
+	}
+	if len(got.Verified) != 0 || len(got.Uncertain) != 0 {
+		t.Errorf("syntaxon_distribution nach ClearSyntaxonDistribution = %+v, erwartet leer", got)
+	}
+	if got.Covered {
+		t.Error("syntaxon_distribution_coverage nach ClearSyntaxonDistribution nicht leer")
+	}
+}
+
+// The two statements have separate error-wrap branches. The closed-transaction
+// table above pins the first; this pins the second (the coverage DELETE) with
+// a trigger that blocks only that table, so the leading DELETE succeeds.
+func TestClearSyntaxonDistributionWrapsAnErrorFromTheCoverageDelete(t *testing.T) {
+	db := openTestDB(t)
+	ctx := t.Context()
+	// A trigger only fires for a row it actually deletes: seed one coverage
+	// row first, or the DELETE affects nothing and the trigger never runs.
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO syntaxon_distribution_coverage (syntaxon_id, area_scheme)
+		 VALUES ('CA01A', 'evc_territory')`); err != nil {
+		t.Fatalf("seeding coverage: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`CREATE TRIGGER block_coverage_delete BEFORE DELETE ON syntaxon_distribution_coverage
+		 BEGIN SELECT RAISE(ABORT, 'blocked'); END`); err != nil {
+		t.Fatalf("creating trigger: %v", err)
+	}
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	err = tx.ClearSyntaxonDistribution()
+	if err == nil {
+		t.Fatal("ClearSyntaxonDistribution with a blocked coverage DELETE = nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "clearing syntaxon_distribution_coverage") {
+		t.Errorf("error = %q, want it to name the coverage DELETE failure", err)
 	}
 	if err := tx.Rollback(); err != nil {
 		t.Fatalf("Rollback: %v", err)
@@ -671,11 +821,16 @@ func TestIngestTx_MethodsWrapErrorsOnAClosedTransaction(t *testing.T) {
 			return tx.UpsertCrosswalk(domain.Crosswalk{From: key, To: key, Qualifier: domain.QualifierSame})
 		},
 		"UpsertSyntaxon": func() error { return tx.UpsertSyntaxon(domain.Syntaxon{ID: "x", Rank: "class", Name: "x"}) },
-		"UpsertSyntaxonAuthor(no parent)": func() error {
-			return tx.UpsertSyntaxonAuthor("x", "X", "Koch 1926", "")
+		"SetSyntaxonParent": func() error {
+			return tx.SetSyntaxonParent("x", "AA01", domain.ParentProvenanceDerived)
 		},
-		"UpsertSyntaxonAuthor(with parent)": func() error {
-			return tx.UpsertSyntaxonAuthor("x", "X", "Koch 1926", "AA01")
+		"ClearSyntaxa":              func() error { return tx.ClearSyntaxa() },
+		"ClearSyntaxonDistribution": func() error { return tx.ClearSyntaxonDistribution() },
+		"UpsertSyntaxonDistribution": func() error {
+			return tx.UpsertSyntaxonDistribution("CA01A", domain.SchemeEVCTerritory, "austria-alps", domain.OccurrenceVerified)
+		},
+		"UpsertSyntaxonDistributionCoverage": func() error {
+			return tx.UpsertSyntaxonDistributionCoverage("CA01A", domain.SchemeEVCTerritory)
 		},
 		"LinkSyntaxon": func() error { return tx.LinkSyntaxon(key, "x") },
 		"UpsertSpeciesRole": func() error {

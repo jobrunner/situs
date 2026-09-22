@@ -100,14 +100,99 @@ type SyntaxonRef struct {
 	Rank string `json:"rank"`
 	Name string `json:"name"`
 	// Author is the authorship citation, taken verbatim from FloraVeg.EU's own
-	// already-separated column — absent when no FloraVeg match was found, never
-	// a guessed split of Name.
+	// already-separated column — absent for the units that only the EEA-EUNIS
+	// source carries.
 	Author string `json:"author,omitempty"`
 	// ParentID references a FloraVeg order code (class -> order -> alliance
-	// hierarchy) — absent when unknown. A plain string reference, not a
-	// schema-bound foreign key: two id schemes (EUNIS alliance codes, FloraVeg
-	// class/order codes) coexist here.
+	// hierarchy) — absent only for a formation, the root of the hierarchy. A
+	// plain string reference, not a schema-bound foreign key: two id schemes
+	// (EUNIS alliance codes, FloraVeg class/order codes) coexist here.
 	ParentID string `json:"parent_id,omitempty"`
+
+	// EEACode is the EEA-EUNIS code of the same syntaxon — a client
+	// holding an old code can switch over with it, without guessing.
+	EEACode string `json:"eea_code,omitempty"`
+	// Source is "evc" or "eunis": which source this row carries.
+	Source string `json:"source,omitempty"`
+	// ParentProvenance is "official" or "derived". A derived parent is
+	// never presented as a source-backed statement.
+	ParentProvenance string `json:"parent_provenance,omitempty"`
+	// LifeFormGroup is only filled on formation rows, so empty in every
+	// response that exists today. The field is here already because
+	// sub-project B delivers the formations as []SyntaxonRef and filters
+	// on it.
+	LifeFormGroup string `json:"life_form_group,omitempty"`
+
+	// Occurrence is "verified" or "uncertain" and is set only in an
+	// ?area=-filtered list. MISSING means no statement exists — the same
+	// three-valuedness as in_area on the species side. Without it the carried
+	// row would be indistinguishable from a confirmed one, and a list that
+	// keeps everything but marks nothing is just as dishonest as one that
+	// throws away.
+	Occurrence string `json:"occurrence,omitempty"`
+}
+
+// SyntaxonDetail is a syntaxon with its surroundings: the way up and the direct
+// children. Both answer the same question ("where am I and where can I go?")
+// and therefore belong in the same response — a separate /children or
+// /ancestors route would be a second way to the same data and would make a
+// breadcrumb trail cost three requests.
+//
+// SyntaxonRef is EMBEDDED, so Go promotes its fields into this same JSON
+// object: id, rank, name, author, parent_id, eea_code, source,
+// parent_provenance and life_form_group are siblings of ancestors and children
+// on the wire, not a nested object. The OpenAPI schema models that as allOf and
+// a test pins it, because a nested schema and a flat wire format would be two
+// contracts claiming to be one.
+//
+// life_form_group is deliberately NOT repeated here: a field of the same name
+// in the outer struct would shadow the embedded one and put two fields on one
+// JSON key. For every rank but formation the value is derived from the
+// formation the ancestor path reaches — derived, not stored, and verifiable by
+// the client because ancestors travels in the same response.
+type SyntaxonDetail struct {
+	SyntaxonRef
+
+	// Ancestors is the way to the root, OUTERMOST first (formation, then
+	// class, then order), and empty for a formation. The order is fixed so a
+	// client can print it unchanged as a breadcrumb trail.
+	//
+	// No omitempty, and never nil: an empty list and a missing field are
+	// different statements for a client.
+	Ancestors []SyntaxonRef `json:"ancestors"`
+
+	// Children are the direct children, ordered by id. Empty for an alliance —
+	// the lower bound of the data, not an error. No omitempty, same reason as
+	// Ancestors.
+	Children []SyntaxonRef `json:"children"`
+
+	// DirectHabitatTypeCount is the number of habitat types linking EXACTLY
+	// this syntaxon, not its descendants'. For a class or formation it is
+	// therefore almost always 0, because habitat_type_syntaxon links alliances
+	// (and in one case an order). The name says so, so a client does not read
+	// the 0 as "this class touches no EUNIS type"; aggregating over the
+	// descendants is a question of its own.
+	DirectHabitatTypeCount int `json:"direct_habitat_type_count"`
+
+	// Distribution is the source's statement about this syntaxon. Nil when
+	// there is none (no coverage row) — then NOTHING is known about its
+	// occurrence, which is strictly different from "occurs nowhere". Measured:
+	// 212 of 1326 alliances are nil, including every bryophyte, lichen and
+	// algal one, because the source covers vascular-plant dominated vegetation
+	// only.
+	Distribution *SyntaxonDistribution `json:"distribution,omitempty"`
+}
+
+// SyntaxonDistribution is the source's statement about where a syntaxon
+// occurs. Verified and Uncertain are sorted code lists.
+//
+// Absence is deliberately NOT enumerated: 136 minus the occupied codes would
+// be an invented list, and the client knows the scheme from GET /v1/areas
+// ?scheme=evc_territory.
+type SyntaxonDistribution struct {
+	AreaScheme string   `json:"area_scheme"`
+	Verified   []string `json:"verified"`
+	Uncertain  []string `json:"uncertain"`
 }
 
 // CrosswalkRef is the far side of a correspondence, seen from the queried type.
@@ -156,6 +241,20 @@ type AreaFilter struct {
 
 // Active reports whether a filter was asked for at all.
 func (f AreaFilter) Active() bool { return f.Code != "" }
+
+// SyntaxonAreaFilter is the ?area=/?include= pair on the syntaxa list.
+//
+// Include is the set of occurrence values that count as a hit, default
+// {verified}. It is a SET rather than a single value because "verified or
+// uncertain" is a real question and two requests plus a client-side merge
+// would be a worse answer.
+type SyntaxonAreaFilter struct {
+	Code    string
+	Include []string
+}
+
+// Active reports whether a filter was asked for at all.
+func (f SyntaxonAreaFilter) Active() bool { return f.Code != "" }
 
 // HabitatTypeDetail answers GET /v1/habitat-type/{typology}/{code}. Species is
 // keyed by role and always carries the three known roles, empty where there is
@@ -274,12 +373,25 @@ type IndexInfo struct {
 	ConceptBackbones []string `json:"concept_backbones"`
 	// SpeciesWithConcept is the number of distinct concept ids the index holds.
 	SpeciesWithConcept int `json:"species_with_concept"`
-	// AreaScheme names the vocabulary ?area= codes come from.
+	// AreaScheme names the vocabulary ?area= codes come from ON THE SPECIES
+	// ROUTES. It keeps its singular name although there are now two schemes:
+	// a field name in a published answer is not a matter of taste, and
+	// renaming it would break every client that reads it. What it means is
+	// spelled out here and in the OpenAPI description instead.
 	AreaScheme string `json:"area_scheme"`
 	// AreasWithData is the number of distinct area codes with distribution
 	// rows. It is zero until a distribution ingest has run — which is a true
 	// statement about the index, not a placeholder.
 	AreasWithData int `json:"areas_with_data"`
+	// SyntaxonAreaScheme names the vocabulary ?area= codes come from ON THE
+	// SYNTAXA ROUTES. Named even when SyntaxaWithDistribution is zero: the
+	// scheme is a property of this release, the count one of this index.
+	SyntaxonAreaScheme string `json:"syntaxon_area_scheme"`
+	// SyntaxaWithDistribution is the number of syntaxa the source makes any
+	// statement about (the coverage rows). It is zero until a distribution
+	// ingest has run — a true statement about the index, not a placeholder.
+	// Measured against the pinned artifacts: 1114 of 1326 alliances.
+	SyntaxaWithDistribution int `json:"syntaxa_with_distribution"`
 }
 
 // SpeciesSearchHit is one hit of the index-own name search.
@@ -358,8 +470,13 @@ type QueryService interface {
 	// about instead of guessing eunis@2021 and never learning that
 	// eunis@2012 and annex1 exist too.
 	Typologies(ctx context.Context) ([]TypologyView, error)
-	// Areas lists the areas the ?area= filter can answer, with their names.
-	Areas(ctx context.Context) ([]AreaView, error)
+	// Areas lists the areas of one scheme the ?area= filter can answer, with
+	// their names. The scheme is a parameter and not a constant because situs
+	// stores two (domain.SchemeWGSRPDL3 for species, domain.SchemeEVCTerritory
+	// for syntaxa) and a flat list mixing both would be ambiguous: the caller
+	// could not tell which vocabulary a code belongs to without reading every
+	// entry's scheme field.
+	Areas(ctx context.Context, scheme string) ([]AreaView, error)
 	// HabitatType returns one type with its species, syntaxa and crosswalks.
 	// filter marks (and, if OnlyInArea, prunes) the species by area.
 	HabitatType(ctx context.Context, key domain.HabitatTypeKey, lang string, filter AreaFilter) (HabitatTypeDetail, error)
@@ -370,6 +487,30 @@ type QueryService interface {
 	HabitatTypeSpecies(ctx context.Context, key domain.HabitatTypeKey, role string, filter AreaFilter) ([]SpeciesEntry, error)
 	// SyntaxonHabitatTypes returns the habitat types a syntaxon is linked to.
 	SyntaxonHabitatTypes(ctx context.Context, syntaxonID, lang string) ([]HabitatTypeSummary, error)
+	// Syntaxon returns one vegetation unit with its ancestor path and its
+	// direct children — the whole navigation step in one answer. An unknown id
+	// is ErrNotFound; a parent_id pointing at a missing row is an inconsistent
+	// index and is reported as such, never bridged.
+	//
+	// lang is accepted and, for now, not consulted: syntaxa carry no German
+	// labels yet (design, section 10). It is in the signature so adding them
+	// later is not a contract change, and so the adapter's language(r) logic
+	// stays uniform across routes.
+	Syntaxon(ctx context.Context, id, lang string) (SyntaxonDetail, error)
+	// SyntaxaByRank lists every syntaxon of rank, ordered by id, narrowed to
+	// one life-form group when lifeFormGroup is non-empty (the two filters act
+	// as AND). rank is validated against what the index carries: an unknown
+	// value is ErrInvalidQuery naming the ranks that would have worked, never
+	// an empty list that reads as "there are none".
+	//
+	// It returns SyntaxonRef and not SyntaxonDetail on purpose: the roots need
+	// neither an ancestor path (empty) nor a child list (that is the next
+	// step), and 25 details with 150 children each would be an answer nobody
+	// asked for.
+	//
+	// filter, when active, keeps only syntaxa with a matching occurrence PLUS
+	// those the source says nothing about.
+	SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string, filter SyntaxonAreaFilter) ([]SyntaxonRef, error)
 	// SpeciesSetHabitatTypes answers a whole field record at once: one entry per
 	// input concept id, in input order, duplicates included.
 	SpeciesSetHabitatTypes(ctx context.Context, conceptIDs []string, lang string, filter AreaFilter) ([]ConceptResolution, error)

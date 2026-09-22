@@ -26,3 +26,25 @@ func TestAreaFilterActive(t *testing.T) {
 		})
 	}
 }
+
+// The same rule as AreaFilter.Active: an empty code means "no filter asked
+// for", regardless of what Include carries.
+func TestSyntaxonAreaFilterActive(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		filter input.SyntaxonAreaFilter
+		want   bool
+	}{
+		{"no code at all", input.SyntaxonAreaFilter{}, false},
+		{"a code", input.SyntaxonAreaFilter{Code: "austria-alps"}, true},
+		{"include without a code is still inactive",
+			input.SyntaxonAreaFilter{Include: []string{"verified"}}, false},
+		{"a code with include", input.SyntaxonAreaFilter{Code: "austria-alps", Include: []string{"verified"}}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.filter.Active(); got != tc.want {
+				t.Errorf("SyntaxonAreaFilter%+v.Active() = %t, want %t", tc.filter, got, tc.want)
+			}
+		})
+	}
+}
