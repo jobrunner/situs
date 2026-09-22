@@ -197,6 +197,47 @@ func TestIngestSyntaxaUeberspringtKlasseMitUnbekanntemBuchstaben(t *testing.T) {
 	}
 }
 
+func TestIngestSyntaxaBrichtBeiBaumelndemParentCodeAb(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy: "code,rank,name,author,parent_code,alt_code\n" +
+			"CA,class,Testklasse,Moor 1950,,TST\n" +
+			// CA99 does not exist anywhere in this file: a stale parent_code,
+			// not a skipped class.
+			"CA01,order,Testordnung,Moor 1960,CA99,TST-01\n",
+		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief mit baumelndem parent_code durch")
+	}
+	if !strings.Contains(err.Error(), "CA01") {
+		t.Errorf("Fehler nennt CA01 nicht: %v", err)
+	}
+}
+
+func TestIngestSyntaxaBrichtAbWennOrdnungAnUebersprungenerKlasseHaengt(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy: "code,rank,name,author,parent_code,alt_code\n" +
+			// ZA's formation letter Z is unknown -> ZA is skipped
+			// (SkippedRows), but its order ZA01 is written regardless and
+			// must not be allowed to dangle.
+			"ZA,class,Klasse ohne Formation,,,ZZZ\n" +
+			"ZA01,order,Ordnung ohne Klasse,,ZA,ZZZ-01\n",
+		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief mit einer Ordnung an uebersprungener Klasse durch")
+	}
+	if !strings.Contains(err.Error(), "ZA01") {
+		t.Errorf("Fehler nennt ZA01 nicht: %v", err)
+	}
+}
+
 func TestFormationOfLeeresCodeLiefertLeereFormation(t *testing.T) {
 	if got := formationOf(""); got != "" {
 		t.Errorf("formationOf(\"\") = %q, erwartet \"\"", got)

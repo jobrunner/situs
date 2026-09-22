@@ -126,6 +126,13 @@ func writeSyntaxa(ctx context.Context, tx output.IngestTx, dir string,
 	if err := writeHierarchy(tx, rows, formations, written, rep); err != nil {
 		return err
 	}
+	// A class whose formation letter is unknown is skipped (SkippedRows,
+	// above) but its own order and alliance rows are written regardless —
+	// writeHierarchy has no reason to know a class was dropped elsewhere in
+	// the same CSV. Anything that still points nowhere after every hierarchy
+	// row is written is exactly what Orphans exists to catch: it is not
+	// limited to the EEA-only remainder (Step 5, below).
+	checkDanglingParents(rows, written, rep)
 
 	// Step 3: the EEA units that FloraVeg does not carry. Every other
 	// unit is already represented by its FloraVeg row — writing it a
@@ -240,6 +247,24 @@ func writeHierarchy(tx output.IngestTx, rows []hierarchyRow, formations map[stri
 		}
 	}
 	return nil
+}
+
+// checkDanglingParents records, into rep.Orphans, every non-class hierarchy
+// row (order or alliance) whose parentID is empty or was never written —
+// either because the CSV's own parent_code is stale, or because the parent
+// row was a class skipped for an unknown formation letter. Class rows are
+// excluded: their parent (a formation) is already validated inside
+// writeHierarchy before the row is written at all, so a written class always
+// has a real parent.
+func checkDanglingParents(rows []hierarchyRow, written map[string]bool, rep *SyntaxaReport) {
+	for _, r := range rows {
+		if r.rank == domain.SyntaxonRankClass || !written[r.code] {
+			continue
+		}
+		if r.parentCode == "" || !written[r.parentCode] {
+			rep.Orphans = append(rep.Orphans, r.code)
+		}
+	}
 }
 
 // writeEunisOnly writes syntaxa.csv's rows whose id is not a key of byAlt —
