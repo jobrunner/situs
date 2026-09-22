@@ -29,7 +29,9 @@ const maxLoggedConceptFailures = 3
 // tolerated this way.
 // A canceled/expired context is the one failure that is not tolerated —
 // that is the run being told to stop, not a data problem, and it must fail
-// here, not resurface as an unrelated error two ingest steps later. If every
+// here, not resurface as an unrelated error two ingest steps later. Whether
+// that happened is read from the ctx, never from the returned error, which a
+// per-request timeout makes look the same (see abortCause). If every
 // single request fails, Areas reports that as a whole-batch failure (nil
 // map, error) so IngestDistribution treats it exactly like the previous
 // all-or-nothing behavior: zeros in the report, plus the warning — and
@@ -61,8 +63,8 @@ func (p *pacedDistributionSource) Areas(ctx context.Context, conceptIDs []string
 		}
 		areas, err := p.src.Areas(ctx, []string{id})
 		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return out, err
+			if abort := abortCause(ctx, err); abort != nil {
+				return out, abort
 			}
 			p.failed++
 			lastErr = err
@@ -81,11 +83,38 @@ func (p *pacedDistributionSource) Areas(ctx context.Context, conceptIDs []string
 			"failed", p.failed, "requested", len(conceptIDs))
 	}
 	if len(conceptIDs) > 0 && p.failed == len(conceptIDs) {
-		err := fmt.Errorf("all %d distribution requests failed, last error: %w", p.failed, lastErr)
+		// The last error goes in as text, not %w: it may carry a per-request
+		// deadline (an http.Client.Timeout), and IngestDistribution reads the
+		// chain to tell a stopped run from a source outage. Wrapping it would
+		// make a source that times out on every concept fail the ingest
+		// instead of taking the documented warn-and-zero path.
+		err := fmt.Errorf("all %d distribution requests failed, last error: %s", p.failed, lastErr.Error())
 		p.failed = 0
 		return nil, err
 	}
 	return out, nil
+}
+
+// abortCause returns the error that must end the whole run, or nil when the
+// failure belongs to one concept and the run continues.
+//
+// The ctx is the authority, not the error: an http.Client.Timeout surfaces as
+// an error satisfying errors.Is(err, context.DeadlineExceeded) while the run's
+// own ctx is very much alive, so asking the error alone would turn one slow
+// request into an aborted ingest. The hostus adapter keeps that deadline out
+// of its chain (see transportError), but this decorator wraps any
+// DistributionSource and must not depend on that.
+// context.Canceled is the exception that is still read from the error: nothing
+// but an actual cancellation produces it, so it aborts even when it arrives
+// from a source that swallowed its own ctx.
+func abortCause(ctx context.Context, err error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	if errors.Is(err, context.Canceled) {
+		return err
+	}
+	return nil
 }
 
 // FailedConcepts reports how many concept requests the last Areas call
