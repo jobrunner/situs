@@ -240,6 +240,7 @@ type SyntaxonDistributionReport struct {
 	Covered        int      // syntaxa with a statement (coverage rows)
 	Territories    int
 	UnknownSyntaxa []string // source codes the index does not know
+	NonAllianceSyntaxa []string // known codes whose rank is not `alliance`
 }
 
 func IngestSyntaxonDistribution(ctx context.Context, repo output.Repository, csvPath, coveragePath string) (SyntaxonDistributionReport, error)
@@ -277,6 +278,19 @@ Gemessen ist das genau ein Fall: `CI01E` steht in der Verbreitungsdatei
 (EVC-Fassung 3), aber nicht in der gepinnten FloraVeg-Datei. Das ist echter
 Fassungsdrift zwischen zwei Quellen, kein Fehler dieser Pipeline — und der
 Report benennt ihn, statt ihn wegzurunden.
+
+Genauso behandelt wird eine Zeile zu einem Code, den der Index **kennt, aber
+nicht als Verband führt**. Die Quelle deckt ausschließlich Verbände ab; eine
+Klassen- oder Ordnungszeile würde sonst beide Prüfungen bestehen, geschrieben
+werden und als Tatsache an `GET /v1/syntaxon/{id}` erscheinen — für einen
+Rang, für den die API nie eine Verbreitung zusagt. Beide Leser (Verbreitungs-
+und Coverage-Datei) prüfen deshalb den Rang, bevor eine der beiden Tabellen
+geschrieben wird; die Zeile wird verworfen, in `NonAllianceSyntaxa` vermerkt
+und gewarnt, der Lauf geht weiter. Kein Abbruch: wie bei `UnknownSyntaxa`
+widersprechen sich hier zwei **unabhängig** gepinnte Quellen, und der Ingest
+kann das nicht reparieren — anders als bei `checkCoverageComplete`, wo beide
+Dateien aus einem Lauf über ein Artefakt stammen. Am Referenzstand ist die
+Liste leer.
 
 Der Fassungsunterschied gehört in `docs/reference/measured-index.md`: die
 Verbreitungsdatei nennt EVC-Fassung 3 (2024-06-12), die Hierarchie-Datei
@@ -391,6 +405,7 @@ dorthin und zurück ist es **nicht**:
 | Unbekannte Zellbelegung (nicht `1`/`U`/leer) | Abbruch in der Pipeline, mit Wert, Zeile und Spalte. |
 | Slug-Kollision zweier Spaltennamen | Abbruch in der Pipeline, beide Namen genannt. |
 | Verbandscode der Quelle nicht im Index | Zeile verworfen, in `UnknownSyntaxa`, Warnung, Lauf geht weiter. |
+| Code der Quelle im Index, aber kein Verband | Zeile verworfen — in **beiden** Lesern, vor jedem Schreiben —, in `NonAllianceSyntaxa`, Warnung, Lauf geht weiter. |
 | Syntaxon mit Coverage, aber ohne belegte Zelle | Gültig: Coverage-Zeile ohne Verbreitungszeilen heißt „geprüft, kommt in keinem Territorium vor“. |
 | `?area=` mit unbekanntem Code | `INVALID_QUERY`, nie eine Liste von „kommt nicht vor“. |
 

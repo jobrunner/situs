@@ -325,6 +325,18 @@ Code nicht führt — siehe `TestIngestSyntaxonDistributionVerwirftUnbekanntenCo
 kein *malformed row*, sondern eine benannte Fassungsdrift, und zählt deshalb in
 `UnknownSyntaxa`, nicht in `SkippedRows`.
 
+`NonAllianceSyntaxa` (Zeilen zu einer ID, die der Index kennt, aber nicht als
+Verband führt) ist am Referenzstand leer — gemessen, nicht angenommen:
+
+```sql
+SELECT COUNT(*) FROM syntaxon_distribution d
+  JOIN syntaxon s ON s.id = d.syntaxon_id WHERE s.rank <> 'alliance';
+-- 0
+SELECT COUNT(*) FROM syntaxon_distribution_coverage c
+  JOIN syntaxon s ON s.id = c.syntaxon_id WHERE s.rank <> 'alliance';
+-- 0
+```
+
 ### Der Index, abgefragt
 
 ```sql

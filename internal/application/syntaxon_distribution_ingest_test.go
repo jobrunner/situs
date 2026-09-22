@@ -44,6 +44,15 @@ func seedSyntaxa(repo *fakeRepo, ids ...string) {
 	}
 }
 
+// seedSyntaxonRank is seedSyntaxa for a row of another rank — the distribution
+// source covers alliances only, so a class or order id is what the tests about
+// that contract need in the index.
+func seedSyntaxonRank(repo *fakeRepo, id, rank string) {
+	repo.syntaxa = append(repo.syntaxa, domain.Syntaxon{
+		ID: id, Rank: rank, Name: id, Source: domain.SyntaxonSourceEVC,
+	})
+}
+
 func writeDistFiles(t *testing.T, dist, coverage string) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -72,9 +81,11 @@ func (r *fakeRepo) occurrence(id, scheme, code string) string {
 	return ""
 }
 
-func (r *fakeRepo) covered(id, scheme string) bool {
+// covered asks under evc_territory only — the coverage table is read under no
+// other scheme, so a parameter would have exactly one value at every call.
+func (r *fakeRepo) covered(id string) bool {
 	for _, c := range r.syntaxonCoverage {
-		if c.SyntaxonID == id && c.Scheme == scheme {
+		if c.SyntaxonID == id && c.Scheme == domain.SchemeEVCTerritory {
 			return true
 		}
 	}
@@ -151,7 +162,7 @@ func TestIngestSyntaxonDistributionBehaeltCoverageOhneVorkommen(t *testing.T) {
 	if rep.Covered != 2 {
 		t.Fatalf("Covered = %d, erwartet 2", rep.Covered)
 	}
-	if !repo.covered("CA01B", "evc_territory") {
+	if !repo.covered("CA01B") {
 		t.Error("CA01B hat keine Coverage-Zeile, obwohl die Quelle eine Aussage macht")
 	}
 	if n := repo.occurrenceCount("CA01B"); n != 0 {
@@ -224,8 +235,78 @@ func TestIngestSyntaxonDistributionVerwirftUnbekanntenCodeUndMeldetIhn(t *testin
 	if rep.Covered != 1 {
 		t.Errorf("Covered = %d, erwartet 1 — auch die Coverage-Zeile faellt weg", rep.Covered)
 	}
-	if repo.covered("CI01E", "evc_territory") {
+	if repo.covered("CI01E") {
 		t.Error("CI01E bekam eine Coverage-Zeile, obwohl der Index das Syntaxon nicht kennt")
+	}
+}
+
+// The source covers alliances only (measured: 1114 of 1326 alliances, no
+// class and no order). A row naming a class the index DOES carry would pass a
+// mere existence check, be written, and then show up as a fact on
+// GET /v1/syntaxon/CA — a rank the API never promises a distribution for.
+// Both readers have to reject it, and the id has to be named.
+func TestIngestSyntaxonDistributionVerwirftNichtVerbandUndMeldetIhn(t *testing.T) {
+	repo := newFakeRepo()
+	seedSyntaxa(repo, "CA01A")
+	seedSyntaxonRank(repo, "CA", domain.SyntaxonRankClass)
+	seedSyntaxonRank(repo, "CA01", domain.SyntaxonRankOrder)
+
+	var log bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&log, nil)))
+	dist, cov := writeDistFiles(t,
+		minimalDistribution+
+			"CA,evc_territory,spain-atlantic,verified\n"+
+			"CA01,evc_territory,albania,verified\n",
+		"syntaxon_id,area_scheme\nCA01A,evc_territory\nCA,evc_territory\nCA01,evc_territory\n")
+	rep, err := IngestSyntaxonDistribution(context.Background(), repo, dist, cov)
+	slog.SetDefault(prev)
+	if err != nil {
+		t.Fatalf("IngestSyntaxonDistribution: %v", err)
+	}
+	if !reflect.DeepEqual(rep.NonAllianceSyntaxa, []string{"CA", "CA01"}) {
+		t.Errorf("NonAllianceSyntaxa = %v, erwartet [CA CA01]", rep.NonAllianceSyntaxa)
+	}
+	if rep.Written != 2 {
+		t.Errorf("Written = %d, erwartet 2 — die Nicht-Verband-Zeilen duerfen nicht geschrieben werden", rep.Written)
+	}
+	if rep.Covered != 1 {
+		t.Errorf("Covered = %d, erwartet 1 — auch die Coverage-Zeilen fallen weg", rep.Covered)
+	}
+	if n := repo.occurrenceCount("CA"); n != 0 {
+		t.Errorf("CA traegt %d Vorkommen, erwartet 0", n)
+	}
+	if repo.covered("CA") || repo.covered("CA01") {
+		t.Error("eine Nicht-Verband-Coverage-Zeile wurde geschrieben")
+	}
+	if got := log.String(); !strings.Contains(got, "not alliances") {
+		t.Errorf("Log = %q, erwartet eine Warnung ueber die Nicht-Verbaende", got)
+	}
+}
+
+// The clean counterpart: without a finding the warning must stay silent, and
+// the alliances themselves must keep passing the rank gate.
+func TestIngestSyntaxonDistributionWarntNichtOhneNichtVerband(t *testing.T) {
+	repo := newFakeRepo()
+	seedSyntaxa(repo, "CA01A", "CA01B")
+
+	var log bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&log, nil)))
+	dist, cov := writeDistFiles(t, minimalDistribution, minimalCoverage)
+	rep, err := IngestSyntaxonDistribution(context.Background(), repo, dist, cov)
+	slog.SetDefault(prev)
+	if err != nil {
+		t.Fatalf("IngestSyntaxonDistribution: %v", err)
+	}
+	if len(rep.NonAllianceSyntaxa) != 0 {
+		t.Errorf("NonAllianceSyntaxa = %v, erwartet leer", rep.NonAllianceSyntaxa)
+	}
+	if rep.Written != 2 || rep.Covered != 2 {
+		t.Errorf("Report = %+v, erwartet Written 2 / Covered 2", rep)
+	}
+	if got := log.String(); strings.Contains(got, "not alliances") {
+		t.Errorf("Log = %q, erwartet keine Warnung", got)
 	}
 }
 

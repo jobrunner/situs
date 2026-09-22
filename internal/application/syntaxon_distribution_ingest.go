@@ -43,6 +43,14 @@ type SyntaxonDistributionReport struct {
 	// Real fassung drift between two sources, not a defect of this ingest —
 	// and naming it is the point.
 	UnknownSyntaxa []string
+
+	// NonAllianceSyntaxa are source codes the index knows at a rank other than
+	// alliance, each listed once, sorted. The source covers alliances only
+	// (measured: 1114 of 1326 alliances, no class and no order), so such a row
+	// is a defect of the source or of the pairing — but it is a defect of an
+	// INDEPENDENT source, like UnknownSyntaxa and unlike checkCoverageComplete,
+	// and nothing in this ingest could repair it. Dropped and named, not fatal.
+	NonAllianceSyntaxa []string
 }
 
 // IngestSyntaxonDistribution loads the two CSVs pipelines/evc-distribution
@@ -65,12 +73,12 @@ func IngestSyntaxonDistribution(ctx context.Context, repo output.Repository, csv
 		return SyntaxonDistributionReport{}, nil
 	}
 
-	known, err := knownSyntaxonIDs(ctx, repo)
+	gate, err := newSyntaxonGate(ctx, repo)
 	if err != nil {
 		return SyntaxonDistributionReport{}, err
 	}
 
-	rep, err := ingestSyntaxonDistributionTx(ctx, repo, csvPath, coveragePath, known)
+	rep, err := ingestSyntaxonDistributionTx(ctx, repo, csvPath, coveragePath, gate)
 	if err != nil {
 		return SyntaxonDistributionReport{}, err
 	}
@@ -78,6 +86,10 @@ func IngestSyntaxonDistribution(ctx context.Context, repo output.Repository, csv
 	if len(rep.UnknownSyntaxa) > 0 {
 		slog.WarnContext(ctx, "the distribution source names syntaxa the index does not carry",
 			"count", len(rep.UnknownSyntaxa), "codes", rep.UnknownSyntaxa)
+	}
+	if len(rep.NonAllianceSyntaxa) > 0 {
+		slog.WarnContext(ctx, "the distribution source names syntaxa that are not alliances",
+			"count", len(rep.NonAllianceSyntaxa), "codes", rep.NonAllianceSyntaxa)
 	}
 	if rep.SkippedRows > 0 {
 		slog.WarnContext(ctx, "skipped malformed rows in the syntaxon distribution files",
@@ -110,27 +122,15 @@ func checkDistributionFiles(ctx context.Context, csvPath, coveragePath string) (
 	return false, nil
 }
 
-func knownSyntaxonIDs(ctx context.Context, repo output.Repository) (map[string]bool, error) {
-	all, err := repo.AllSyntaxa(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("listing syntaxa: %w", err)
-	}
-	known := make(map[string]bool, len(all))
-	for _, s := range all {
-		known[s.ID] = true
-	}
-	return known, nil
-}
-
 // ingestSyntaxonDistributionTx owns the transaction lifecycle: begin, write,
 // rollback-or-commit. Split out of IngestSyntaxonDistribution to keep that
 // function's cyclomatic complexity under the package's ratchet.
-func ingestSyntaxonDistributionTx(ctx context.Context, repo output.Repository, csvPath, coveragePath string, known map[string]bool) (SyntaxonDistributionReport, error) {
+func ingestSyntaxonDistributionTx(ctx context.Context, repo output.Repository, csvPath, coveragePath string, gate *syntaxonGate) (SyntaxonDistributionReport, error) {
 	tx, err := repo.Begin(ctx)
 	if err != nil {
 		return SyntaxonDistributionReport{}, fmt.Errorf("beginning syntaxon distribution transaction: %w", err)
 	}
-	rep, err := writeSyntaxonDistribution(ctx, tx, csvPath, coveragePath, known)
+	rep, err := writeSyntaxonDistribution(ctx, tx, csvPath, coveragePath, gate)
 	if err != nil {
 		if rbErr := tx.Rollback(); rbErr != nil {
 			return SyntaxonDistributionReport{}, fmt.Errorf("%w (rollback also failed: %w)", err, rbErr)
@@ -143,22 +143,6 @@ func ingestSyntaxonDistributionTx(ctx context.Context, repo output.Repository, c
 	return rep, nil
 }
 
-// unknownTracker records an id once, however many rows it has. One unknown
-// alliance can carry up to 136 rows, and reporting it 136 times would turn
-// one fassung drift into a wall of noise.
-type unknownTracker struct {
-	seen map[string]bool
-	ids  []string
-}
-
-func (u *unknownTracker) add(id string) {
-	if u.seen[id] {
-		return
-	}
-	u.seen[id] = true
-	u.ids = append(u.ids, id)
-}
-
 // writeSyntaxonDistribution replaces both distribution tables with what this
 // run's files say. Clearing happens here, INSIDE the transaction and AFTER
 // checkDistributionFiles decided the run is not skipped: a missing
@@ -166,26 +150,25 @@ func (u *unknownTracker) add(id string) {
 // let an ingest without the file delete the distribution an earlier run wrote.
 // Keeping the delete in the same transaction as the writes makes the
 // replacement atomic — a failure below rolls the delete back too.
-func writeSyntaxonDistribution(ctx context.Context, tx output.IngestTx, csvPath, coveragePath string, known map[string]bool) (SyntaxonDistributionReport, error) {
+func writeSyntaxonDistribution(ctx context.Context, tx output.IngestTx, csvPath, coveragePath string, gate *syntaxonGate) (SyntaxonDistributionReport, error) {
 	var rep SyntaxonDistributionReport
-	unknown := &unknownTracker{seen: map[string]bool{}}
 	ids := &writtenDistributionIDs{occurrence: map[string]bool{}, coverage: map[string]bool{}}
 
 	if err := tx.ClearSyntaxonDistribution(); err != nil {
 		return SyntaxonDistributionReport{}, fmt.Errorf("clearing syntaxon distribution before ingest: %w", err)
 	}
-	if err := readOccurrenceRows(ctx, tx, csvPath, known, unknown, ids, &rep); err != nil {
+	if err := readOccurrenceRows(ctx, tx, csvPath, gate, ids, &rep); err != nil {
 		return SyntaxonDistributionReport{}, err
 	}
-	if err := readCoverageRows(ctx, tx, coveragePath, known, unknown, ids, &rep); err != nil {
+	if err := readCoverageRows(ctx, tx, coveragePath, gate, ids, &rep); err != nil {
 		return SyntaxonDistributionReport{}, err
 	}
 	if err := checkCoverageComplete(ids); err != nil {
 		return SyntaxonDistributionReport{}, err
 	}
 
-	slices.Sort(unknown.ids)
-	rep.UnknownSyntaxa = unknown.ids
+	rep.UnknownSyntaxa = gate.unknown.sorted()
+	rep.NonAllianceSyntaxa = gate.nonAlliance.sorted()
 	return rep, nil
 }
 
@@ -230,7 +213,7 @@ func checkCoverageComplete(ids *writtenDistributionIDs) error {
 }
 
 func readOccurrenceRows(ctx context.Context, tx output.IngestTx, csvPath string,
-	known map[string]bool, unknown *unknownTracker, ids *writtenDistributionIDs, rep *SyntaxonDistributionReport) error {
+	gate *syntaxonGate, ids *writtenDistributionIDs, rep *SyntaxonDistributionReport) error {
 	// splitCSVPath, not filepath.Split: a bare relative filename splits to
 	// dir="", which os.OpenRoot does not read as the current directory.
 	dir, file := splitCSVPath(csvPath)
@@ -266,9 +249,9 @@ func readOccurrenceRows(ctx context.Context, tx output.IngestTx, csvPath string,
 			}
 			// A code the index does not know is NOT written: a distribution row
 			// pointing at nothing would answer no question and would make
-			// AreasWithData offer a territory nobody can reach.
-			if !known[id] {
-				unknown.add(id)
+			// AreasWithData offer a territory nobody can reach. Neither is a
+			// code of another rank — see syntaxonGate.
+			if !gate.allows(id) {
 				return nil
 			}
 			if err := tx.UpsertSyntaxonDistribution(id, a.Scheme, a.Code, occurrence); err != nil {
@@ -286,7 +269,7 @@ func readOccurrenceRows(ctx context.Context, tx output.IngestTx, csvPath string,
 }
 
 func readCoverageRows(ctx context.Context, tx output.IngestTx, coveragePath string,
-	known map[string]bool, unknown *unknownTracker, ids *writtenDistributionIDs, rep *SyntaxonDistributionReport) error {
+	gate *syntaxonGate, ids *writtenDistributionIDs, rep *SyntaxonDistributionReport) error {
 	dir, file := splitCSVPath(coveragePath)
 	skip := newRowSkipper(&rep.SkippedRows, file, "syntaxon distribution coverage")
 
@@ -304,8 +287,9 @@ func readCoverageRows(ctx context.Context, tx output.IngestTx, coveragePath stri
 				skip(line, fmt.Errorf("area scheme %q is not %q", scheme, domain.SchemeEVCTerritory))
 				return nil
 			}
-			if !known[id] {
-				unknown.add(id)
+			// Same gate as readOccurrenceRows: a coverage row for a class would
+			// claim the source assessed a rank it never covers.
+			if !gate.allows(id) {
 				return nil
 			}
 			if err := tx.UpsertSyntaxonDistributionCoverage(id, scheme); err != nil {

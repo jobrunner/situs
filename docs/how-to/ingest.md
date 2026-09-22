@@ -231,7 +231,12 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
    export). Rein lokal, kein Dienst wird gefragt. Läuft nach `IngestSyntaxa`:
    eine Verbreitungszeile zu einer Syntaxon-ID, die der Index nicht führt,
    wird verworfen und gezählt (`UnknownSyntaxa`) — das bedeutet erst etwas,
-   sobald die Syntaxa selbst im Index stehen. Die Coverage-Datei trennt eine
+   sobald die Syntaxa selbst im Index stehen. Ebenso verworfen und gemeldet
+   (`NonAllianceSyntaxa`) wird eine Zeile zu einer ID, die der Index führt,
+   aber **nicht als Verband**: die Quelle deckt nur Verbände ab, und eine
+   Klassen- oder Ordnungszeile würde sonst als Verbreitungstatsache an
+   `GET /v1/syntaxon/{id}` erscheinen. Beide Leser prüfen das, bevor eine der
+   beiden Tabellen geschrieben wird. Die Coverage-Datei trennt eine
    echte „kommt hier nicht vor"-Aussage von einem bloß fehlenden Datenpunkt;
    siehe `../reference/http-api.md` für die Dreiwertigkeit auf der Leseseite.
 
