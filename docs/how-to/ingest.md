@@ -168,13 +168,18 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
    verbleibende Waise) atomar — der Index bleibt unverändert, statt leer
    dazustehen.
 
-   **Zwei Datenfehler lassen `IngestSyntaxa` absichtlich scheitern**, statt
+   **Vier Datenfehler lassen `IngestSyntaxa` absichtlich scheitern**, statt
    zu warnen und weiterzulaufen:
 
    - eine **Waise** — eine Zeile mit einem anderen Rang als `formation`, für
      die weder Namensabgleich noch Geschwisterkonsens einen Elternteil
      findet. Eine Kette, die an einer Stelle reißt, macht den
      Orientierungsdienst genau dort wertlos.
+   - ein **Elternteil vom falschen Rang** — eine Kante, die eine Stufe von
+     Formation → Klasse → Ordnung → Verband überspringt (ein Verband direkt
+     unter einer Klasse), oder eine Zeile mit einem Rang, den die Leiter gar
+     nicht führt. Beides erreicht eine Formation und ist trotzdem nicht
+     navigierbar: `GET /v1/syntaxon/{id}` verspricht genau diese vier Stufen.
    - ein **doppelt beanspruchter EEA-Code** — zwei Zeilen in
      `syntaxa_hierarchy.csv` mit demselben nichtleeren `eea_code`. Der
      EEA-Code ist der Migrationsschlüssel von den alten IDs
@@ -183,6 +188,17 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
      **alle** kollidierenden Codes, damit die Quelle in einem Durchgang
      reparierbar ist. Diese Prüfung läuft vor der Transaktion, der Index
      wird also gar nicht erst angefasst.
+   - ein **leerer oder doppelt vergebener Formationsbuchstabe** in
+     `syntaxa_formations.csv`. Der Buchstabe ist der Schlüssel der Formation:
+     leer ergäbe er eine Formation mit der ID `""`, auf die keine Klasse
+     zeigen kann, doppelt überschriebe die spätere Zeile Namen und
+     Lebensformgruppe der früheren, lautlos. Auch das wird beim Lesen der
+     Datei geprüft, also vor der Transaktion. **Nicht** geprüft wird, ob die
+     25 Buchstaben A–Y lückenlos beisammen sind: die Sektionen gehören der
+     gepinnten EuroVegChecklist-Fassung, nicht diesem Code. Ein fehlender
+     Buchstabe bleibt trotzdem nicht unbemerkt — jede Klasse darunter wird
+     übersprungen, und deren Ordnungen und Verbände werden dadurch zu Waisen
+     (erster Spiegelstrich).
 3. `IngestAreas` — liest **zwei** Dateien über denselben Code-Pfad, je einmal
    aufgerufen: `wgsrpd_areas.csv` (`pipelines/wgsrpd`, aus der gepinnten
    TDWG-Tabelle, Report-Zweig `AreaNames`) und `evc_territories.csv`
@@ -234,6 +250,25 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
    Fehlt `syntaxon_distribution.csv` ganz, wird der Schritt **übersprungen**,
    bevor überhaupt eine Transaktion aufgeht — „noch nichts gepinnt" löscht
    nichts.
+
+   **Zwei Datenfehler lassen diesen Schritt absichtlich scheitern**, beide
+   aus demselben Grund: sie würden die Vierwertigkeit der Syntaxa-Verbreitung
+   stillschweigend zu einer Dreiwertigkeit zusammenfalten.
+
+   - `syntaxon_distribution.csv` ist da, `syntaxon_distribution_coverage.csv`
+     fehlt. Dann läse die leere Zelle jedes Verbands als „niemand hat
+     nachgesehen", wo „kommt nicht vor" gemeint ist — und zwar für den ganzen
+     Index. Geprüft, bevor eine Transaktion aufgeht.
+   - beide Dateien sind da, aber die Coverage-Datei nennt ein Syntaxon nicht,
+     für das die Verbreitungsdatei Zeilen trägt. Derselbe Widerspruch, nur je
+     Syntaxon: `GET /v1/syntaxon/{id}` ließe die Verbreitung weg (`unknown`),
+     während `GET /v1/info` und `GET /v1/areas` dessen Territorien weiter
+     ausweisen. Die Meldung nennt **alle** betroffenen IDs, sortiert und je
+     einmal. Anders als ein Syntaxon, das die Verbreitungsquelle führt und die
+     Hierarchie nicht (`CI01E`, siehe `UnknownSyntaxa`), ist das keine
+     Fassungsdrift zwischen zwei unabhängigen Quellen: beide Dateien stammen
+     aus **einem** `pipelines/evc-distribution`-Lauf über **ein** Artefakt.
+     Widersprechen sie einander, passen die Dateien nicht zusammen.
 6. `IngestSpeciesRoles` — Artenrollen, aufgelöst gegen eine lokale
    Crosswalk-Datei (`eurosl_crosswalk.csv`), plus abgeleitete
    Mitgliedsarten-Zeilen für Sammelarten (`aggregate_members.csv`). Kein
@@ -345,6 +380,15 @@ hostus für diesen Schritt ganz aus, wird das als Warnung geloggt, der Report
 zeigt Nullen, und der Lauf geht weiter — anders als bei der Namensauflösung, wo
 ein Ausfall abbricht, damit nicht jeder Name als unauflösbar verbucht wird. Ein
 späterer Lauf holt den Schritt nach: jeder `Upsert*` ist idempotent.
+
+Das gilt auch für **Zeitüberschreitungen einzelner Anfragen**: der
+HTTP-Timeout einer Konzeptanfrage ist ein Quellenproblem und wird toleriert
+(er zählt in `DistributionFailed`), auch wenn alle Anfragen daran scheitern —
+dann greift der Gesamtausfall-Pfad mit Warnung und Nullen. Abgebrochen wird
+der Lauf ausschließlich, wenn der **Ingest-Kontext selbst** beendet ist
+(Ctrl-C, Deadline). Woran das erkannt wird, ist der Kontext, nicht der Fehler:
+ein `http.Client.Timeout` liefert einen Fehler, der `context.DeadlineExceeded`
+erfüllt, obwohl niemand den Lauf gestoppt hat.
 
 `DistributionFailed` ist ein **Teilausfall**-Signal, keine Gesamtzahl: es zählt
 die Konzepte, die in einem ansonsten erfolgreichen Lauf übersprungen wurden. Es
