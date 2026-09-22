@@ -64,6 +64,13 @@ type SyntaxaReport struct {
 	// removed): a class with an unknown formation letter and a code matching
 	// no rank pattern both already land in SkippedRows; there never was a
 	// second, finer-grained bucket that anything filled.
+	// WrongRankParents names every written row whose parent sits at the wrong
+	// level of formation -> class -> order -> alliance (checkParentRanks in
+	// syntaxa_ranks.go). A non-empty value fails the ingest, like Orphans: a
+	// chain that skips a level reaches a formation and still cannot be walked
+	// the way GET /v1/syntaxon/{id} promises to walk it.
+	WrongRankParents []string
+
 	AmbiguousMatches   []string
 	UnknownLinkTargets []string
 	SkippedRows        int
@@ -141,10 +148,11 @@ func writeSyntaxa(ctx context.Context, tx output.IngestTx, dir string,
 		return fmt.Errorf("clearing syntaxa before ingest: %w", err)
 	}
 	written := map[string]bool{}
-	if err := writeFormations(tx, formations, written, rep); err != nil {
+	graph := newWrittenGraph()
+	if err := writeFormations(tx, formations, written, graph, rep); err != nil {
 		return err
 	}
-	if err := writeHierarchy(tx, rows, formations, written, rep); err != nil {
+	if err := writeHierarchy(tx, rows, formations, written, graph, rep); err != nil {
 		return err
 	}
 	// A class whose formation letter is unknown is skipped (SkippedRows,
@@ -161,7 +169,7 @@ func writeSyntaxa(ctx context.Context, tx output.IngestTx, dir string,
 	// second time would put the same syntaxon into the index under two
 	// ids.
 	byEEA := mapByEEACode(rows)
-	eunisOnly, err := writeEunisOnly(ctx, tx, dir, byEEA, written, rep)
+	eunisOnly, err := writeEunisOnly(ctx, tx, dir, byEEA, written, graph, rep)
 	if err != nil {
 		return err
 	}
@@ -172,9 +180,13 @@ func writeSyntaxa(ctx context.Context, tx output.IngestTx, dir string,
 	}
 	// Step 5: the remaining EEA-only rows' parents — name match, then
 	// sibling consensus, then orphan.
-	if err := assignRemainingParents(tx, eunisOnly, rows, rep); err != nil {
+	parents, err := assignRemainingParents(tx, eunisOnly, rows, rep)
+	if err != nil {
 		return err
 	}
+	graph.setResolvedParents(eunisOnly, parents)
+	checkParentRanks(graph, rep)
+
 	// A chain that breaks at one point makes the orientation service
 	// worthless at exactly that point — that must not be a warning one
 	// skims past.
@@ -182,6 +194,11 @@ func writeSyntaxa(ctx context.Context, tx output.IngestTx, dir string,
 		sort.Strings(rep.Orphans)
 		return fmt.Errorf("%d syntaxa have no parent after every step: %s",
 			len(rep.Orphans), strings.Join(rep.Orphans, ", "))
+	}
+	// Same weight, one level finer: the chain exists but skips a rank.
+	if len(rep.WrongRankParents) > 0 {
+		return fmt.Errorf("%d syntaxa hang under a parent of the wrong rank: %s",
+			len(rep.WrongRankParents), strings.Join(rep.WrongRankParents, "; "))
 	}
 	return nil
 }
@@ -214,7 +231,8 @@ func mapByEEACode(rows []hierarchyRow) map[string]string {
 // writeFormations writes the 25 EuroVegChecklist sections as the root of
 // the hierarchy: no parent, source evc, the life-form group from the file.
 // Sorted by letter so a run is reproducible.
-func writeFormations(tx output.IngestTx, formations map[string]domain.Syntaxon, written map[string]bool, rep *SyntaxaReport) error {
+func writeFormations(tx output.IngestTx, formations map[string]domain.Syntaxon,
+	written map[string]bool, graph *writtenGraph, rep *SyntaxaReport) error {
 	letters := make([]string, 0, len(formations))
 	for letter := range formations {
 		letters = append(letters, letter)
@@ -225,6 +243,7 @@ func writeFormations(tx output.IngestTx, formations map[string]domain.Syntaxon, 
 			return fmt.Errorf("upserting formation %s: %w", letter, err)
 		}
 		written[letter] = true
+		graph.add(letter, domain.SyntaxonRankFormation, "")
 		rep.FormationsWritten++
 	}
 	return nil
@@ -235,7 +254,8 @@ func writeFormations(tx output.IngestTx, formations map[string]domain.Syntaxon, 
 // letter is not among the known formations is skipped and counted, never
 // assigned a made-up parent. Order and alliance rows keep the parent_code
 // the CSV already carries.
-func writeHierarchy(tx output.IngestTx, rows []hierarchyRow, formations map[string]domain.Syntaxon, written map[string]bool, rep *SyntaxaReport) error {
+func writeHierarchy(tx output.IngestTx, rows []hierarchyRow, formations map[string]domain.Syntaxon,
+	written map[string]bool, graph *writtenGraph, rep *SyntaxaReport) error {
 	for _, r := range rows {
 		parentID := r.parentCode
 		if r.rank == domain.SyntaxonRankClass {
@@ -260,6 +280,7 @@ func writeHierarchy(tx output.IngestTx, rows []hierarchyRow, formations map[stri
 			return fmt.Errorf("upserting %s %s: %w", r.rank, r.code, err)
 		}
 		written[r.code] = true
+		graph.add(r.code, r.rank, parentID)
 		switch r.rank {
 		case domain.SyntaxonRankClass:
 			rep.ClassesWritten++
@@ -278,7 +299,7 @@ func writeHierarchy(tx output.IngestTx, rows []hierarchyRow, formations map[stri
 // sibling consensus. Name is kept exactly as the file has it: the historical
 // EUNIS combi-string with embedded authorship, never split heuristically.
 func writeEunisOnly(ctx context.Context, tx output.IngestTx, dir string,
-	byEEA map[string]string, written map[string]bool, rep *SyntaxaReport) ([]eunisOnlyRow, error) {
+	byEEA map[string]string, written map[string]bool, graph *writtenGraph, rep *SyntaxaReport) ([]eunisOnlyRow, error) {
 	var eunisOnly []eunisOnlyRow
 	skip := newRowSkipper(&rep.SkippedRows, fileEunisSyntaxa, "eunis-only syntaxon")
 	err := readAll(ctx, dir, fileEunisSyntaxa, ',', []string{"id", colRank, colName, "parent_id"}, skip,
@@ -298,6 +319,9 @@ func writeEunisOnly(ctx context.Context, tx output.IngestTx, dir string,
 				return fmt.Errorf("upserting eunis-only %s: %w", id, err)
 			}
 			written[id] = true
+			// Parent still empty here; assignRemainingParents decides it and
+			// setResolvedParents folds it in afterwards.
+			graph.add(id, s.Rank, "")
 			rep.EunisOnly++
 			eunisOnly = append(eunisOnly, eunisOnlyRow{id: id, name: name})
 			return nil

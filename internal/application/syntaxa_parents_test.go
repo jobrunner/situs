@@ -205,7 +205,7 @@ func TestAssignRemainingParentsLoestMehrdeutigenNamensabgleichUeberGeschwisterko
 	rep := &SyntaxaReport{}
 	eunisOnly := []eunisOnlyRow{{id: "SIB-01E", name: "Testverband Dritter 1980"}}
 
-	if err := assignRemainingParents(repo, eunisOnly, rows, rep); err != nil {
+	if _, err := assignRemainingParents(repo, eunisOnly, rows, rep); err != nil {
 		t.Fatalf("assignRemainingParents: %v", err)
 	}
 	if rep.ParentsDerived != 1 {
@@ -234,7 +234,7 @@ func TestAssignRemainingParentsBleibtWaiseBeiMehrdeutigemNamensabgleichOhneKonse
 	rep := &SyntaxaReport{}
 	eunisOnly := []eunisOnlyRow{{id: "MEH-02Z", name: "Testverband Dritter 1980"}}
 
-	if err := assignRemainingParents(repo, eunisOnly, rows, rep); err != nil {
+	if _, err := assignRemainingParents(repo, eunisOnly, rows, rep); err != nil {
 		t.Fatalf("assignRemainingParents: %v", err)
 	}
 	if len(rep.AmbiguousMatches) != 1 || rep.AmbiguousMatches[0] != "MEH-02Z" {
@@ -260,7 +260,7 @@ func TestAssignRemainingParentsMeldetFehlerBeimSetzenDesElternteilsUeberGeschwis
 	rep := &SyntaxaReport{}
 	eunisOnly := []eunisOnlyRow{{id: "NAR-01E", name: "Voellig anderer Name ohne Treffer"}}
 
-	err := assignRemainingParents(repo, eunisOnly, rows, rep)
+	_, err := assignRemainingParents(repo, eunisOnly, rows, rep)
 	if err == nil {
 		t.Fatal("assignRemainingParents lief trotz fehlschlagendem SetSyntaxonParent durch")
 	}

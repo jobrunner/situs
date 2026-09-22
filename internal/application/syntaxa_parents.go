@@ -61,8 +61,13 @@ type eunisOnlyRow struct {
 //
 // parents is built by mapEEACodeTo, the same helper the primary-code map
 // uses; it is unambiguous because IngestSyntaxa has already failed on an
-// eea code two rows claim (checkEEACodeCollisions).
-func assignRemainingParents(tx output.IngestTx, eunisOnly []eunisOnlyRow, rows []hierarchyRow, rep *SyntaxaReport) error {
+// eea code two rows claim (checkEEACodeCollisions). It is returned so the
+// rank check can see the parents decided here: an eunisOnly id is never a
+// key of the seed map (those are the eea codes of hierarchy rows, and
+// eunisOnly is by construction what is NOT among them), so a lookup by
+// eunisOnly id can only find what setResolvedParent put there.
+func assignRemainingParents(tx output.IngestTx, eunisOnly []eunisOnlyRow, rows []hierarchyRow,
+	rep *SyntaxaReport) (map[string]string, error) {
 	var allianceRows []hierarchyRow
 	for _, r := range rows {
 		if r.rank == domain.SyntaxonRankAlliance {
@@ -73,13 +78,13 @@ func assignRemainingParents(tx output.IngestTx, eunisOnly []eunisOnlyRow, rows [
 
 	unresolved, err := matchByName(tx, eunisOnly, allianceRows, parents, rep)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := matchBySibling(tx, unresolved, parents, rep); err != nil {
-		return err
+		return nil, err
 	}
 	sort.Strings(rep.AmbiguousMatches)
-	return nil
+	return parents, nil
 }
 
 // matchByName is pass 1: every eunisOnly row tried against the FloraVeg
