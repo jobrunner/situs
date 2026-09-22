@@ -165,10 +165,13 @@ als das Feld; für diese Daten wäre es `null`.
 `pipelines/eurovegchecklist/xlsx_to_csv.py` bricht die Konvertierung ab,
 sobald zwei Primärcodes denselben EEA-Code beanspruchen — aber der Go-Ingest
 liest CSV direkt, und eine handeditierte oder anders erzeugte Datei umgeht
-diese Absicherung. Trägt die Hierarchie denselben EEA-Code doppelt, wird der
-Code gemeldet und **ganz aus der Abbildung EEA-Code → Primärcode genommen**,
-statt die zufällig letzte Zeile zum Gewinner zu küren; die betroffene
-EEA-Einheit bleibt dann als eigene Zeile stehen, wie eine ohne Gegenstück.
+diese Absicherung. Trägt die Hierarchie denselben EEA-Code doppelt, **bricht
+der Ingest ab**, bevor die Transaktion beginnt — die Fehlermeldung und
+`EEACodeCollisions` nennen jeden kollidierenden Code genau einmal, damit die
+Quelle in einem Durchgang zu reparieren ist. Grund: Der EEA-Code ist der
+Migrationspfad von den alten IDs (`GET /v1/syntaxon/PAP-01A`), ein doppelt
+vergebener Code löst eine alte ID auf ein beliebiges der beanspruchenden
+Syntaxa auf.
 
 `AlliancesWritten` (1310) zählt nur die FloraVeg-Hierarchiezeilen; zusammen mit
 `EunisOnly` (16) ergibt das die 1326 Verbandszeilen der `syntaxon`-Tabelle.

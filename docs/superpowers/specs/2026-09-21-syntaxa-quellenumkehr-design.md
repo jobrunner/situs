@@ -353,7 +353,7 @@ absichtlich.
 | `syntaxa_hierarchy.csv` fehlt | Ingest bricht **ab**. Anders als bisher: die Datei ist jetzt die Primärquelle, ohne sie entsteht ein Index ohne jede Hierarchie. Der stille Weiterlauf war für ein Overlay richtig und ist für eine Primärquelle falsch. |
 | `data/syntaxa_formations.csv` fehlt | Ingest bricht ab, gleiche Begründung — ohne Formationen hat die Kette keine Wurzel. |
 | CSV ohne Spalte `eea_code` | Ingest bricht mit Spaltenfehler ab (alte Pipeline-Ausgabe). |
-| EEA-Code zeigt auf mehrere Primärcodes | Kein Join für diesen EEA-Code, in `EEACodeCollisions` vermerkt (jeder Code genau einmal), Ingest läuft weiter. Nie einen Gewinner raten. Das gilt für **beide** Abbildungen über den EEA-Code: die auf den Primärcode (Identität und Kanten) und die auf den Elterncode (Geschwisterkonsens) — ein kollidierender Code leiht auch keinen Elternteil, die Zeile fällt auf Geschwisterkonsens beziehungsweise Waisenmeldung durch. |
+| EEA-Code zeigt auf mehrere Primärcodes | Ingest bricht **ab**, bevor die Transaktion überhaupt beginnt; alle kollidierenden Codes stehen in der Fehlermeldung und in `EEACodeCollisions` (jeder genau einmal, sortiert). Ursprünglich war hier ein Weiterlauf mit ausgelassenem Join vorgesehen — das ist revidiert: der EEA-Code ist der dokumentierte Migrationspfad von den alten IDs (`GET /v1/syntaxon/PAP-01A`), ein doppelt vergebener Code löst also eine alte ID auf ein beliebiges der beanspruchenden Syntaxa samt dessen Habitattyp-Kanten auf. Nie einen Gewinner raten — und ein Index, in dem geraten werden müsste, entsteht gar nicht erst. |
 | EEA-Einheit ohne FloraVeg-Gegenstück | Eigene Zeile, `source=eunis`, `eea_code=""`; Elternteil per Namensabgleich, sonst Geschwisterkonsens. |
 | Klassencode mit unbekanntem Anfangsbuchstaben | Zeile übersprungen und gezählt; die Formation wird **nie** aus einem unbekannten Buchstaben erfunden. |
 | Zeile bleibt nach allen Schritten elternlos | In `Orphans` vermerkt und vom Ingest als Fehler gemeldet. |
@@ -438,9 +438,9 @@ wenn unbekannt“ — nach diesem Spec fehlt er nur noch bei Formationen.
   Fassung, kollabierten zwei EEA-Syntaxa auf einen Primärcode und der
   Primärschlüssel von `habitat_type_syntaxon` verschluckte eine Kante
   lautlos. Die Prämisse ist deshalb nicht nur zugesichert, sondern geprüft:
-  Kollisionen landen in `EEACodeCollisions`, werden nicht gejoint, und der
-  Ingest vergleicht die Kantenzahl vor und nach dem Umschreiben und scheitert
-  bei einer Abweichung.
+  Kollisionen landen in `EEACodeCollisions` und lassen den Ingest scheitern,
+  und der Ingest vergleicht die Kantenzahl vor und nach dem Umschreiben und
+  scheitert bei einer Abweichung.
 
 ## 12. Bewusst außerhalb dieses Specs
 

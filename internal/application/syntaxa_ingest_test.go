@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -493,47 +494,39 @@ func TestIngestSyntaxaFuehrtEeaOrdnungMitFloraVegGegenstueckZusammen(t *testing.
 	}
 }
 
-func TestIngestSyntaxaSchliesstKollidierendenEEACodeVomRemappingAus(t *testing.T) {
-	// Two FloraVeg rows carrying the SAME eea_code. Picking the last one
-	// read would hang the EEA unit's habitat edges on an arbitrary
-	// syntaxon; the collision is reported and the code is left unmapped
-	// instead, so TST-01A stays its own row like an EEA unit without a
-	// counterpart.
+func TestIngestSyntaxaScheitertAnKollidierendemEEACode(t *testing.T) {
+	// Two FloraVeg rows carrying the SAME eea_code. The EEA code is the
+	// documented migration path from the old ids, so a duplicate makes
+	// GET /v1/syntaxon/TST-01A resolvable to either row — the ingest must
+	// fail on it, not build such an index.
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations,
 		hierarchy: minimalHierarchy +
 			"RA02A,alliance,Doppelverband,Braun 1990,RA01,TST-01A\n",
 		eunis: "id,rank,name,parent_id\nTST-01A,alliance,Testverband Moor 1970,\n",
-		// annex1, not eunis@2021: the remapping must not depend on the
-		// typology an edge belongs to.
 		links: "typology_id,code,syntaxon_id\nannex1,9130,TST-01A\n",
 	})
 	rep, err := IngestSyntaxa(context.Background(), repo, dir)
-	if err != nil {
-		t.Fatalf("IngestSyntaxa: %v", err)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz doppeltem EEA-Code durch")
+	}
+	if !strings.Contains(err.Error(), "TST-01A") {
+		t.Errorf("Fehler = %v, erwartet den kollidierenden Code TST-01A", err)
 	}
 	if len(rep.EEACodeCollisions) != 1 || rep.EEACodeCollisions[0] != "TST-01A" {
 		t.Errorf("EEACodeCollisions = %v, erwartet [TST-01A]", rep.EEACodeCollisions)
 	}
-	if !repo.has("TST-01A") {
-		t.Error("TST-01A fehlt im Index, obwohl der kollidierende EEA-Code kein Gegenstueck benennt")
-	}
-	if rep.EunisOnly != 1 {
-		t.Errorf("EunisOnly = %d, erwartet 1", rep.EunisOnly)
-	}
-	if rep.LinksRemapped != 0 {
-		t.Errorf("LinksRemapped = %d, erwartet 0", rep.LinksRemapped)
-	}
-	if got := repo.linkTargets("annex1", "9130"); len(got) != 1 || got[0] != "TST-01A" {
-		t.Errorf("Kanten = %v, erwartet [TST-01A]", got)
+	if repo.has("RA02A") {
+		t.Error("RA02A wurde geschrieben, obwohl der Ingest abbrechen sollte")
 	}
 }
 
-func TestIngestSyntaxaMeldetJedenKollidierendenEEACodeGenauEinmal(t *testing.T) {
-	// Three rows on one code must not report the code twice, and the
-	// report is sorted so a run is reproducible. RA05A carries no eea_code
-	// at all — the empty string is not a code that can collide.
+func TestIngestSyntaxaNenntJedenKollidierendenEEACodeGenauEinmal(t *testing.T) {
+	// The operator must be able to repair the source in one pass, so the
+	// error names EVERY colliding code, sorted and each exactly once —
+	// three rows on one code are still one entry. RA05A/RA06A carry no
+	// eea_code at all: the empty string is not a code that can collide.
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
 		formations: minimalFormations,
@@ -547,17 +540,16 @@ func TestIngestSyntaxaMeldetJedenKollidierendenEEACodeGenauEinmal(t *testing.T) 
 		links: "typology_id,code,syntaxon_id\n",
 	})
 	rep, err := IngestSyntaxa(context.Background(), repo, dir)
-	if err != nil {
-		t.Fatalf("IngestSyntaxa: %v", err)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz doppelter EEA-Codes durch")
 	}
 	want := []string{"MOO-01A", "TST-01A"}
-	if len(rep.EEACodeCollisions) != len(want) {
+	if !slices.Equal(rep.EEACodeCollisions, want) {
 		t.Fatalf("EEACodeCollisions = %v, erwartet %v", rep.EEACodeCollisions, want)
 	}
-	for i, w := range want {
-		if rep.EEACodeCollisions[i] != w {
-			t.Errorf("EEACodeCollisions = %v, erwartet %v", rep.EEACodeCollisions, want)
-			break
+	for _, code := range want {
+		if strings.Count(err.Error(), code) != 1 {
+			t.Errorf("Fehler = %v, erwartet %s genau einmal", err, code)
 		}
 	}
 }

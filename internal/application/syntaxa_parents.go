@@ -60,9 +60,8 @@ type eunisOnlyRow struct {
 // name-matched parent regardless of file order.
 //
 // parents is built by mapEEACodeTo, the same helper the primary-code map
-// uses: an eea code two rows claim lends no parent either, since which of
-// their two parents wins would be the file's line order. The row falls
-// through to sibling consensus, and failing that to an orphan report.
+// uses; it is unambiguous because IngestSyntaxa has already failed on an
+// eea code two rows claim (checkEEACodeCollisions).
 func assignRemainingParents(tx output.IngestTx, eunisOnly []eunisOnlyRow, rows []hierarchyRow, rep *SyntaxaReport) error {
 	var allianceRows []hierarchyRow
 	for _, r := range rows {
@@ -70,7 +69,7 @@ func assignRemainingParents(tx output.IngestTx, eunisOnly []eunisOnlyRow, rows [
 			allianceRows = append(allianceRows, r)
 		}
 	}
-	parents := mapEEACodeTo(rows, func(r hierarchyRow) string { return r.parentCode }, rep)
+	parents := mapEEACodeTo(rows, func(r hierarchyRow) string { return r.parentCode })
 
 	unresolved, err := matchByName(tx, eunisOnly, allianceRows, parents, rep)
 	if err != nil {

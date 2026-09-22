@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"slices"
 	"sort"
 	"strings"
 
@@ -52,9 +51,11 @@ type SyntaxaReport struct {
 	// row claims, sorted and each listed once. pipelines/eurovegchecklist/
 	// xlsx_to_csv.py aborts on such a collision, but the Go ingest reads the
 	// CSV directly, so a hand-edited or differently-produced file reaches
-	// here unguarded. A listed code is excluded from the EEA -> primary-code
-	// map entirely: crowning the last row read would hang an EEA unit's
-	// habitat edges on an arbitrary syntaxon.
+	// here unguarded. A non-empty value fails the ingest, like Orphans: the
+	// eea_code is the documented migration path from the old syntaxon ids,
+	// so a duplicate makes GET /v1/syntaxon/{old-id} resolve to an arbitrary
+	// one of the claiming rows, together with its habitat-type edges. This
+	// field is the diagnosis to that abort and is returned filled with it.
 	EEACodeCollisions []string
 
 	// AmbiguousMatches, UnknownLinkTargets and SkippedRows are the counters
@@ -96,6 +97,13 @@ func IngestSyntaxa(ctx context.Context, repo output.Repository, dir string) (Syn
 	rows, err := readHierarchy(ctx, dir, &rep)
 	if err != nil {
 		return SyntaxaReport{}, err
+	}
+	// Before the transaction opens: nothing about an ambiguous eea_code can
+	// be repaired by writing rows first. The report is returned filled here,
+	// unlike the zero value every other error path returns, because its
+	// EEACodeCollisions list is exactly the diagnosis to this abort.
+	if err := checkEEACodeCollisions(rows, &rep); err != nil {
+		return rep, err
 	}
 
 	tx, err := repo.Begin(ctx)
@@ -152,7 +160,7 @@ func writeSyntaxa(ctx context.Context, tx output.IngestTx, dir string,
 	// unit is already represented by its FloraVeg row — writing it a
 	// second time would put the same syntaxon into the index under two
 	// ids.
-	byEEA := mapByEEACode(rows, rep)
+	byEEA := mapByEEACode(rows)
 	eunisOnly, err := writeEunisOnly(ctx, tx, dir, byEEA, written, rep)
 	if err != nil {
 		return err
@@ -183,46 +191,24 @@ func writeSyntaxa(ctx context.Context, tx output.IngestTx, dir string,
 // identity and edge remapping (mapByEEACode), the parent code for the EEA-only
 // rows' parent derivation (assignRemainingParents).
 //
-// A code claimed by more than one row is REMOVED from the map rather than
-// resolved to one of them: which row wins would be the file's line order, and
-// the caller would silently move an EEA unit's identity, its habitat edges or
-// its place in the hierarchy onto an arbitrary syntaxon. Without the entry the
-// EEA unit keeps the honest state — a row of its own for the remapping, a
-// sibling-consensus try or an orphan report for the parent.
-//
-// Both callers walk the same rows and so find the same collisions; a code
-// already reported is not appended a second time.
-func mapEEACodeTo(rows []hierarchyRow, valueOf func(hierarchyRow) string, rep *SyntaxaReport) map[string]string {
+// A plain index, with no ambiguity to resolve: checkEEACodeCollisions has
+// already failed the ingest if two rows claimed one code, so the last write
+// per key is also the only one.
+func mapEEACodeTo(rows []hierarchyRow, valueOf func(hierarchyRow) string) map[string]string {
 	byEEA := map[string]string{}
-	colliding := map[string]bool{}
 	for _, r := range rows {
 		if r.eeaCode == "" {
 			continue
 		}
-		if _, seen := byEEA[r.eeaCode]; seen {
-			delete(byEEA, r.eeaCode)
-			colliding[r.eeaCode] = true
-		}
-		if colliding[r.eeaCode] {
-			slog.Warn("eea_code claimed by more than one hierarchy row",
-				"eea_code", r.eeaCode, "code", r.code, "file", fileHierarchy)
-			continue
-		}
 		byEEA[r.eeaCode] = valueOf(r)
 	}
-	for code := range colliding {
-		if !slices.Contains(rep.EEACodeCollisions, code) {
-			rep.EEACodeCollisions = append(rep.EEACodeCollisions, code)
-		}
-	}
-	sort.Strings(rep.EEACodeCollisions)
 	return byEEA
 }
 
 // mapByEEACode maps each eea_code the hierarchy carries to its FloraVeg
 // primary code.
-func mapByEEACode(rows []hierarchyRow, rep *SyntaxaReport) map[string]string {
-	return mapEEACodeTo(rows, func(r hierarchyRow) string { return r.code }, rep)
+func mapByEEACode(rows []hierarchyRow) map[string]string {
+	return mapEEACodeTo(rows, func(r hierarchyRow) string { return r.code })
 }
 
 // writeFormations writes the 25 EuroVegChecklist sections as the root of
