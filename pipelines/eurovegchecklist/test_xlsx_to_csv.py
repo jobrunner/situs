@@ -5,7 +5,7 @@ import unittest
 import zipfile
 
 import xlsx_to_csv
-from xlsx_to_csv import HeaderError, col_index, convert, rank_and_parent, split_code
+from xlsx_to_csv import AltCodeCollisionError, HeaderError, col_index, convert, rank_and_parent, split_code
 
 
 def _xml_escape(value):
@@ -224,15 +224,28 @@ class ConvertTest(unittest.TestCase):
             os.makedirs(out_dir)
             return convert(xlsx, out_dir)
 
-    def test_report_zaehlt_altcodes_und_kollisionen(self):
+    def test_report_zaehlt_altcodes(self):
         rows = [
             {"Code": "AA (PAP)", "Name": "K", "Author": ""},
             {"Code": "AA01 (PAP-01)", "Name": "O", "Author": ""},
-            {"Code": "AB01 (PAP-01)", "Name": "O2", "Author": ""},
         ]
         report = self._convert_rows(rows)
-        self.assertEqual(report["alt_codes"], 3)
-        self.assertEqual(report["alt_code_collisions"], ["PAP-01"])
+        self.assertEqual(report["alt_codes"], 2)
+        self.assertNotIn("alt_code_collisions", report)
+
+    def test_kollidierender_altcode_bricht_die_konvertierung_ab(self):
+        # AA01 and AB01 are two different primary codes both claiming the
+        # alt_code PAP-01 — the join key IngestSyntaxa's byAlt map uses.
+        # Silently picking one (as the old "last one wins" report used to)
+        # would resolve an EEA edge or a stale-alt-code relink onto an
+        # arbitrary one of the two; this must fail instead.
+        rows = [
+            {"Code": "AA01 (PAP-01)", "Name": "O", "Author": ""},
+            {"Code": "AB01 (PAP-01)", "Name": "O2", "Author": ""},
+        ]
+        with self.assertRaises(AltCodeCollisionError) as ctx:
+            self._convert_rows(rows)
+        self.assertIn("PAP-01", str(ctx.exception))
 
 
 if __name__ == "__main__":

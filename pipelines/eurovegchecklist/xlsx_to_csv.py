@@ -81,6 +81,20 @@ class HeaderError(RuntimeError):
     of silently defaulting every cell to empty."""
 
 
+class AltCodeCollisionError(RuntimeError):
+    """Two different primary codes claim the same alt_code (the historical
+    EEA-EUNIS code in parentheses). That code is the join key
+    IngestSyntaxa's byAlt map uses to resolve an EEA edge onto its FloraVeg
+    primary code and to relink a stale alt code (see syntaxa_ingest.go); a
+    second primary code claiming the same key would make that resolution
+    pick one of the two at random ("last one wins" in a Go map iteration).
+    Failing here, at conversion time, is the ONE place this is checked —
+    mirrors SlugCollisionError in pipelines/evc-distribution/xlsx_to_csv.py,
+    which aborts for the analogous reason (a collision is a data defect
+    worth stopping the pipeline for, not a warning to note and carry on
+    past)."""
+
+
 def _shared_strings(zf):
     try:
         root = ET.fromstring(zf.read("xl/sharedStrings.xml"))
@@ -195,7 +209,6 @@ def convert(xlsx_path, out_dir):
     # different primary code claiming the same alt_code is a real collision —
     # not just the same row's alt_code seen twice.
     alt_seen = {}
-    collisions = set()
 
     for sheet_name, sheet_path in _data_sheets(xlsx_path):
         rows = read_sheet(xlsx_path, sheet_path)
@@ -214,7 +227,9 @@ def convert(xlsx_path, out_dir):
                 continue
             if alt:
                 if alt in alt_seen and alt_seen[alt] != code:
-                    collisions.add(alt)
+                    raise AltCodeCollisionError(
+                        f"{xlsx_path} [{sheet_name}]: alt_code {alt!r} is claimed by both "
+                        f"{alt_seen[alt]!r} and {code!r}")
                 alt_seen[alt] = code
             counts[_RANK_COUNTER_KEY[rank]] += 1
             rows_out.append({
@@ -244,7 +259,6 @@ def convert(xlsx_path, out_dir):
         "total_rows": len(rows_out),
         "skipped_rows": len(skipped),
         "alt_codes": sum(1 for r in rows_out if r["alt_code"]),
-        "alt_code_collisions": sorted(collisions),
     }
     with open(os.path.join(out_dir, "report.json"), "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False, sort_keys=True)
@@ -259,7 +273,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         report = convert(args.xlsx, args.out_dir)
-    except HeaderError as exc:
+    except (HeaderError, AltCodeCollisionError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)
     print(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True))

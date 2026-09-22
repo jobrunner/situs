@@ -151,14 +151,18 @@ seit dieser Umkehrung das frühere Feldpaar `Syntaxa`/`SyntaxonLinks` von
   "ParentsByName": 6,
   "ParentsDerived": 10,
   "Orphans": null,
-  "AltCodeCollisions": null,
   "AmbiguousMatches": null,
   "UnknownLinkTargets": null,
-  "SkippedRows": 0,
-  "SkippedUnknownSection": 0,
-  "SkippedPattern": 0
+  "SkippedRows": 0
 }
 ```
+
+`AltCodeCollisions`, `SkippedUnknownSection` und `SkippedPattern` sind seit
+der letzten Review-Runde entfernt: keines der drei wurde je befüllt, und für
+`AltCodeCollisions` gibt es seither eine echte Absicherung an einer anderen
+Stelle — `pipelines/eurovegchecklist/xlsx_to_csv.py` bricht die Konvertierung
+ab, sobald zwei Primärcodes denselben Altcode beanspruchen, statt es nur zu
+zählen.
 
 `AlliancesWritten` (1310) zählt nur die FloraVeg-Hierarchiezeilen; zusammen mit
 `EunisOnly` (16) ergibt das die 1326 Verbandszeilen der `syntaxon`-Tabelle.

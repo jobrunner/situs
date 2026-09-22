@@ -216,9 +216,6 @@ func ingestSyntaxaPhase(ctx context.Context, db *sqlite.DB, csvDir string) (appl
 	if err != nil {
 		return application.SyntaxaReport{}, fmt.Errorf("ingesting syntaxa from %q: %w", csvDir, err)
 	}
-	if len(rep.AltCodeCollisions) > 0 {
-		slog.WarnContext(ctx, "syntaxa ingest found alt-code collisions", "codes", rep.AltCodeCollisions)
-	}
 	if len(rep.AmbiguousMatches) > 0 {
 		slog.WarnContext(ctx, "syntaxa ingest found ambiguous name matches", "ids", rep.AmbiguousMatches)
 	}

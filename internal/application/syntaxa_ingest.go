@@ -44,18 +44,19 @@ type SyntaxaReport struct {
 	// worthless at exactly that point.
 	Orphans []string
 
-	AltCodeCollisions  []string
+	// AmbiguousMatches, UnknownLinkTargets and SkippedRows are the only
+	// counters left of the "collected but never enforced" kind this report
+	// used to carry three of (AltCodeCollisions, SkippedUnknownSection,
+	// SkippedPattern, all removed): an alt_code collision is now impossible
+	// to ingest at all, because pipelines/eurovegchecklist/xlsx_to_csv.py
+	// aborts the conversion the moment it finds one — the ONE place that
+	// invariant is enforced, not a second, silently-vacuous check here. A
+	// class with an unknown formation letter and a code matching no rank
+	// pattern both already land in SkippedRows; there never was a second,
+	// finer-grained bucket that anything filled.
 	AmbiguousMatches   []string
 	UnknownLinkTargets []string
 	SkippedRows        int
-
-	// SkippedUnknownSection counts class rows whose first letter is not a
-	// known formation: skipped, never invented. Filled starting Task 7's
-	// remaining-parents step; Task 5 counts the same case in SkippedRows.
-	SkippedUnknownSection int
-	// SkippedPattern counts rows whose code fits no rank pattern. Filled
-	// starting Task 7.
-	SkippedPattern int
 }
 
 // formationOf returns a class's formation id: the first letter of its
