@@ -305,6 +305,45 @@ func TestIngestSyntaxonDistributionUeberspringtFremdesSchema(t *testing.T) {
 	}
 }
 
+// TestIngestSyntaxonDistributionUeberspringtWgsrpdSchema covers Befund 4: a
+// scheme domain.IsKnownAreaScheme accepts (wgsrpd_l3) is still wrong here —
+// syntaxa distribution is read exclusively under evc_territory
+// (SyntaxonDistribution, SyntaxonOccurrencesInArea), so a wgsrpd_l3 row must
+// be skipped and counted, not written to a place no read path ever looks.
+func TestIngestSyntaxonDistributionUeberspringtWgsrpdSchema(t *testing.T) {
+	repo := newFakeRepo()
+	seedSyntaxa(repo, "CA01A")
+	dist, cov := writeDistFiles(t,
+		"syntaxon_id,area_scheme,area_code,occurrence\n"+
+			"CA01A,wgsrpd_l3,GER,verified\n",
+		minimalCoverage)
+
+	rep, err := IngestSyntaxonDistribution(context.Background(), repo, dist, cov)
+	if err != nil {
+		t.Fatalf("IngestSyntaxonDistribution: %v", err)
+	}
+	if rep.Written != 0 || rep.SkippedRows != 1 {
+		t.Errorf("Report = %+v, erwartet Written 0 / SkippedRows 1", rep)
+	}
+}
+
+// TestIngestSyntaxonDistributionUeberspringtCoverageMitWgsrpdSchema is the
+// coverage-reader counterpart of the test above.
+func TestIngestSyntaxonDistributionUeberspringtCoverageMitWgsrpdSchema(t *testing.T) {
+	repo := newFakeRepo()
+	seedSyntaxa(repo, "CA01A")
+	dist, cov := writeDistFiles(t, minimalDistribution,
+		"syntaxon_id,area_scheme\nCA01A,wgsrpd_l3\n")
+
+	rep, err := IngestSyntaxonDistribution(context.Background(), repo, dist, cov)
+	if err != nil {
+		t.Fatalf("IngestSyntaxonDistribution: %v", err)
+	}
+	if rep.Covered != 0 || rep.SkippedRows != 1 {
+		t.Errorf("Report = %+v, erwartet Covered 0 / SkippedRows 1", rep)
+	}
+}
+
 func TestIngestSyntaxonDistributionUeberspringtUnbekannteAuspraegung(t *testing.T) {
 	// The pipeline aborts on an unknown cell value, so this row should not
 	// exist. It is skipped rather than written because the CHECK would reject

@@ -192,8 +192,13 @@ func readOccurrenceRows(ctx context.Context, tx output.IngestTx, csvPath string,
 				skip(line, fmt.Errorf("incomplete row: syntaxon %q, area %s", id, a))
 				return nil
 			}
-			if !domain.IsKnownAreaScheme(a.Scheme) {
-				skip(line, fmt.Errorf("area scheme %q is not one of %v", a.Scheme, domain.KnownAreaSchemes()))
+			// Syntaxa distribution is read exclusively under evc_territory
+			// (SyntaxonDistribution, SyntaxonOccurrencesInArea); IsKnownAreaScheme
+			// would also pass wgsrpd_l3, which no read path here ever looks at — a
+			// row written under it would be counted and stored but unreachable,
+			// silently corrupting the verified/uncertain vs. unknown distinction.
+			if a.Scheme != domain.SchemeEVCTerritory {
+				skip(line, fmt.Errorf("area scheme %q is not %q", a.Scheme, domain.SchemeEVCTerritory))
 				return nil
 			}
 			// The pipeline aborts on an unknown cell value, so this row should
@@ -237,8 +242,10 @@ func readCoverageRows(ctx context.Context, tx output.IngestTx, coveragePath stri
 				skip(line, fmt.Errorf("incomplete coverage row: syntaxon %q, scheme %q", id, scheme))
 				return nil
 			}
-			if !domain.IsKnownAreaScheme(scheme) {
-				skip(line, fmt.Errorf("area scheme %q is not one of %v", scheme, domain.KnownAreaSchemes()))
+			// Same restriction as readOccurrenceRows above: the coverage table is
+			// read only under evc_territory too.
+			if scheme != domain.SchemeEVCTerritory {
+				skip(line, fmt.Errorf("area scheme %q is not %q", scheme, domain.SchemeEVCTerritory))
 				return nil
 			}
 			if !known[id] {
