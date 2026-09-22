@@ -341,6 +341,17 @@ abfragt, will seine Beschreibung im selben Aufruf.
 
 ## Pflanzengesellschaften (`SyntaxonRef`)
 
+**Der Identifikator hat mit der Quellenumkehr gewechselt.** `syntaxon.id`
+folgt jetzt dem EVC-Primärcode (`AA01A`), nicht mehr dem EEA-EUNIS-Code
+(`PAP-01A`). Rund 1310 vormals gültige EEA-Codes stehen nicht mehr in `id`,
+sondern ausschließlich im neuen Feld `alt_code`. `GET
+/v1/syntaxon/{id}/habitat-types` nimmt **nur** den Primärcode entgegen — eine
+alte EEA-ID beantwortet die Route mit `NOT_FOUND`. Es gibt **keine**
+serverseitige Auflösung alter IDs auf die neuen: ein Client, der eine
+gespeicherte alte ID hat, muss sie selbst über `alt_code` nachschlagen (z. B.
+indem er die Hierarchie über `GET /v1/syntaxa` durchläuft und dort nach dem
+`alt_code` filtert); der Dienst hält dafür keinen eigenen Endpunkt vor.
+
 Jede Syntaxon-Referenz — im `syntaxa`-Feld von `GET /v1/habitat-type/{typology}/{code}`
 ebenso wie in der Antwort von `GET /v1/syntaxon/{id}/habitat-types` — trägt seit
 der Syntaxa-Quellenumkehr (FloraVeg.EU als Primärquelle) vier zusätzliche
