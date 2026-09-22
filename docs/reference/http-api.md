@@ -396,10 +396,12 @@ kein `occurrence`-Feld; ein Treffer, der auf `?include=` passt, trägt
 Quelle geprüft hat, aber ohne die gefragte Ausprägung, fällt aus der Liste —
 das ist eine definitive Aussage, keine Unwissenheit.
 
-Fünf Kombinationen sind `INVALID_QUERY`: `?include=` ohne `?area=` (wäre
+Sechs Kombinationen sind `INVALID_QUERY`: `?include=` ohne `?area=` (wäre
 wirkungslos), ein unbekannter oder leerer Wert in `?include=`, ein doppelt
-angegebener `?include=`-Parameter, `?area=` mit dem Vorgabe-Rang `formation`
-(Formationen tragen keine Verbreitung) und ein `?area=`-Code, den das Schema
+angegebener `?include=`-Parameter, `?area=` mit einem Rang ohne Verbreitungsdaten
+— das sind `formation` (der Vorgabe-Rang), `class` und `order`, denn
+`syntaxon_distribution` und `syntaxon_distribution_coverage` tragen
+ausschließlich `alliance`-Zeilen — und ein `?area=`-Code, den das Schema
 nicht kennt (nie eine leere Liste von „kommt nicht vor").
 
 `GET /v1/syntaxon/{id}` liefert ein einzelnes Syntaxon als `SyntaxonDetail`

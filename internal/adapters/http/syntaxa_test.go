@@ -343,6 +343,8 @@ func TestSyntaxaAbgelehnteFilterkombinationen(t *testing.T) {
 		"leeres Element":          {"/v1/syntaxa?rank=alliance&area=austria-alps&include=verified,,uncertain", "include"},
 		"include zweimal":         {"/v1/syntaxa?rank=alliance&area=austria-alps&include=verified&include=uncertain", "include"},
 		"area mit rank=formation": {"/v1/syntaxa?rank=formation&area=austria-alps", "rank"},
+		"area mit rank=class":     {"/v1/syntaxa?rank=class&area=austria-alps", "rank"},
+		"area mit rank=order":     {"/v1/syntaxa?rank=order&area=austria-alps", "rank"},
 		"area ohne rank":          {"/v1/syntaxa?area=austria-alps", "rank"},
 	} {
 		t.Run(name, func(t *testing.T) {

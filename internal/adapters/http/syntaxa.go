@@ -74,10 +74,13 @@ func syntaxonAreaFilter(r *http.Request, rank string) (input.SyntaxonAreaFilter,
 		}
 		return input.SyntaxonAreaFilter{}, nil
 	}
-	// Formations carry no distribution, and rank defaults to formation — so a
-	// bare ?area= would filter nothing at all. Naming the rank that does carry
-	// data is the difference between a rejection and a riddle.
-	if rank == domain.SyntaxonRankFormation {
+	// syntaxon_distribution and syntaxon_distribution_coverage carry ONLY
+	// alliance rows (measured) — formation, class and order all have none, so
+	// a bare ?area= at any of those ranks would filter nothing at all and every
+	// entry would fall into the unjudgeable branch, indistinguishable from a
+	// real filtered answer. Naming the rank that does carry data is the
+	// difference between a rejection and a riddle.
+	if rank != domain.SyntaxonRankAlliance {
 		return input.SyntaxonAreaFilter{}, fmt.Errorf(
 			"area needs a rank that carries distribution data (today: %s); rank=%s carries none",
 			domain.SyntaxonRankAlliance, rank)

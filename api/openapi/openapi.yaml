@@ -652,10 +652,11 @@ components:
         der Liste und sind daran erkennbar, dass ihnen `occurrence` fehlt —
         dieselbe Dreiwertigkeit wie `in_area` bei den Arten.
 
-        Braucht einen `rank`, der Verbreitungsdaten trägt (heute `alliance`);
-        mit dem Vorgabewert `rank=formation` ist die Kombination
-        INVALID_QUERY. Ein Code, den das Schema nicht kennt, ebenso — nie
-        eine Liste von „kommt nicht vor".
+        Braucht rank=alliance: syntaxon_distribution und
+        syntaxon_distribution_coverage tragen ausschließlich alliance-Zeilen.
+        Mit einem anderen Rang — dem Vorgabewert formation, class oder order —
+        ist die Kombination INVALID_QUERY. Ein Code, den das Schema nicht
+        kennt, ebenso — nie eine Liste von „kommt nicht vor".
       schema:
         type: string
         example: austria-alps
