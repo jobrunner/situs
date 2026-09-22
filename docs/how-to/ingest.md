@@ -168,7 +168,7 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
    verbleibende Waise) atomar — der Index bleibt unverändert, statt leer
    dazustehen.
 
-   **Sechs Datenfehler lassen `IngestSyntaxa` absichtlich scheitern**, statt
+   **Sieben Datenfehler lassen `IngestSyntaxa` absichtlich scheitern**, statt
    zu warnen und weiterzulaufen:
 
    - eine **Waise** — eine Zeile mit einem anderen Rang als `formation`, für
@@ -194,6 +194,25 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
      `pipelines/eurovegchecklist/xlsx_to_csv.py` bricht bereits bei der
      Konvertierung ab; der Go-Ingest liest die CSV aber direkt, eine
      handverlesene Datei erreicht ihn also ungeprüft.
+   - eine **ID, die zwei Quellen beanspruchen**. In die Spalte `syntaxon.id`
+     schreiben **drei** Quellen: die Formationen aus
+     `data/syntaxa_formations.csv`, die Hierarchiezeilen aus
+     `syntaxa_hierarchy.csv` und die EEA-eigenen Zeilen aus `syntaxa.csv` — in
+     dieser Reihenfolge, jede per `ON CONFLICT(id) DO UPDATE`. Der doppelte
+     Primärcode (voriger Spiegelstrich) prüft nur die Hierarchiezeilen
+     untereinander; eine Hierarchie- oder EEA-Zeile mit dem Code einer
+     Formation überschreibt dagegen die Formation selbst, und ist ihre eigene
+     Elternkette rangtreu, laufen Waisen-, Zyklus- und Rangprüfung sauber
+     durch — der Index committet mit einer Wurzel weniger. Geprüft wird über
+     alle drei Quellen zugleich und vor der Transaktion; die Meldung nennt
+     jede beanspruchte ID einmal, mit den beanspruchenden Dateien
+     (`Z (syntaxa_formations.csv, syntaxa_hierarchy.csv)`). Abbruch statt
+     Verwerfen-und-Melden, weil keine Seite verzichtbar ist: die Formationen
+     sind die Wurzel der Navigation, und eine verworfene Hierarchiezeile
+     nähme den ganzen Teilbaum unter sich mit. Geprüft werden nur die Zeilen,
+     die tatsächlich geschrieben werden — eine EEA-Zeile mit FloraVeg-
+     Gegenstück (ihre `id` ist ein `eea_code` der Hierarchie) erreicht die
+     Tabelle nie und kann folglich mit nichts kollidieren.
    - ein **doppelt beanspruchter EEA-Code** — zwei Zeilen in
      `syntaxa_hierarchy.csv` mit demselben nichtleeren `eea_code`. Der
      EEA-Code ist der Migrationsschlüssel von den alten IDs

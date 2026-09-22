@@ -36,12 +36,12 @@ func checkDanglingParents(rows []hierarchyRow, written map[string]bool, rep *Syn
 	}
 }
 
-// eunisOnlyRow is one FloraVeg-less syntaxon writeEunisOnly wrote (id and
-// its EUNIS combi-name). It is the only input assignRemainingParents
-// touches — formations and FloraVeg hierarchy rows already carry a parent
-// by construction.
+// eunisOnlyRow is one FloraVeg-less syntaxon readEunisOnly kept for writing
+// (id, rank and its EUNIS combi-name). It is the only input
+// assignRemainingParents touches — formations and FloraVeg hierarchy rows
+// already carry a parent by construction.
 type eunisOnlyRow struct {
-	id, name string
+	id, rank, name string
 }
 
 // assignRemainingParents resolves eunisOnly's parent in three tries: a

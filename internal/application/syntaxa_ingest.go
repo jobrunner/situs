@@ -68,6 +68,15 @@ type SyntaxaReport struct {
 	// the Go ingest reads the CSV directly.
 	PrimaryCodeCollisions []string
 
+	// IDCollisions names every syntaxon id that more than one of the three
+	// writing sources claims, each as "id (file, file)", sorted and listed
+	// once, and is returned filled with the abort it diagnoses. It is the
+	// namespace-wide counterpart to PrimaryCodeCollisions above, which only
+	// sees syntaxa_hierarchy.csv against itself: formations, hierarchy rows
+	// and EEA-only rows share one id column, so a collision between two of
+	// them is the same DO UPDATE merge one file's duplicate is.
+	IDCollisions []string
+
 	// AmbiguousMatches, UnknownLinkTargets and SkippedRows are the counters
 	// left of the "collected but never enforced" kind this report used to
 	// carry two more of (SkippedUnknownSection, SkippedPattern, both
@@ -84,6 +93,19 @@ type SyntaxaReport struct {
 	AmbiguousMatches   []string
 	UnknownLinkTargets []string
 	SkippedRows        int
+}
+
+// syntaxaSources is everything IngestSyntaxa parsed and validated before it
+// opened the transaction: the three sources that write into the syntaxon id
+// namespace plus the eea_code -> primary code index derived from the
+// hierarchy. Reading and checking all three up front is what makes
+// checkIDNamespace possible at all — a collision between two sources cannot be
+// repaired once the first of them is written.
+type syntaxaSources struct {
+	formations map[string]domain.Syntaxon
+	rows       []hierarchyRow
+	byEEA      map[string]string
+	eunisOnly  []eunisOnlyRow
 }
 
 // formationOf returns a class's formation id: the first letter of its
@@ -125,12 +147,26 @@ func IngestSyntaxa(ctx context.Context, repo output.Repository, dir string) (Syn
 	if err := checkEEACodeCollisions(rows, &rep); err != nil {
 		return rep, err
 	}
+	// The third writer into the id namespace, read before the transaction for
+	// exactly that reason: only the rows that survive readEunisOnly's filters
+	// reach the table, so only they can collide with a formation letter or a
+	// primary code.
+	byEEA := mapByEEACode(rows)
+	eunisOnly, err := readEunisOnly(ctx, dir, byEEA, &rep)
+	if err != nil {
+		return SyntaxaReport{}, err
+	}
+	if err := checkIDNamespace(formations, rows, eunisOnly, &rep); err != nil {
+		return rep, err
+	}
 
 	tx, err := repo.Begin(ctx)
 	if err != nil {
 		return SyntaxaReport{}, fmt.Errorf("beginning syntaxa ingest transaction: %w", err)
 	}
-	if err := writeSyntaxa(ctx, tx, dir, formations, rows, &rep); err != nil {
+	if err := writeSyntaxa(ctx, tx, dir, syntaxaSources{
+		formations: formations, rows: rows, byEEA: byEEA, eunisOnly: eunisOnly,
+	}, &rep); err != nil {
 		if rbErr := tx.Rollback(); rbErr != nil {
 			return SyntaxaReport{}, fmt.Errorf("%w (rollback also failed: %w)", err, rbErr)
 		}
@@ -156,16 +192,16 @@ func IngestSyntaxa(ctx context.Context, repo output.Repository, dir string) (Syn
 // anywhere below (a dangling parent, a cycle, an orphan) rolls the delete
 // back too, leaving the index exactly as it was.
 func writeSyntaxa(ctx context.Context, tx output.IngestTx, dir string,
-	formations map[string]domain.Syntaxon, rows []hierarchyRow, rep *SyntaxaReport) error {
+	src syntaxaSources, rep *SyntaxaReport) error {
 	if err := tx.ClearSyntaxa(); err != nil {
 		return fmt.Errorf("clearing syntaxa before ingest: %w", err)
 	}
 	written := map[string]bool{}
 	graph := newWrittenGraph()
-	if err := writeFormations(tx, formations, written, graph, rep); err != nil {
+	if err := writeFormations(tx, src.formations, written, graph, rep); err != nil {
 		return err
 	}
-	if err := writeHierarchy(tx, rows, formations, written, graph, rep); err != nil {
+	if err := writeHierarchy(tx, src.rows, src.formations, written, graph, rep); err != nil {
 		return err
 	}
 	// A class whose formation letter is unknown is skipped (SkippedRows,
@@ -174,30 +210,28 @@ func writeSyntaxa(ctx context.Context, tx output.IngestTx, dir string,
 	// the same CSV. Anything that still points nowhere after every hierarchy
 	// row is written is exactly what Orphans exists to catch: it is not
 	// limited to the EEA-only remainder (Step 5, below).
-	checkDanglingParents(rows, written, rep)
-	checkCycles(rows, written, rep)
+	checkDanglingParents(src.rows, written, rep)
+	checkCycles(src.rows, written, rep)
 
 	// Step 3: the EEA units that FloraVeg does not carry. Every other
 	// unit is already represented by its FloraVeg row — writing it a
 	// second time would put the same syntaxon into the index under two
-	// ids.
-	byEEA := mapByEEACode(rows)
-	eunisOnly, err := writeEunisOnly(ctx, tx, dir, byEEA, written, graph, rep)
-	if err != nil {
+	// ids; readEunisOnly dropped those before the transaction opened.
+	if err := writeEunisOnly(tx, src.eunisOnly, written, graph, rep); err != nil {
 		return err
 	}
 	// Step 4: the edges. An EEA syntaxon id with a FloraVeg counterpart
 	// gets resolved to the primary code; one without stays as it is.
-	if err := writeLinks(ctx, tx, dir, byEEA, written, rep); err != nil {
+	if err := writeLinks(ctx, tx, dir, src.byEEA, written, rep); err != nil {
 		return err
 	}
 	// Step 5: the remaining EEA-only rows' parents — name match, then
 	// sibling consensus, then orphan.
-	parents, err := assignRemainingParents(tx, eunisOnly, rows, rep)
+	parents, err := assignRemainingParents(tx, src.eunisOnly, src.rows, rep)
 	if err != nil {
 		return err
 	}
-	graph.setResolvedParents(eunisOnly, parents)
+	graph.setResolvedParents(src.eunisOnly, parents)
 	checkParentRanks(graph, rep)
 
 	// A chain that breaks at one point makes the orientation service
@@ -306,66 +340,29 @@ func writeHierarchy(tx output.IngestTx, rows []hierarchyRow, formations map[stri
 	return nil
 }
 
-// writeEunisOnly writes syntaxa.csv's rows whose id is not a key of byEEA —
-// an EEA unit FloraVeg already carries under its own primary code is not
-// written a second time. ParentID stays empty; Task 7 sets it by name and
-// sibling consensus. Name is kept exactly as the file has it: the historical
-// EUNIS combi-string with embedded authorship, never split heuristically.
-func writeEunisOnly(ctx context.Context, tx output.IngestTx, dir string,
-	byEEA map[string]string, written map[string]bool, graph *writtenGraph, rep *SyntaxaReport) ([]eunisOnlyRow, error) {
-	var eunisOnly []eunisOnlyRow
-	skip := newRowSkipper(&rep.SkippedRows, fileEunisSyntaxa, "eunis-only syntaxon")
-	err := readAll(ctx, dir, fileEunisSyntaxa, ',', []string{"id", colRank, colName, "parent_id"}, skip,
-		func(idx map[string]int, row []string, line int) error {
-			id := row[idx["id"]]
-			// The id is this row's key, checked like the distribution readers
-			// check theirs: written as it stands, an empty one becomes a
-			// syntaxon with the id "", and a name matching a FloraVeg alliance
-			// even resolves its parent, so the run commits an invalid
-			// navigation target.
-			if id == "" {
-				skip(line, fmt.Errorf("eunis-only row without an id"))
-				return nil
-			}
-			// A formation is the root of the hierarchy, and only
-			// syntaxa_formations.csv defines one. Written from here the row
-			// would go through assignRemainingParents like any other, and a
-			// name matching a FloraVeg alliance hands it an order as parent —
-			// a formation WITH a parent, which checkParentRanks reports but
-			// which must not be produced in the first place. Discarded and
-			// reported like the row without an id above, not fatal: the row
-			// claims a rank this file cannot hold, so dropping it loses
-			// nothing but itself.
-			if rank := row[idx[colRank]]; rank == domain.SyntaxonRankFormation {
-				skip(line, fmt.Errorf("eunis-only row %s claims rank %q, which only %s defines",
-					id, rank, fileFormations))
-				return nil
-			}
-			if _, ok := byEEA[id]; ok {
-				return nil
-			}
-			name := row[idx[colName]]
-			s := domain.Syntaxon{
-				ID:     id,
-				Rank:   row[idx[colRank]],
-				Name:   name,
-				Source: domain.SyntaxonSourceEUNIS,
-			}
-			if err := tx.UpsertSyntaxon(s); err != nil {
-				return fmt.Errorf("upserting eunis-only %s: %w", id, err)
-			}
-			written[id] = true
-			// Parent still empty here; assignRemainingParents decides it and
-			// setResolvedParents folds it in afterwards.
-			graph.add(id, s.Rank, "")
-			rep.EunisOnly++
-			eunisOnly = append(eunisOnly, eunisOnlyRow{id: id, name: name})
-			return nil
-		})
-	if err != nil {
-		return nil, err
+// writeEunisOnly writes the rows readEunisOnly kept. ParentID stays empty;
+// assignRemainingParents sets it by name and sibling consensus. Name is kept
+// exactly as the file has it: the historical EUNIS combi-string with embedded
+// authorship, never split heuristically.
+func writeEunisOnly(tx output.IngestTx, eunisOnly []eunisOnlyRow,
+	written map[string]bool, graph *writtenGraph, rep *SyntaxaReport) error {
+	for _, r := range eunisOnly {
+		s := domain.Syntaxon{
+			ID:     r.id,
+			Rank:   r.rank,
+			Name:   r.name,
+			Source: domain.SyntaxonSourceEUNIS,
+		}
+		if err := tx.UpsertSyntaxon(s); err != nil {
+			return fmt.Errorf("upserting eunis-only %s: %w", r.id, err)
+		}
+		written[r.id] = true
+		// Parent still empty here; assignRemainingParents decides it and
+		// setResolvedParents folds it in afterwards.
+		graph.add(r.id, r.rank, "")
+		rep.EunisOnly++
 	}
-	return eunisOnly, nil
+	return nil
 }
 
 // writeLinks writes habitat_type_syntaxa.csv's edges. A target that is a key

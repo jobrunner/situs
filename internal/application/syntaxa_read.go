@@ -72,6 +72,58 @@ func readFormations(ctx context.Context, dir string, rep *SyntaxaReport) (map[st
 	return formations, nil
 }
 
+// readEunisOnly parses syntaxa.csv and returns exactly those rows that will
+// be written: an EEA unit FloraVeg already carries under its own primary code
+// (its id is a key of byEEA) stands in the index once already and is dropped
+// here, as is a row this file cannot hold at all.
+//
+// Reading this before the transaction is what lets checkIDNamespace see the
+// third writer into the syntaxon id namespace. It has to be the kept rows, not
+// the file's rows: an id the run never writes cannot collide with anything,
+// and failing on one would reject a perfectly ordinary source.
+func readEunisOnly(ctx context.Context, dir string, byEEA map[string]string,
+	rep *SyntaxaReport) ([]eunisOnlyRow, error) {
+	var eunisOnly []eunisOnlyRow
+	skip := newRowSkipper(&rep.SkippedRows, fileEunisSyntaxa, "eunis-only syntaxon")
+	err := readAll(ctx, dir, fileEunisSyntaxa, ',', []string{"id", colRank, colName, "parent_id"}, skip,
+		func(idx map[string]int, row []string, line int) error {
+			id := row[idx["id"]]
+			// The id is this row's key, checked like the distribution readers
+			// check theirs: written as it stands, an empty one becomes a
+			// syntaxon with the id "", and a name matching a FloraVeg alliance
+			// even resolves its parent, so the run commits an invalid
+			// navigation target.
+			if id == "" {
+				skip(line, fmt.Errorf("eunis-only row without an id"))
+				return nil
+			}
+			// A formation is the root of the hierarchy, and only
+			// syntaxa_formations.csv defines one. Written from here the row
+			// would go through assignRemainingParents like any other, and a
+			// name matching a FloraVeg alliance hands it an order as parent —
+			// a formation WITH a parent, which checkParentRanks reports but
+			// which must not be produced in the first place. Discarded and
+			// reported like the row without an id above, not fatal: the row
+			// claims a rank this file cannot hold, so dropping it loses
+			// nothing but itself.
+			rank := row[idx[colRank]]
+			if rank == domain.SyntaxonRankFormation {
+				skip(line, fmt.Errorf("eunis-only row %s claims rank %q, which only %s defines",
+					id, rank, fileFormations))
+				return nil
+			}
+			if _, ok := byEEA[id]; ok {
+				return nil
+			}
+			eunisOnly = append(eunisOnly, eunisOnlyRow{id: id, rank: rank, name: row[idx[colName]]})
+			return nil
+		})
+	if err != nil {
+		return nil, err
+	}
+	return eunisOnly, nil
+}
+
 // readHierarchy parses syntaxa_hierarchy.csv (code,rank,name,author,
 // parent_code,eea_code, produced by pipelines/eurovegchecklist since
 // Task 1) into hierarchyRows. A row with a rank other than class/order/
