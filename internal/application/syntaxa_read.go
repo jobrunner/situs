@@ -18,12 +18,34 @@ type hierarchyRow struct {
 // IngestLocalizations' optional CSVs, the formations are the root of the
 // whole hierarchy and their absence must stop the ingest, not silently
 // leave every class without a parent.
+//
+// The letter is a key, so it is validated as one: empty is rejected (it
+// would write a formation with the id "" that no class can point at), and a
+// letter claimed twice is rejected too (the later row would silently
+// overwrite the earlier one's name and life-form group). Both fail before
+// the ingest's transaction opens.
+//
+// Deliberately NOT checked: that the set is exactly A–Y, gapless. The
+// sections belong to the EuroVegChecklist fassung this file pins, not to
+// this code — asserting them here would fail a legitimate later fassung that
+// adds or drops one. A missing letter is also not the silent case it looks
+// like: every class under it is skipped, and each of that class's orders and
+// alliances then has an unwritten parent, which checkDanglingParents turns
+// into an orphan and writeSyntaxa turns into an abort. Measured against the
+// pinned artifacts, all 25 letters carry classes, so a truncated file always
+// hits that path.
 func readFormations(ctx context.Context, dir string, rep *SyntaxaReport) (map[string]domain.Syntaxon, error) {
 	formations := map[string]domain.Syntaxon{}
 	skip := newRowSkipper(&rep.SkippedRows, fileFormations, "formation")
 	err := readAll(ctx, dir, fileFormations, ',', []string{"letter", colNameEN, "life_form_group"}, skip,
-		func(idx map[string]int, row []string, _ int) error {
+		func(idx map[string]int, row []string, line int) error {
 			letter := row[idx["letter"]]
+			if letter == "" {
+				return fmt.Errorf("%s:%d: formation row without a letter", fileFormations, line)
+			}
+			if _, dup := formations[letter]; dup {
+				return fmt.Errorf("%s:%d: formation letter %q is claimed twice", fileFormations, line, letter)
+			}
 			formations[letter] = domain.Syntaxon{
 				ID:               letter,
 				Rank:             domain.SyntaxonRankFormation,

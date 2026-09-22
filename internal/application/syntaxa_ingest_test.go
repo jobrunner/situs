@@ -172,6 +172,48 @@ func TestIngestSyntaxaBrichtOhneHierarchiedateiAb(t *testing.T) {
 	}
 }
 
+func TestIngestSyntaxaBrichtBeiDoppeltemFormationsbuchstabenAb(t *testing.T) {
+	// A duplicated letter would silently overwrite the earlier formation:
+	// one of the two names simply disappears, and every class under the
+	// letter lands under the survivor without anything being reported.
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations + "C,Vegetation of the nemoral forest zone (Dublette),phanerogam\n",
+		hierarchy:  minimalHierarchy,
+		eunis:      "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa akzeptierte einen doppelten Formationsbuchstaben")
+	}
+	if !strings.Contains(err.Error(), "C") || !strings.Contains(err.Error(), fileFormations) {
+		t.Errorf("Fehler benennt Buchstabe und Datei nicht: %v", err)
+	}
+	// Weder Commit noch Rollback: die Pruefung laeuft, bevor eine
+	// Transaktion aufgeht, der Index wird also gar nicht erst angefasst.
+	if repo.committed || repo.rolledBack {
+		t.Errorf("erwartet keine Transaktion, committed=%v rolledBack=%v", repo.committed, repo.rolledBack)
+	}
+}
+
+func TestIngestSyntaxaBrichtBeiLeeremFormationsbuchstabenAb(t *testing.T) {
+	// An empty letter would be written as a formation with the id "" — a row
+	// nothing can reach and that no class could ever point at.
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations + ",Vegetation ohne Buchstabe,phanerogam\n",
+		hierarchy:  minimalHierarchy,
+		eunis:      "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa akzeptierte eine Formationszeile ohne Buchstaben")
+	}
+	if !strings.Contains(err.Error(), fileFormations) {
+		t.Errorf("Fehler benennt die Datei nicht: %v", err)
+	}
+}
+
 func TestIngestSyntaxaBrichtBeiFehlenderEEACodeSpalteAb(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{
