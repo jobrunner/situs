@@ -194,7 +194,7 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
      `pipelines/eurovegchecklist/xlsx_to_csv.py` bricht bereits bei der
      Konvertierung ab; der Go-Ingest liest die CSV aber direkt, eine
      handverlesene Datei erreicht ihn also ungeprüft.
-   - eine **ID, die zwei Quellen beanspruchen**. In die Spalte `syntaxon.id`
+   - eine **mehrfach beanspruchte ID**. In die Spalte `syntaxon.id`
      schreiben **drei** Quellen: die Formationen aus
      `data/syntaxa_formations.csv`, die Hierarchiezeilen aus
      `syntaxa_hierarchy.csv` und die EEA-eigenen Zeilen aus `syntaxa.csv` — in
@@ -203,13 +203,23 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
      untereinander; eine Hierarchie- oder EEA-Zeile mit dem Code einer
      Formation überschreibt dagegen die Formation selbst, und ist ihre eigene
      Elternkette rangtreu, laufen Waisen-, Zyklus- und Rangprüfung sauber
-     durch — der Index committet mit einer Wurzel weniger. Geprüft wird über
-     alle drei Quellen zugleich und vor der Transaktion; die Meldung nennt
-     jede beanspruchte ID einmal, mit den beanspruchenden Dateien
-     (`Z (syntaxa_formations.csv, syntaxa_hierarchy.csv)`). Abbruch statt
-     Verwerfen-und-Melden, weil keine Seite verzichtbar ist: die Formationen
-     sind die Wurzel der Navigation, und eine verworfene Hierarchiezeile
-     nähme den ganzen Teilbaum unter sich mit. Geprüft werden nur die Zeilen,
+     durch — der Index committet mit einer Wurzel weniger. Gezählt wird jede
+     **Beanspruchung**, nicht jede beanspruchende Datei: zwei Zeilen *derselben*
+     Quelle mit derselben ID sind dieselbe Verschmelzung, und genau dieser Fall
+     lief durch, solange die Beanspruchungen nach Datei gruppiert wurden. Die
+     Regel lautet darum schlicht: eine ID wird **genau einmal** beansprucht —
+     und sie gilt damit für alle drei Quellen, quellenübergreifend wie
+     quellenintern. Geprüft wird vor der Transaktion; die Meldung nennt jede
+     beanspruchte ID einmal, mit den beanspruchenden Dateien, jede Datei einmal
+     je Beanspruchung (`Z (syntaxa_formations.csv, syntaxa_hierarchy.csv)`
+     quellenübergreifend, `EIG-01A (syntaxa.csv, syntaxa.csv)` innerhalb einer
+     Quelle). Abbruch statt Verwerfen-und-Melden, für alle drei Quellen
+     gleich: die Formationen sind die Wurzel der Navigation, eine verworfene
+     Hierarchiezeile nähme den ganzen Teilbaum unter sich mit — und auch eine
+     doppelte EEA-Zeile „verliert nicht bloß sich selbst“, denn die ID ist der
+     Schlüssel, auf den die Kanten aus `habitat_type_syntaxa.csv` und der
+     Migrationspfad zeigen. Welche der beiden Zeilen gemeint ist, entschiede
+     sonst die Zeilenreihenfolge. Geprüft werden nur die Zeilen,
      die tatsächlich geschrieben werden — eine EEA-Zeile mit FloraVeg-
      Gegenstück (ihre `id` ist ein `eea_code` der Hierarchie) erreicht die
      Tabelle nie und kann folglich mit nichts kollidieren.

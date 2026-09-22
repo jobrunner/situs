@@ -15,34 +15,37 @@ import (
 	"github.com/jobrunner/situs/internal/domain"
 )
 
-// checkIDNamespace fails the ingest when two of the three sources that write
-// into the syntaxon id namespace claim one id. checkPrimaryCodeCollisions only
-// covers syntaxa_hierarchy.csv against itself, but the formations, the
-// hierarchy rows and the EEA-only remainder all end up in the same
-// syntaxon.id, written in that order and merged by ON CONFLICT(id) DO UPDATE —
-// so a hierarchy row coded "C" replaces formation C with an alliance, and if
-// its own parent chain is rank-correct, every later check passes and the index
-// commits with a root gone.
+// checkIDNamespace fails the ingest when one syntaxon id is claimed more than
+// once — by two of the three writing sources or by one source twice. The
+// formations, the hierarchy rows and the EEA-only remainder all end up in the
+// same syntaxon.id, written in that order and merged by ON CONFLICT(id) DO
+// UPDATE, so a hierarchy row coded "C" replaces formation C with an alliance,
+// and if its own parent chain is rank-correct, every later check passes and
+// the index commits with a root gone.
 //
-// Fatal, not discarded-and-reported, for both of the sources that could lose a
-// row: the formations are the root of the navigation, so preferring a later
-// writer over them is never right, and preferring the formation instead would
-// silently drop a hierarchy row together with the whole subtree hanging off it.
-// The id namespace is the one thing every source has to agree on, and no
-// downstream step can repair a disagreement in it.
+// Each claim is counted, not each claiming file: keying the claims by source
+// file let two syntaxa.csv rows on one id collapse into a single claim and
+// pass, while writeEunisOnly merged them into one syntaxon — the later row
+// winning rank and name — and EunisOnly still counted two. The rule the id
+// namespace needs is simply that an id is claimed exactly once, and counting
+// makes it hold for every source, including one added later.
+//
+// Fatal for all three sources, not discarded-and-reported for the EEA rows
+// that "only lose themselves": that argument holds for a row without an id or
+// with a formation rank, which nothing can point at, but not for a duplicated
+// id — the id IS the key habitat_type_syntaxa.csv's edges and the migration
+// path resolve against, so an ambiguous one resolves to whichever row came
+// last in the file. Which row to prefer cannot be decided here (it would be
+// line order) and no downstream step can repair it, exactly as with the
+// primary code.
 //
 // eunisOnly must be the rows that are actually written (readEunisOnly's
 // result), never syntaxa.csv's rows: a row with a FloraVeg counterpart never
 // reaches the table and therefore cannot collide with anything.
 func checkIDNamespace(formations map[string]domain.Syntaxon, rows []hierarchyRow,
 	eunisOnly []eunisOnlyRow, rep *SyntaxaReport) error {
-	claims := map[string]map[string]bool{}
-	claim := func(id, file string) {
-		if claims[id] == nil {
-			claims[id] = map[string]bool{}
-		}
-		claims[id][file] = true
-	}
+	claims := map[string][]string{}
+	claim := func(id, file string) { claims[id] = append(claims[id], file) }
 	for letter := range formations {
 		claim(letter, fileFormations)
 	}
@@ -56,10 +59,7 @@ func checkIDNamespace(formations map[string]domain.Syntaxon, rows []hierarchyRow
 		if len(files) < 2 {
 			continue
 		}
-		named := make([]string, 0, len(files))
-		for file := range files {
-			named = append(named, file)
-		}
+		named := append([]string(nil), files...)
 		sort.Strings(named)
 		rep.IDCollisions = append(rep.IDCollisions,
 			fmt.Sprintf("%s (%s)", id, strings.Join(named, ", ")))
@@ -68,7 +68,7 @@ func checkIDNamespace(formations map[string]domain.Syntaxon, rows []hierarchyRow
 		return nil
 	}
 	sort.Strings(rep.IDCollisions)
-	return fmt.Errorf("%d syntaxon ids are claimed by more than one source: %s",
+	return fmt.Errorf("%d syntaxon ids are claimed more than once: %s",
 		len(rep.IDCollisions), strings.Join(rep.IDCollisions, "; "))
 }
 

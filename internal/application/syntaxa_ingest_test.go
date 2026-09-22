@@ -954,6 +954,44 @@ func TestIngestSyntaxaMeldetJedeVerdeckteIDGenauEinmal(t *testing.T) {
 	}
 }
 
+func TestIngestSyntaxaScheitertAnZweiEEAZeilenMitDerselbenId(t *testing.T) {
+	// The third source against itself: both rows are kept (neither id is a
+	// key of byEEA), both are written, and ON CONFLICT(id) DO UPDATE merges
+	// them into one syntaxon — the later row winning rank and name while
+	// EunisOnly counts two. Every edge in habitat_type_syntaxa.csv pointing
+	// at the id then means whichever row came last in the file.
+	repo := newFakeRepo()
+	presetHierarchy(repo)
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy:  minimalHierarchy,
+		eunis: "id,rank,name,parent_id\n" +
+			"EIG-01A,alliance,Eigenverband Moor 1990,\n" +
+			"EIG-01A,order,Zweiteigenordnung Moor 1991,\n",
+		links: "typology_id,code,syntaxon_id\n",
+	})
+	rep, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief trotz doppelter EEA-Id durch")
+	}
+	if len(repo.syntaxa) != 2 || repo.committed || repo.rolledBack {
+		t.Errorf("Index = %v (committed=%v rolledBack=%v), erwartet unveraendert und ohne Transaktion",
+			repo.syntaxa, repo.committed, repo.rolledBack)
+	}
+	if len(rep.IDCollisions) != 1 || !strings.HasPrefix(rep.IDCollisions[0], "EIG-01A ") {
+		t.Fatalf("IDCollisions = %v, erwartet einen Eintrag zu EIG-01A", rep.IDCollisions)
+	}
+	// The file is named once per claim, so the report says which source has
+	// to be repaired and that it collides with itself.
+	if got := strings.Count(rep.IDCollisions[0], fileEunisSyntaxa); got != 2 {
+		t.Errorf("IDCollisions[0] = %q nennt %s %d-mal, erwartet zweimal",
+			rep.IDCollisions[0], fileEunisSyntaxa, got)
+	}
+	if !strings.Contains(err.Error(), rep.IDCollisions[0]) {
+		t.Errorf("Fehler = %v, erwartet die Kollision %q", err, rep.IDCollisions[0])
+	}
+}
+
 func TestIngestSyntaxaMeldetKeineKollisionFuerEineNieGeschriebeneEEAZeile(t *testing.T) {
 	// The EEA row C is never written: a hierarchy row carries C as its
 	// eea_code, so it already stands in the index under its primary code CB.

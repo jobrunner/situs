@@ -68,13 +68,14 @@ type SyntaxaReport struct {
 	// the Go ingest reads the CSV directly.
 	PrimaryCodeCollisions []string
 
-	// IDCollisions names every syntaxon id that more than one of the three
-	// writing sources claims, each as "id (file, file)", sorted and listed
-	// once, and is returned filled with the abort it diagnoses. It is the
-	// namespace-wide counterpart to PrimaryCodeCollisions above, which only
-	// sees syntaxa_hierarchy.csv against itself: formations, hierarchy rows
-	// and EEA-only rows share one id column, so a collision between two of
-	// them is the same DO UPDATE merge one file's duplicate is.
+	// IDCollisions names every syntaxon id that is claimed more than once,
+	// each as "id (file, file)" naming the file once per claim — so a source
+	// colliding with itself is told apart from two sources colliding — sorted
+	// and listed once, and is returned filled with the abort it diagnoses. It
+	// is the namespace-wide counterpart to PrimaryCodeCollisions above, which
+	// only sees syntaxa_hierarchy.csv against itself: formations, hierarchy
+	// rows and EEA-only rows share one id column, so a collision between two
+	// of them is the same DO UPDATE merge one file's duplicate is.
 	IDCollisions []string
 
 	// AmbiguousMatches, UnknownLinkTargets and SkippedRows are the counters
