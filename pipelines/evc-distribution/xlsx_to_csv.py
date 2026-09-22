@@ -100,6 +100,19 @@ class EmptyResultError(RuntimeError):
     yields nothing is this defect."""
 
 
+class AllianceCodeCollisionError(RuntimeError):
+    """Two data rows carry the same alliance code (Code 1). The code is the
+    syntaxon id every written row is keyed by: syntaxon_distribution_coverage
+    has it as its primary key and syntaxon_distribution is keyed by
+    (syntaxon_id, area_scheme, area_code), so a repeated code does not
+    duplicate a row — it MIXES the two. Wherever the second row's cell is
+    empty the first row's occurrence survives, everywhere else the second
+    row's wins, and the published distribution represents neither source row.
+    Picking one row would be picking the file's line order; mirrors
+    PrimaryCodeCollisionError in pipelines/eurovegchecklist/xlsx_to_csv.py,
+    which aborts for the same reason on the same identity."""
+
+
 class SlugCollisionError(RuntimeError):
     """Two columns derive the same area_code. Picking a winner would silently
     merge two territories. Two columns spelled EXACTLY alike count too: they
@@ -252,6 +265,7 @@ def convert(xlsx_path, out_dir):
     code_col = meta["Code 1"]
 
     dist, coverage = [], []
+    seen_codes = set()
     histogram = {}
     counts = {"verified": 0, "uncertain": 0}
     summary_rows, skipped = 0, []
@@ -266,6 +280,15 @@ def convert(xlsx_path, out_dir):
         if not _ALLIANCE_RE.fullmatch(code):
             skipped.append(code)
             continue
+        # Before the cells are read, so no half-written row of the first
+        # claimant is carried anywhere — and before any _write, so the abort
+        # leaves out/ without a CSV the ingest could collect.
+        if code in seen_codes:
+            raise AllianceCodeCollisionError(
+                f"{xlsx_path} [{DATA_SHEET}]: alliance code {code!r} is claimed "
+                "by more than one row; the rows' occurrence cells would be "
+                "merged into one syntaxon that represents neither")
+        seen_codes.add(code)
         coverage.append({"syntaxon_id": code, "area_scheme": SCHEME})
         for ci, area_code, name in territories:
             raw = row.get(ci, "")
@@ -331,7 +354,7 @@ def main(argv=None):
     try:
         report = convert(args.xlsx, args.out_dir)
     except (SheetError, HeaderError, CellValueError, SlugCollisionError,
-            EmptyResultError) as exc:
+            AllianceCodeCollisionError, EmptyResultError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)
     print(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True))

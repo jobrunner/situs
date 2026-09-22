@@ -77,8 +77,16 @@ Gemessen gegen die gepinnte Datei: **1115** Verbände, **136** Territorien,
 (`SheetError`), einer fehlenden Meta-Spalte oder einer unbekannten
 Spaltenstruktur an der Summengrenze (`HeaderError`), einer Zelle, die weder
 `1` noch `U` noch leer ist (`CellValueError`), zwei Spalten auf demselben
-`area_code` (`SlugCollisionError`) — und **bei null gültigen Verbänden**
-(`EmptyResultError`). Der letzte Fall ist kein Sonderfall der Sorgfalt:
+`area_code` (`SlugCollisionError`), zwei Zeilen auf demselben Verbandscode
+(`AllianceCodeCollisionError`) — und **bei null gültigen Verbänden**
+(`EmptyResultError`). Der doppelte Verbandscode ist keine bloße Dublette:
+`Code 1` ist die ID, unter der beide Zeilen geschrieben würden, und weil
+`syntaxon_distribution` auf `(syntaxon_id, area_scheme, area_code)` schlüsselt,
+überlebt in jeder leeren Zelle der zweiten Zeile die Angabe der ersten — das
+Ergebnis repräsentiert danach **keine** der beiden Quellzeilen. Welche Zeile
+gemeint ist, entschiede sonst die Zeilenreihenfolge; dasselbe Urteil wie beim
+doppelten Primärcode in `pipelines/eurovegchecklist/`. Der letzte Fall ist
+kein Sonderfall der Sorgfalt:
 `build.sh` räumt `out/` vor dem Lauf, und `IngestSyntaxonDistribution`
 behandelt vorhandene Dateien als **Ersetzung**. Nur-Kopfzeilen-CSVs würden
 also den gesamten Verbreitungs- und Coverage-Bestand des Index löschen und

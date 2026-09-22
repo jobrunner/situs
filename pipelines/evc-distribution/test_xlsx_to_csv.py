@@ -6,6 +6,7 @@ import unittest
 import zipfile
 
 from xlsx_to_csv import (
+    AllianceCodeCollisionError,
     CellValueError,
     EmptyResultError,
     HeaderError,
@@ -290,6 +291,41 @@ class ConvertTest(unittest.TestCase):
                 territories=("Austria Alps", "Austria Alps"),
             )
         self.assertIn("Austria Alps", str(ctx.exception))
+
+    def test_a_repeated_alliance_code_aborts_before_any_csv(self):
+        # Two rows on one alliance code do not merely duplicate a row: the
+        # coverage table's primary key and the distribution ingest's upsert
+        # both resolve on (syntaxon_id, area_code), so the published result
+        # carries the first row's cells wherever the second one is empty and
+        # the second one's everywhere else — neither source row.
+        tmp = tempfile.mkdtemp()
+        xlsx = os.path.join(tmp, "dist.xlsx")
+        make_workbook(xlsx, [
+            header("Albania", "Albania_coast"),
+            row((0, "AA01A"), (1, "PAP-01A"), (2, "N"), (3, "N A"), (4, "1")),
+            row((0, "AA01A"), (1, "PAP-01A"), (2, "N"), (3, "N A"), (5, "U")),
+        ])
+        out_dir = os.path.join(tmp, "out")
+        os.makedirs(out_dir)
+        with self.assertRaises(AllianceCodeCollisionError) as ctx:
+            convert(xlsx, out_dir)
+        self.assertIn("AA01A", str(ctx.exception))
+        self.assertEqual(sorted(os.listdir(out_dir)), [])
+
+    def test_the_repeated_code_is_recognized_after_stripping(self):
+        # 'JD02B ' and 'JD02B' are one code, as everywhere else in this
+        # converter — the collision must not hinge on a trailing blank.
+        tmp = tempfile.mkdtemp()
+        xlsx = os.path.join(tmp, "dist.xlsx")
+        make_workbook(xlsx, [
+            header("Albania"),
+            row((0, "JD02B "), (1, "AMM-02B"), (2, "N"), (3, "N A"), (4, "1")),
+            row((0, "JD02B"), (1, "AMM-02B"), (2, "N"), (3, "N A")),
+        ])
+        out_dir = os.path.join(tmp, "out")
+        os.makedirs(out_dir)
+        with self.assertRaises(AllianceCodeCollisionError):
+            convert(xlsx, out_dir)
 
     def test_a_sheet_without_a_single_alliance_aborts_before_any_csv(self):
         # build.sh clears out/ before the run and IngestSyntaxonDistribution
