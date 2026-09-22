@@ -167,6 +167,22 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
    derselben Transaktion laufen, ist ein fehlschlagender Ingest (etwa eine
    verbleibende Waise) atomar — der Index bleibt unverändert, statt leer
    dazustehen.
+
+   **Zwei Datenfehler lassen `IngestSyntaxa` absichtlich scheitern**, statt
+   zu warnen und weiterzulaufen:
+
+   - eine **Waise** — eine Zeile mit einem anderen Rang als `formation`, für
+     die weder Namensabgleich noch Geschwisterkonsens einen Elternteil
+     findet. Eine Kette, die an einer Stelle reißt, macht den
+     Orientierungsdienst genau dort wertlos.
+   - ein **doppelt beanspruchter EEA-Code** — zwei Zeilen in
+     `syntaxa_hierarchy.csv` mit demselben nichtleeren `eea_code`. Der
+     EEA-Code ist der Migrationsschlüssel von den alten IDs
+     (`GET /v1/syntaxon/PAP-01A`); ist er mehrdeutig, lässt sich nicht
+     entscheiden, welches Syntaxon die alte ID meint. Die Meldung nennt
+     **alle** kollidierenden Codes, damit die Quelle in einem Durchgang
+     reparierbar ist. Diese Prüfung läuft vor der Transaktion, der Index
+     wird also gar nicht erst angefasst.
 3. `IngestAreas` — liest **zwei** Dateien über denselben Code-Pfad, je einmal
    aufgerufen: `wgsrpd_areas.csv` (`pipelines/wgsrpd`, aus der gepinnten
    TDWG-Tabelle, Report-Zweig `AreaNames`) und `evc_territories.csv`
