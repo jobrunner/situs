@@ -224,6 +224,30 @@ func TestIngestSyntaxaBrichtBeiBaumelndemParentCodeAb(t *testing.T) {
 	}
 }
 
+// TestIngestSyntaxaBrichtBeiZyklusImParentCodeAb covers what
+// checkDanglingParents alone cannot see: CA01 and CA01A point at each other,
+// so both rows ARE written and both have a written parent — the plain
+// "was the parent written" check passes them cleanly, even though neither
+// ever reaches the formation C. checkCycles must catch this.
+func TestIngestSyntaxaBrichtBeiZyklusImParentCodeAb(t *testing.T) {
+	repo := newFakeRepo()
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy: "code,rank,name,author,parent_code,eea_code\n" +
+			"CA,class,Testklasse,Moor 1950,,TST\n" +
+			"CA01,order,Testordnung,Moor 1960,CA01A,TST-01\n" +
+			"CA01A,alliance,Testverband,Moor 1970,CA01,TST-01A\n",
+		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief mit einem Zyklus im parent_code durch")
+	}
+	if !strings.Contains(err.Error(), "CA01") || !strings.Contains(err.Error(), "CA01A") {
+		t.Errorf("Fehler nennt nicht beide Zyklus-Mitglieder CA01/CA01A: %v", err)
+	}
+}
+
 func TestIngestSyntaxaBrichtAbWennOrdnungAnUebersprungenerKlasseHaengt(t *testing.T) {
 	repo := newFakeRepo()
 	dir := writeSyntaxaDir(t, syntaxaFiles{

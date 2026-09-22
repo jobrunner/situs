@@ -39,9 +39,12 @@ type SyntaxaReport struct {
 	ParentsDerived int
 
 	// Orphans are rows that, after every step, remained without a parent
-	// and are not a formation. A non-empty value fails the ingest: a
-	// chain that breaks at one point makes the orientation service
-	// worthless at exactly that point.
+	// and are not a formation, PLUS any row caught in a parent_id cycle
+	// (checkCycles in syntaxa_cycles.go) — a cycle passes the plain
+	// "was the parent written" check, since every row in it was written.
+	// A non-empty value fails the ingest: a chain that breaks, or loops,
+	// at one point makes the orientation service worthless at exactly
+	// that point.
 	Orphans []string
 
 	// AmbiguousMatches, UnknownLinkTargets and SkippedRows are the only
@@ -134,6 +137,7 @@ func writeSyntaxa(ctx context.Context, tx output.IngestTx, dir string,
 	// row is written is exactly what Orphans exists to catch: it is not
 	// limited to the EEA-only remainder (Step 5, below).
 	checkDanglingParents(rows, written, rep)
+	checkCycles(rows, written, rep)
 
 	// Step 3: the EEA units that FloraVeg does not carry. Every other
 	// unit is already represented by its FloraVeg row — writing it a

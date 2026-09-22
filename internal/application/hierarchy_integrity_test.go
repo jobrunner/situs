@@ -76,6 +76,30 @@ func TestIngestSyntaxaHierarchieMitBaumelndemParentWirdAbgelehnt(t *testing.T) {
 	}
 }
 
+// TestIngestSyntaxaHierarchieMitZyklusWirdAbgelehnt is
+// TestIngestSyntaxaHierarchieMitBaumelndemParentWirdAbgelehnt's sibling for
+// Befund 3: CA01 and CA01A point at each other, so checkDanglingParents'
+// "was the parent written" check passes both — proving the cycle check must
+// live in the ingest, not just be provable against the fake repo.
+func TestIngestSyntaxaHierarchieMitZyklusWirdAbgelehnt(t *testing.T) {
+	repo := openIntegrityDB(t)
+	dir := writeSyntaxaDir(t, syntaxaFiles{
+		formations: minimalFormations,
+		hierarchy: "code,rank,name,author,parent_code,eea_code\n" +
+			"CA,class,Testklasse,Moor 1950,,TST\n" +
+			"CA01,order,Testordnung,Moor 1960,CA01A,TST-01\n" +
+			"CA01A,alliance,Testverband,Moor 1970,CA01,TST-01A\n",
+		eunis: "id,rank,name,parent_id\n", links: "typology_id,code,syntaxon_id\n",
+	})
+	_, err := IngestSyntaxa(context.Background(), repo, dir)
+	if err == nil {
+		t.Fatal("IngestSyntaxa lief mit einem Zyklus im parent_code durch")
+	}
+	if !strings.Contains(err.Error(), "CA01") || !strings.Contains(err.Error(), "CA01A") {
+		t.Errorf("Fehler nennt nicht beide Zyklus-Mitglieder CA01/CA01A: %v", err)
+	}
+}
+
 // openIntegrityDB opens a real, on-disk sqlite index the way `situs ingest`
 // would (schema applied, WAL journal) — shared by this file and
 // distribution_integrity_test.go, both of which need the actual adapter
