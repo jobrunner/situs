@@ -55,6 +55,40 @@ def cell(entry, column):
     return value.strip() if isinstance(value, str) else ""
 
 
+def version_problem(version):
+    """Return why `version` must not be stamped into source, or "" if it may.
+
+    The source column is data that ends up in the index and on the wire, so a
+    version that is not a version poisons every authored row at once. This is
+    measured, not hypothetical: the prod index of 2026-08-31 carries
+    `situs@0.2.0 # x-release-please-version`, because VERSION keeps a
+    release-please marker behind the number and the README said to pass
+    `$(cat VERSION)`. It went unnoticed for three weeks — nothing downstream
+    reads the source field closely enough to trip over it.
+
+    Rejecting rather than silently trimming is deliberate, and the same stance
+    the authored-file checks take: a caller who passes the whole VERSION line
+    has a broken command, and quietly repairing it leaves the command broken
+    for the next run and for everyone who copies it.
+    """
+    if not version:
+        return "--version is empty"
+    if version != version.strip() or any(c.isspace() for c in version):
+        return (
+            f"--version {version!r} carries whitespace. VERSION keeps a "
+            "release-please marker behind the number, so pass only the number: "
+            "--version \"$(cut -d' ' -f1 VERSION)\""
+        )
+    for bad in ("#", ",", '"'):
+        if bad in version:
+            return (
+                f"--version {version!r} contains {bad!r}, which is a comment or "
+                "a CSV separator, not part of a version. Pass only the number: "
+                "--version \"$(cut -d' ' -f1 VERSION)\""
+            )
+    return ""
+
+
 def rows_for(entry, version):
     """Expand one authored entry into its localization rows."""
     key = f"{TYPOLOGY}:{cell(entry, 'code')}"
@@ -136,6 +170,10 @@ def main(argv=None):
     p.add_argument("--index-names", default="",
                    help="TSV of code<TAB>name_en from the index, to catch drift")
     args = p.parse_args(argv)
+
+    if problem := version_problem(args.version):
+        print(f"merge: refusing to write: {problem}", file=sys.stderr)
+        return 1
 
     entries = read_authored(args.authored)
 

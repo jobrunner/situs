@@ -6,7 +6,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from merge import normalise, rows_for, validate  # noqa: E402
+from merge import normalise, rows_for, validate, version_problem  # noqa: E402
 
 
 def entry(code, name_en="English", name_de="Deutsch", vernacular=""):
@@ -109,3 +109,38 @@ class TestSchemaDrift(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestVersionStamp(unittest.TestCase):
+    """The source field is data. A version that is not a version poisons it.
+
+    This is not hypothetical: the prod index built on 2026-08-31 carries
+    `situs@0.2.0 # x-release-please-version` in `localization.source`, because
+    the README told the caller to pass `$(cat VERSION)` and that file keeps a
+    release-please marker behind the number. Nothing noticed for three weeks.
+    """
+
+    def test_a_bare_version_is_accepted(self):
+        self.assertEqual(version_problem("0.13.0"), "")
+
+    def test_the_release_please_marker_is_rejected(self):
+        problem = version_problem("0.13.0 # x-release-please-version")
+        self.assertIn("0.13.0 # x-release-please-version", problem)
+        # The message has to name the fix, not just the fault: the caller is a
+        # shell line in a README, and "invalid version" would send them reading
+        # merge.py instead of correcting the pipe.
+        self.assertIn("cut -d' ' -f1", problem)
+
+    def test_any_whitespace_is_rejected(self):
+        self.assertNotEqual(version_problem("0.13.0\n"), "")
+        self.assertNotEqual(version_problem("0 13"), "")
+
+    def test_an_empty_version_is_rejected(self):
+        self.assertNotEqual(version_problem(""), "")
+
+    # A comment marker without whitespace would still be a comment, and a
+    # comma would split the CSV column it is written into.
+    def test_a_structural_character_is_rejected(self):
+        for bad in ("0.13.0#x", "0.13.0,extra", '0.13.0"'):
+            with self.subTest(bad=bad):
+                self.assertNotEqual(version_problem(bad), "")
