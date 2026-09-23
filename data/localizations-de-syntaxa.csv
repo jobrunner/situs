@@ -1,0 +1,29 @@
+entity_type,entity_key,lang,field,value,source,provenance
+syntaxon,A,de,name,Vegetation der arktischen Zone,situs,situs
+syntaxon,B,de,name,Vegetation der borealen Zone,situs,situs
+syntaxon,C,de,name,Vegetation der nemoralen Waldzone,situs,situs
+syntaxon,D,de,name,Vegetation der Steppenzone,situs,situs
+syntaxon,E,de,name,Vegetation der kontinentalen Wüstenzone,situs,situs
+syntaxon,F,de,name,Vegetation der mediterranen Zone,situs,situs
+syntaxon,G,de,name,"Vegetation der Kanarischen Inseln, Madeiras und der Azoren",situs,situs
+syntaxon,H,de,name,Auenwälder und Auengebüsche,situs,situs
+syntaxon,I,de,name,Bruchwälder und Sumpfgebüsche,situs,situs
+syntaxon,J,de,name,Vegetation der Küstenfelsen und Dünen,situs,situs
+syntaxon,K,de,name,Vegetation der Felsspalten und Schutthalden,situs,situs
+syntaxon,K,de,vernacular,Fels- und Schuttvegetation,situs,situs
+syntaxon,L,de,name,Arktisch-alpine Vegetation schneereicher Standorte,situs,situs
+syntaxon,L,de,vernacular,Schneebodenvegetation,situs,situs
+syntaxon,M,de,name,Vegetation der Salz- und Brackgewässer und -sümpfe,situs,situs
+syntaxon,N,de,name,Aquatische Vegetation des Süßwassers,situs,situs
+syntaxon,O,de,name,"Vegetation der Quellen, Ufer und Süßwassersümpfe",situs,situs
+syntaxon,P,de,name,Vegetation der Hoch- und Niedermoore,situs,situs
+syntaxon,P,de,vernacular,Moorvegetation,situs,situs
+syntaxon,Q,de,name,Anthropogene Vegetation,situs,situs
+syntaxon,R,de,name,Epigäische Moos- und Flechtenvegetation,situs,situs
+syntaxon,S,de,name,Epilithische Moos- und Flechtenvegetation,situs,situs
+syntaxon,T,de,name,"Moos- und Flechtenvegetation auf Rinde, Holz und Blättern sowie an beschatteten Blöcken und basenreichen Felsfüßen",situs,situs
+syntaxon,U,de,name,Vegetation der Süßwasseralgen,situs,situs
+syntaxon,V,de,name,Vegetation der Bodenalgen,situs,situs
+syntaxon,W,de,name,Aerophytische Algenvegetation,situs,situs
+syntaxon,X,de,name,Vegetation der Schnee- und Eisalgen,situs,situs
+syntaxon,Y,de,name,Vegetation der Meeresalgen,situs,situs

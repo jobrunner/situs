@@ -123,6 +123,17 @@ type SyntaxonRef struct {
 	// on it.
 	LifeFormGroup string `json:"life_form_group,omitempty"`
 
+	// NameDE is the additive German overlay, present only with lang=de AND
+	// only where a translation exists. Only the 25 formations are translated
+	// (data/localizations-de-syntaxa.csv): an alliance inheriting its
+	// formation's label would be a wrong name, not a fallback, so the field
+	// simply stays absent there.
+	//
+	// Name keeps the identity, exactly as NameEN does on a habitat type: the
+	// scientific syntaxon name is what a client cites, and the German label is
+	// what it shows.
+	NameDE *GermanLabel `json:"name_de,omitempty"`
+
 	// Occurrence is "verified" or "uncertain" and is set only in an
 	// ?area=-filtered list. MISSING means no statement exists — the same
 	// three-valuedness as in_area on the species side. Without it the carried
@@ -492,10 +503,10 @@ type QueryService interface {
 	// is ErrNotFound; a parent_id pointing at a missing row is an inconsistent
 	// index and is reported as such, never bridged.
 	//
-	// lang is accepted and, for now, not consulted: syntaxa carry no German
-	// labels yet (design, section 10). It is in the signature so adding them
-	// later is not a contract change, and so the adapter's language(r) logic
-	// stays uniform across routes.
+	// lang=de overlays the German formation label on the unit itself, on every
+	// ancestor and on every child. The ancestors matter most: they are what a
+	// client prints as a breadcrumb, and an untranslated root would end a
+	// German trail in an English word.
 	Syntaxon(ctx context.Context, id, lang string) (SyntaxonDetail, error)
 	// SyntaxaByRank lists every syntaxon of rank, ordered by id, narrowed to
 	// one life-form group when lifeFormGroup is non-empty (the two filters act
@@ -510,7 +521,11 @@ type QueryService interface {
 	//
 	// filter, when active, keeps only syntaxa with a matching occurrence PLUS
 	// those the source says nothing about.
-	SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string, filter SyntaxonAreaFilter) ([]SyntaxonRef, error)
+	//
+	// lang=de overlays the German label. It costs ONE query for the whole list,
+	// not one per row — see Repository.LocalizationsByEntityType.
+	SyntaxaByRank(ctx context.Context, rank, lifeFormGroup, lang string,
+		filter SyntaxonAreaFilter) ([]SyntaxonRef, error)
 	// SpeciesSetHabitatTypes answers a whole field record at once: one entry per
 	// input concept id, in input order, duplicates included.
 	SpeciesSetHabitatTypes(ctx context.Context, conceptIDs []string, lang string, filter AreaFilter) ([]ConceptResolution, error)

@@ -24,6 +24,14 @@ const (
 	descriptionField = "description"
 )
 
+// The entity types the localization table keys on. They are the values a CSV
+// row carries, so they are shared between ingest and the read side rather than
+// spelled out at each call site.
+const (
+	entityHabitatType = "habitat_type"
+	entitySyntaxon    = "syntaxon"
+)
+
 // The provenance vocabulary of localization: an overlay is either the official
 // wording of a source, a curated one, or computed from a crosswalk.
 const (

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/csv"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -13,9 +14,8 @@ import (
 // rather than produced. These tests are the only thing standing between a
 // careless edit and a shipped index, because no pipeline validates them.
 
-// The two files are read through their own functions rather than one taking a
-// path: a literal path is what keeps this out of gosec's file-inclusion rule,
-// and there are exactly two of them.
+// Each file is read through its own function rather than one taking a path: a
+// literal path is what keeps this out of gosec's file-inclusion rule.
 func annexDescriptions(t *testing.T) [][]string {
 	t.Helper()
 	content, err := os.ReadFile("../../data/annex1_descriptions.csv")
@@ -87,6 +87,17 @@ func TestCuratedTextsFollowTheHouseStyle(t *testing.T) {
 			}
 		}
 	}
+
+	// The German formation names are situs' own wording too, so the same rules
+	// hold. The hyphen rule matters here: "Hoch- und Niedermoore" is a suspended
+	// compound and must not drift into " - ".
+	for _, record := range syntaxonLabels(t)[1:] {
+		for _, rule := range forbidden {
+			if strings.Contains(record[4], rule.needle) {
+				t.Errorf("syntaxon %s (%s) contains %s", record[1], record[3], rule.what)
+			}
+		}
+	}
 }
 
 // Both languages have to cover the same set of Annex I types. A text present
@@ -149,6 +160,106 @@ func TestCuratedOverlayRowsAreWellFormed(t *testing.T) {
 		case "official", "curated", "derived", "situs":
 		default:
 			t.Errorf("%s: provenance %q is outside the vocabulary", record[1], record[6])
+		}
+	}
+}
+
+func syntaxonLabels(t *testing.T) [][]string {
+	t.Helper()
+	content, err := os.ReadFile("../../data/localizations-de-syntaxa.csv")
+	if err != nil {
+		t.Fatalf("reading data/localizations-de-syntaxa.csv: %v", err)
+	}
+	return parseCurated(t, "data/localizations-de-syntaxa.csv", content, 7)
+}
+
+func formationLetters(t *testing.T) []string {
+	t.Helper()
+	content, err := os.ReadFile("../../data/syntaxa_formations.csv")
+	if err != nil {
+		t.Fatalf("reading data/syntaxa_formations.csv: %v", err)
+	}
+	records := parseCurated(t, "data/syntaxa_formations.csv", content, 3)
+	out := make([]string, 0, len(records)-1)
+	for _, record := range records[1:] {
+		out = append(out, record[0])
+	}
+	return out
+}
+
+// The two curated syntaxa files have to agree. A formation without a German
+// name would be served in English under ?lang=de and look like a hierarchy
+// gap, and a label for a letter no formation carries is a row the index
+// silently never reads.
+func TestCuratedSyntaxonLabelsCoverEveryFormation(t *testing.T) {
+	named := map[string]int{}
+	for _, record := range syntaxonLabels(t)[1:] {
+		if record[3] == "name" {
+			named[record[1]]++
+		}
+	}
+
+	letters := formationLetters(t)
+	if len(letters) == 0 {
+		t.Fatal("no formations shipped at all")
+	}
+	for _, letter := range letters {
+		switch named[letter] {
+		case 1:
+		case 0:
+			t.Errorf("formation %s has no German name", letter)
+		default:
+			// Two names for one formation would make which one is served
+			// depend on the source column, which nothing here varies.
+			t.Errorf("formation %s carries %d German names, want exactly 1", letter, named[letter])
+		}
+	}
+	for letter := range named {
+		if !slices.Contains(letters, letter) {
+			t.Errorf("a German name is shipped for %q, which is not a formation", letter)
+		}
+	}
+}
+
+// A vernacular without a name would be an established German term hanging off
+// nothing: preferredLabel only ever pairs it with the winning name, so it
+// would never be served and the translation would be silently lost.
+func TestCuratedSyntaxonVernacularsHangOffAName(t *testing.T) {
+	names, vernaculars := map[string]bool{}, []string{}
+	for _, record := range syntaxonLabels(t)[1:] {
+		switch record[3] {
+		case "name":
+			names[record[1]] = true
+		case "vernacular":
+			vernaculars = append(vernaculars, record[1])
+		default:
+			t.Errorf("%s: field %q, want name or vernacular", record[1], record[3])
+		}
+	}
+	for _, key := range vernaculars {
+		if !names[key] {
+			t.Errorf("%s has a vernacular but no name", key)
+		}
+	}
+}
+
+// The rows are what the localization table keys on; a typo in any of these
+// four columns writes a row no read path ever finds.
+func TestCuratedSyntaxonLabelRowsAreWellFormed(t *testing.T) {
+	for _, record := range syntaxonLabels(t)[1:] {
+		if record[0] != "syntaxon" {
+			t.Errorf("%s: entity_type %q, want syntaxon", record[1], record[0])
+		}
+		if record[2] != "de" {
+			t.Errorf("%s: lang %q, want de", record[1], record[2])
+		}
+		if strings.TrimSpace(record[4]) == "" {
+			t.Errorf("%s: empty %s", record[1], record[3])
+		}
+		// situs wrote these and nothing outside situs vouches for them. Any
+		// stronger claim here would outrank an official label that arrives later.
+		if record[5] != "situs" || record[6] != "situs" {
+			t.Errorf("%s: source/provenance = %q/%q, want situs/situs", record[1], record[5], record[6])
 		}
 	}
 }

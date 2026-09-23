@@ -187,6 +187,14 @@ type Repository interface {
 	// vernacular belong to the same answer, and filtering here cost a second
 	// query per habitat type.
 	Localization(ctx context.Context, entityType, entityKey, lang string) ([]domain.Localization, error)
+	// LocalizationsByEntityType returns every localization of one entity type
+	// in one language, bucketed by entity key, in the same total order
+	// Localization promises. It is what keeps a LIST route from issuing one
+	// lookup per row: GET /v1/syntaxa?lang=de lists 1326 alliances above at
+	// most 25 translated formations. An entity type with no rows is an empty
+	// map, not an error.
+	LocalizationsByEntityType(ctx context.Context, entityType, lang string) (
+		map[string][]domain.Localization, error)
 	// AreasForConcepts maps each concept id to the area codes it occurs in,
 	// within one scheme. A concept absent from the result has no distribution
 	// data at all — that is "unknown", not "does not occur".

@@ -1120,6 +1120,21 @@ func (r *fakeRepo) CrosswalksTo(_ context.Context, typology domain.TypologyID) (
 	return out, nil
 }
 
+func (r *fakeRepo) LocalizationsByEntityType(_ context.Context, entityType, lang string) (
+	map[string][]domain.Localization, error,
+) {
+	if r.localizationErr != nil {
+		return nil, r.localizationErr
+	}
+	out := map[string][]domain.Localization{}
+	for _, l := range r.localizations {
+		if l.EntityType == entityType && l.Lang == lang {
+			out[l.EntityKey] = append(out[l.EntityKey], l)
+		}
+	}
+	return out, nil
+}
+
 func (r *fakeRepo) Localization(_ context.Context, entityType, entityKey, lang string) ([]domain.Localization, error) {
 	r.localizationCalls++
 	if r.localizationErr != nil {

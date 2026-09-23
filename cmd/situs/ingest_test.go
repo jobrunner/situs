@@ -986,6 +986,8 @@ func TestIngestCommandReadsBothLocalizationFiles(t *testing.T) {
 		header+"habitat_type,eunis@2021:R22,de,name,Mähwiese,situs@test,situs\n")
 	writeIngestCSV(t, dir, "localizations_descriptions.csv",
 		header+"habitat_type,eunis@2021:R22,de,description,Wiesen der Tieflagen.,situs@test,situs\n")
+	writeIngestCSV(t, dir, "localizations_syntaxa.csv",
+		header+"syntaxon,C,de,name,Vegetation der nemoralen Waldzone,situs,situs\n")
 	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
 
 	root := newRootCmd()
@@ -996,8 +998,47 @@ func TestIngestCommandReadsBothLocalizationFiles(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("executing ingest: %v", err)
 	}
-	if !strings.Contains(out.String(), `"Localizations": 2`) {
-		t.Errorf("output = %q, want both localization files counted", out.String())
+	if !strings.Contains(out.String(), `"Localizations": 3`) {
+		t.Errorf("output = %q, want all three localization files counted", out.String())
+	}
+}
+
+// The German formation labels are situs' own translations and have to survive
+// the whole command, not just the CSV reader: what the index answers here is
+// what GET /v1/syntaxa?lang=de serves.
+func TestIngestCommandStoresTheGermanSyntaxonLabels(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t)
+	writeIngestCSV(t, dir, "localizations_syntaxa.csv",
+		"entity_type,entity_key,lang,field,value,source,provenance\n"+
+			"syntaxon,C,de,name,Vegetation der nemoralen Waldzone,situs,situs\n"+
+			"syntaxon,C,de,vernacular,Sommergruene Laubwaldzone,situs,situs\n")
+	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
+
+	root := newRootCmd()
+	root.SetOut(&bytes.Buffer{})
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", dbPath})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("executing ingest: %v", err)
+	}
+
+	db, err := sqlite.OpenReadOnly(t.Context(), dbPath)
+	if err != nil {
+		t.Fatalf("OpenReadOnly: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	rows, err := db.LocalizationsByEntityType(t.Context(), "syntaxon", "de")
+	if err != nil {
+		t.Fatalf("LocalizationsByEntityType: %v", err)
+	}
+	if len(rows["C"]) != 2 {
+		t.Fatalf("formation C carries %d localization rows, want 2", len(rows["C"]))
+	}
+	for _, l := range rows["C"] {
+		if l.Provenance != "situs" {
+			t.Errorf("%s row provenance = %q, want situs", l.Field, l.Provenance)
+		}
 	}
 }
 

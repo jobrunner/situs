@@ -758,3 +758,66 @@ zeigt `R22 Low and medium altitude hay meadow` → `Glatthaferwiese` als
 Illustration. Streng angewandt entfällt das Vernakular dort: `R22` umfasst auch
 die montanen Goldhaferwiesen, „Glatthaferwiese" ist also **enger** als der Typ.
 Die Zeile trägt nur `name`.
+
+## Deutsche Namen der Syntaxa-Formationen (von situs verfasst)
+
+Gemessen am 2026-09-23 gegen die ausgelieferte Datei, nicht gegen einen
+vollen Lauf — die Datei ist die Quelle, und was sie trägt, ist prüfbar, ohne
+den Index zu bauen. `cmd/situs/curated_test.go` misst dasselbe bei jedem
+`make verify` nach.
+
+| Kennzahl | Wert | Woher |
+|---|---|---|
+| Formationen in `data/syntaxa_formations.csv` | **25** | Zeilen minus Kopfzeile |
+| Davon mit deutschem Namen | **25** | `field=name` in `data/localizations-de-syntaxa.csv` |
+| Ohne deutschen Namen | **0** | Differenz, als Test festgehalten |
+| Gebräuchliche Ausdrücke (`vernacular`) | **3** | `K`, `L`, `P` |
+| Zeilen insgesamt | **28** | die Datei |
+| Übersetzte Klassen / Ordnungen / Verbände | **0** | Entscheidung, kein Rückstand |
+
+```sh
+python3 - <<'PY'
+import csv
+labels = list(csv.DictReader(open("data/localizations-de-syntaxa.csv")))
+formations = list(csv.DictReader(open("data/syntaxa_formations.csv")))
+named = {r["entity_key"] for r in labels if r["field"] == "name"}
+print(len(formations), len(named), sorted({r["letter"] for r in formations} - named))
+PY
+```
+
+Nach einem vollen Ingest liegen diese 28 Zeilen in `localization` mit
+`entity_type = syntaxon` und sind über `GET /v1/syntaxa?lang=de` sowie
+`GET /v1/syntaxon/{id}?lang=de` sichtbar:
+
+```sh
+sqlite3 situs.sqlite \
+  "SELECT COUNT(*) FROM localization WHERE entity_type='syntaxon' AND lang='de';"
+```
+
+### Warum nur die Formationen
+
+Die 25 Formationen sind die Einstiegsebene der Navigation und die einzige,
+deren Namen beschreibende Phrasen sind („Vegetation of the steppe zone") und
+keine nomenklatorischen Namen. Ab der Klasse sind es lateinische Namen mit
+Autorzitat (*Festuco-Brometea* Br.-Bl. et Tx. ex Soó 1947) — die **sind** der
+Name, in jeder Sprache, und eine deutsche Erfindung daneben wäre keine
+Übersetzung, sondern eine zweite Nomenklatur.
+
+Deshalb gibt es auch keine Vererbung nach unten: ein Verband, der das Label
+seiner Formation trüge, hieße schlicht falsch. `name_de` fehlt an ihm, und
+das Fehlen ist die richtige Aussage.
+
+### Woran sich die Wortwahl orientiert
+
+An der gebräuchlichen deutschen vegetationskundlichen Terminologie
+(Oberdorfer, Pott, Ellenberg): Auen- und Bruchwälder, Fels- und
+Schuttvegetation, Schneeböden, Hoch- und Niedermoore. `provenance = situs`
+hält fest, dass situs sie selbst verfasst hat: die schwächste Behauptung im
+Vokabular, unterhalb von `official`, `curated` und `derived`. Träfe später
+eine amtliche oder kuratierte deutsche Fassung ein, gewänne sie ohne
+Codeänderung — und `situs` darf nie eine Ableitung anstoßen.
+
+Ein `vernacular` steht nur dort, wo ein etablierter deutscher Ausdruck
+**denselben Umfang** hat wie die Formation. Das trifft bei dreien zu und
+bewusst nicht bei `H`: „Auenvegetation" schließt die krautige Ufervegetation
+ein, die Formation H aber nur Wälder und Gebüsche.
