@@ -28,10 +28,32 @@ Dateien vor jedem Lauf, damit keine Ausgabe von gestern stehen bleibt und
 ungeprüft mit ingestiert wird. Ein Pipeline- oder `data/`-Verzeichnis als Ziel
 lehnt es ab, weil es dort Quelle auf Quelle kopieren würde.
 
-### Warum zwei Dateien in `data/` versioniert sind
+### „Pflicht" und „optional" meinen zwei verschiedene Grenzen
 
-`data/annex1_descriptions.csv` und `data/localizations_descriptions.csv`
-werden von **keiner** Pipeline erzeugt. Sie sind mit KI-Unterstützung verfasst
+Das ist die eine Stelle, an der sich beides zu widersprechen scheint, deshalb
+hier ausdrücklich:
+
+- **Pflichtquelle des Sammelskripts** heißt: die Datei muss im Repo liegen,
+  sonst bricht `make ingest-input` ab und nennt sie. Das gilt für alle
+  kuratierten Dateien aus `data/` — sie sind versioniert, ihr Fehlen ist ein
+  kaputter Checkout, keine Konfiguration.
+- **Optional am Ingest-Rand** heißt: fehlt die Datei im `--csv-dir`, ist das
+  für `situs ingest` kein Fehler, sondern „keine Zeilen dieser Art" — geloggt
+  auf `info`, im Report als 0 gezählt.
+
+Beides zugleich ist kein Widerspruch, sondern die Arbeitsteilung: **das Skript
+ist der Wächter, nicht der Ingest.** Der Ingest bleibt absichtlich duldsam,
+damit ein Teilindex für einen Test oder eine Fehlersuche baubar bleibt; wer
+`situs ingest --csv-dir` am Sammelskript vorbei aufruft, umgeht damit den
+Wächter und muss die Zeilenzähler im Report selbst lesen. Dieselbe Teilung
+gilt seit jeher für `localizations.csv`, ohne die lautlos ein Index ganz ohne
+deutsche Habitattyp-Labels entstünde — die 567 Zeilen wiegen schwerer als die
+28 der Formationen, und keine der beiden ist am Ingest-Rand erzwungen.
+
+### Warum drei Dateien in `data/` versioniert sind
+
+`data/annex1_descriptions.csv`, `data/localizations_descriptions.csv` und
+`data/localizations-de-syntaxa.csv` werden von **keiner** Pipeline erzeugt. Sie sind mit KI-Unterstützung verfasst
 und damit **nicht reproduzierbar**: ein erneuter Lauf ergäbe andere Texte.
 Deshalb sind sie versioniert statt erzeugt, und deshalb liefert ein Ingest
 aus einem gegebenen Repo-Stand immer denselben Index, ohne dass jemand ein
@@ -47,8 +69,10 @@ Liest die von `pipelines/eunis/xlsx_to_csv.py` erzeugten CSVs
 `wgsrpd_areas.csv` von `pipelines/wgsrpd`, `evc_territories.csv` und
 `syntaxon_distribution.csv`/`syntaxon_distribution_coverage.csv` von
 `pipelines/evc-distribution`, `habitat_descriptions.csv` von
-`pipelines/floraveg-factsheets`, `localizations_descriptions.csv` (aus
-`data/`) und die drei Zeigerwert-CSVs
+`pipelines/floraveg-factsheets`, `localizations_descriptions.csv` und
+`localizations_syntaxa.csv` (beide aus `data/` und dort Pflichtquellen des
+Sammelskripts, hier am Ingest-Rand duldsam behandelt — siehe oben) und die
+drei Zeigerwert-CSVs
 (`eive_traits.csv`, `tichy_traits.csv`, `midolo_traits.csv` — erzeugt von
 `pipelines/{eive,tichy,midolo}`) — alle Pipelines schreiben in denselben
 `--csv-dir` — aus `--csv-dir` und schreibt in die SQLite-Datei `--db`. Die
@@ -111,9 +135,16 @@ mit den von situs verfassten EUNIS-Namen (`data/localizations-de-situs.csv`)
 zu **einer** `localizations.csv` zusammen (siehe
 `../../pipelines/eurlex/README.md`).
 
+`localizations_syntaxa.csv` kommt unverändert aus
+`data/localizations-de-syntaxa.csv` und trägt die deutschen Namen der 25
+Syntaxa-Formationen (`entity_type: syntaxon`, `entity_key` der
+Formationsbuchstabe, `provenance: situs`). Sie geht durch denselben
+Code-Pfad wie die anderen beiden und wird in dieselbe Zahl gezählt.
+
 Zwei Report-Felder betreffen genau das:
 
-- `Localizations` — Anzahl der aus `localizations.csv` gelesenen Overlay-Zeilen.
+- `Localizations` — Anzahl der aus allen drei Localization-Dateien gelesenen
+  Overlay-Zeilen.
 - `DerivedLabels` — Anzahl der daraus über Qualifier `=` **abgeleiteten**
   deutschen Labels (`provenance: derived`). Abgeleitet wird ausschließlich
   über `=`; `<`, `>`, `#` und `≈` sind zu unscharf, um einen Namen zu leihen,
@@ -122,9 +153,10 @@ Zwei Report-Felder betreffen genau das:
 Am Referenzlauf vom 2026-09-16 gemessen: `Localizations: 567`
 (233 amtlich + 334 von situs verfasst), `DerivedLabels: 29`. Seitdem sind die
 EUNIS-Level 1 und 2 dazugekommen (49 Typen, die nie einen `=`-Crosswalk
-tragen): `merge.py` erzeugt am 2026-09-21 **394** verfasste Zeilen, der nächste
-volle Lauf misst also `Localizations: 627`. Siehe
-`../reference/measured-index.md`.
+tragen): `merge.py` erzeugt am 2026-09-21 **394** verfasste Zeilen. Dazu kommen
+seit 2026-09-23 die **28** Zeilen aus `data/localizations-de-syntaxa.csv` (25
+Formationsnamen plus 3 gebräuchliche Ausdrücke). Der nächste volle Lauf misst
+also `Localizations: 655`. Siehe `../reference/measured-index.md`.
 
 ## Der fertige Index ist eine Datei
 
@@ -352,10 +384,16 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
    Konzepte, gelesen aus `eive_traits.csv`, `tichy_traits.csv` und
    `midolo_traits.csv` im `--csv-dir`, ebenfalls über hostus-Namensauflösung.
 9. `IngestLocalizations` und `DeriveGermanLabels` — der Label-Overlay. Gelesen
-   werden **zwei** Dateien über denselben Code-Pfad: `localizations.csv` (die
-   Labels, aus `pipelines/eurlex`) und `localizations_descriptions.csv` (die
-   deutschen Beschreibungen, gepflegt in `data/`). Beide sind optional, ihre
-   Zeilen werden im Report zusammengezählt.
+   werden **drei** Dateien über denselben Code-Pfad: `localizations.csv` (die
+   Habitattyp-Labels, aus `pipelines/eurlex`), `localizations_descriptions.csv`
+   (die deutschen Beschreibungen) und `localizations_syntaxa.csv` (die
+   deutschen Namen der 25 Formationen) — die letzten beiden gepflegt in
+   `data/`. Alle drei sind **am Ingest-Rand** optional (fehlt eine, sind das 0
+   Zeilen, kein Fehler); die beiden aus `data/` sind zugleich Pflichtquellen
+   des Sammelskripts, siehe oben. Ihre Zeilen werden im Report
+   zusammengezählt. Abgeleitet (`DeriveGermanLabels`) wird nur auf der
+   Habitattyp-Seite: die Syntaxa-Labels sind von situs verfasst und dürfen
+   als `provenance: situs` nie eine Ableitung anstoßen.
 
 Fehlt `eurosl_crosswalk.csv`, bricht `ingest` beim **sechsten** Schritt
 (`IngestSpeciesRoles`) mit einem Fehler ab — aber die **ersten fünf**

@@ -391,3 +391,24 @@ func TestSyntaxaJSONZeigtOccurrenceUndLaesstEsWeg(t *testing.T) {
 		t.Error("RA01A traegt occurrence, obwohl keine Aussage vorliegt")
 	}
 }
+
+// The list route has to forward the negotiated language or the German formation labels the
+// index carries never reach the wire, and the client sees an English root.
+func TestSyntaxa_ReichtLangAnDenPortWeiter(t *testing.T) {
+	for _, tc := range []struct{ url, want string }{
+		{"/v1/syntaxa?lang=de", "de"},
+		{"/v1/syntaxa", "en"},
+	} {
+		q := seededQueryService()
+		srv := newTestServer(t, q)
+		rec := httptest.NewRecorder()
+		srv.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.url, nil))
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200", tc.url, rec.Code)
+		}
+		if q.gotSyntaxaLang != tc.want {
+			t.Errorf("%s: lang am Port = %q, erwartet %q", tc.url, q.gotSyntaxaLang, tc.want)
+		}
+	}
+}

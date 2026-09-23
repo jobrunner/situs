@@ -405,6 +405,18 @@ Formation, zu der ein Syntaxon gehört (feste Wertemenge, s.o.). Ein
 unbekannter Wert bei beiden Parametern ist `INVALID_QUERY`, und die Meldung
 nennt die erlaubten Werte. Die Antwort trägt `SyntaxonRef`.
 
+`?lang=de` legt `name_de` additiv auf jede Referenz — Wert, Provenienz, Quelle
+und, wo es einen gibt, den gebräuchlichen deutschen Ausdruck (`vernacular`).
+`name` bleibt dabei die Identität und trägt weiter den wissenschaftlichen
+Namen. Übersetzt sind die **25 Formationen**; Klassen, Ordnungen und Verbände
+tragen `name_de` nicht. Das ist kein Übersetzungsrückstand, sondern eine
+Entscheidung: ein Verband, der das Label seiner Formation erbte, hieße falsch,
+statt hilfsweise zu heißen — dieselbe Haltung wie bei den abgeleiteten
+deutschen Habitattyp-Namen, die nur aus `=` entstehen. Die Namen stammen von
+situs selbst (`data/localizations-de-syntaxa.csv`), deshalb `provenance:
+situs` — die schwächste Behauptung im Vokabular, und die einzige, die nie eine
+Ableitung anstoßen darf.
+
 `?area=` filtert zusätzlich auf Vorkommen in einem Territorium des Schemas
 `evc_territory` (Liste: `GET /v1/areas?scheme=evc_territory`). `?include=`
 steuert dabei, welche Vorkommens-Werte als Treffer zählen — eine kommagetrennte
@@ -435,9 +447,11 @@ ohne Ahnen und ein Verband ohne Kinder sind der Normalfall, kein Fehler. Eine
 unbekannte oder leere `{id}` ist `NOT_FOUND`, nie `INVALID_QUERY`: ein
 Pfadsegment ist keine Query. Eine baumelnde `parent_id` — der Index verweist
 auf eine Zeile, die es nicht gibt — ist `INTERNAL_ERROR`, kein `404`: das ist
-ein Indexdefekt, nicht eine unbekannte Anfrage. `?lang=` wird angenommen, aber
-deutsche Syntaxa-Namen sind eine eigene Runde — bis dahin antworten die Namen
-englisch.
+ein Indexdefekt, nicht eine unbekannte Anfrage. `?lang=de` legt `name_de` auf
+die Einheit selbst, auf **jeden Ahnen** und auf **jedes Kind**. Die Ahnen sind
+der Grund dafür: sie sind die Brotkrumenzeile, und eine deutsche Zeile, die in
+einer englischen Wurzel endet, wäre halb übersetzt. Das kostet eine einzige
+zusätzliche Abfrage für die ganze Antwort, nicht eine je Referenz.
 
 `SyntaxonDetail` trägt außerdem `distribution` — die Verbreitungsaussage der
 Quelle (Preislerová et al., Schema `evc_territory`) mit sortierten

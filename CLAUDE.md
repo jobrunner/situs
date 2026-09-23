@@ -63,8 +63,13 @@ names in `data/localizations-de-situs.csv`; the 2026-09-16 reference run
 measured `Localizations: 567` and `DerivedLabels: 29`. That file covers EUNIS
 **levels 1 to 3**: levels 1 and 2 carry no `=`-crosswalk at all (measured: none
 of the 49 codes), so no derivation ever reaches them. Since 2026-09-21 it holds
-290 authored types / 394 rows — the next full ingest measures
-`Localizations: 627`.
+290 authored types / 394 rows. Since 2026-09-23 the **25 syntaxa formations**
+carry German names too (`data/localizations-de-syntaxa.csv`, 28 rows: 25 names
+plus 3 `vernacular`s, all `provenance: situs`), served as `name_de` on every
+`SyntaxonRef` under `?lang=de`. Deeper ranks are deliberately NOT translated:
+from class down the names are nomenclatural Latin with an author citation, and
+an alliance inheriting its formation's label would simply be named wrong. The
+next full ingest measures `Localizations: 655`.
 
 **The index really does carry mixed backbones.** That run measured
 `concept_backbones: ["cdm", "eurosl", "wcvp"]` — 8 of 3323 concepts are
@@ -191,8 +196,10 @@ pipelines/wgsrpd/   # TDWG tblLevel3.txt -> wgsrpd_areas.csv (python3, stdlib on
 pipelines/floraveg-factsheets/ # EUNIS-ESy factsheet PDF -> habitat_descriptions.csv
                     # (python3 stdlib + poppler's pdftohtml, an external CLI tool)
 data/               # curated, versioned (not pipeline-generated): localizations-de-situs.csv,
-                    # annex1_descriptions.csv, localizations_descriptions.csv, and
+                    # annex1_descriptions.csv, localizations_descriptions.csv,
                     # syntaxa_formations.csv (the formation-level primary source, 25 rows A-Y)
+                    # and localizations-de-syntaxa.csv (their German names, read
+                    # straight by the ingest as localizations_syntaxa.csv)
 ```
 
 Boundaries are enforced by depguard in the linter (`make arch`), not convention.
@@ -300,6 +307,14 @@ remain stdlib-only.
   bei ISO↔WGSRPD. Jede Abfrage, die Gebiete führt, ist
   schemaparametrisiert und liest die Abdeckung aus der Tabelle des
   jeweiligen Schemas.
+- **Syntaxa-Labels gibt es nur auf Formationsebene, und sie werden nie
+  vererbt.** `SyntaxonRef.name_de` ist mit `?lang=de` auf den 25 Formationen
+  gesetzt und fehlt auf Klasse, Ordnung und Verband. Ein Fallback auf das
+  Label der Formation wäre kein Notbehelf, sondern ein falscher Name; das
+  Fehlen ist die richtige Aussage. `name` bleibt in jedem Fall die Identität.
+  Die Label-Abfrage einer Liste ist **eine** Abfrage
+  (`LocalizationsByEntityType`), nicht eine je Zeile — 1326 Verbände über 25
+  Labels.
 - **`children` and `ancestors` are always in the JSON, even empty — never
   `omitempty`, never `nil`.** A formation with no ancestors and an alliance
   with no children are the normal case for `GET /v1/syntaxon/{id}`, not an

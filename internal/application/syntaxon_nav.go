@@ -23,10 +23,10 @@ import (
 // Syntaxon answers one navigation step: the unit itself, the way up and the way
 // down.
 //
-// The lang parameter is accepted and deliberately not consulted — syntaxa carry
-// no German labels yet (design, section 10) — and is therefore named "_" here
-// rather than pretending to be read.
-func (q *QueryService) Syntaxon(ctx context.Context, id string, _ string) (input.SyntaxonDetail, error) {
+// lang=de overlays the German formation label on all three. One lookup covers
+// the whole answer rather than one per ref: the labels of every syntaxon in one
+// language are at most 25 rows.
+func (q *QueryService) Syntaxon(ctx context.Context, id string, lang string) (input.SyntaxonDetail, error) {
 	self, id, err := q.syntaxonByIDOrEEACode(ctx, id)
 	if err != nil {
 		return input.SyntaxonDetail{}, err
@@ -57,13 +57,54 @@ func (q *QueryService) Syntaxon(ctx context.Context, id string, _ string) (input
 
 	ref := syntaxonRef(self)
 	ref.LifeFormGroup = lifeFormGroupOf(self, ancestors)
-	return input.SyntaxonDetail{
+	detail := input.SyntaxonDetail{
 		SyntaxonRef:            ref,
 		Ancestors:              syntaxonRefs(ancestors),
 		Children:               syntaxonRefs(children),
 		DirectHabitatTypeCount: count,
 		Distribution:           dist,
-	}, nil
+	}
+	labels, err := q.syntaxonLabels(ctx, lang)
+	if err != nil {
+		return input.SyntaxonDetail{}, err
+	}
+	overlaySyntaxonLabel(&detail.SyntaxonRef, labels)
+	overlaySyntaxonLabels(detail.Ancestors, labels)
+	overlaySyntaxonLabels(detail.Children, labels)
+	return detail, nil
+}
+
+// syntaxonLabels loads the German syntaxon labels, or nothing at all when no
+// German was asked for. A nil map is the "no overlay" case and every consumer
+// treats it as such, so there is no second code path for the untranslated
+// answer.
+func (q *QueryService) syntaxonLabels(ctx context.Context, lang string) (
+	map[string][]domain.Localization, error,
+) {
+	if lang != deLang {
+		return nil, nil
+	}
+	labels, err := q.repo.LocalizationsByEntityType(ctx, entitySyntaxon, deLang)
+	if err != nil {
+		return nil, fmt.Errorf("fetching the German syntaxon labels: %w", err)
+	}
+	return labels, nil
+}
+
+// overlaySyntaxonLabels adds the German label to every ref that has one. A ref
+// without a translation keeps NameDE nil: only the 25 formations are authored,
+// and letting an alliance borrow its formation's label would put a wrong name
+// on the wire under the guise of a fallback.
+func overlaySyntaxonLabels(refs []input.SyntaxonRef, labels map[string][]domain.Localization) {
+	for i := range refs {
+		overlaySyntaxonLabel(&refs[i], labels)
+	}
+}
+
+func overlaySyntaxonLabel(ref *input.SyntaxonRef, labels map[string][]domain.Localization) {
+	if rows, ok := labels[ref.ID]; ok {
+		ref.NameDE = preferredLabel(rows)
+	}
 }
 
 // syntaxonByIDOrEEACode resolves id as a syntaxon id, and falls back to a
@@ -95,7 +136,7 @@ func (q *QueryService) syntaxonByIDOrEEACode(ctx context.Context, id string) (do
 
 // SyntaxaByRank lists one rank's syntaxa, optionally narrowed to a life-form
 // group, and optionally filtered to one distribution area.
-func (q *QueryService) SyntaxaByRank(ctx context.Context, rank, lifeFormGroup string,
+func (q *QueryService) SyntaxaByRank(ctx context.Context, rank, lifeFormGroup, lang string,
 	filter input.SyntaxonAreaFilter) ([]input.SyntaxonRef, error) {
 	if err := q.requireRank(ctx, rank); err != nil {
 		return nil, err
@@ -105,6 +146,11 @@ func (q *QueryService) SyntaxaByRank(ctx context.Context, rank, lifeFormGroup st
 		return nil, fmt.Errorf("fetching syntaxa of rank %q: %w", rank, err)
 	}
 	refs := syntaxonRefs(rows)
+	labels, err := q.syntaxonLabels(ctx, lang)
+	if err != nil {
+		return nil, err
+	}
+	overlaySyntaxonLabels(refs, labels)
 	if !filter.Active() {
 		return refs, nil
 	}

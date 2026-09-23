@@ -128,7 +128,7 @@ func TestSyntaxaByRankMitGebietBehaeltDieUnbeurteilbaren(t *testing.T) {
 	seedAreaFixture(repo)
 	q := NewQueryService(repo)
 
-	got, err := q.SyntaxaByRank(context.Background(), domain.SyntaxonRankAlliance, "",
+	got, err := q.SyntaxaByRank(context.Background(), domain.SyntaxonRankAlliance, "", "",
 		input.SyntaxonAreaFilter{Code: "austria-alps", Include: []string{domain.OccurrenceVerified}})
 	if err != nil {
 		t.Fatalf("SyntaxaByRank: %v", err)
@@ -155,7 +155,7 @@ func TestSyntaxaByRankMitIncludeUncertain(t *testing.T) {
 	seedAreaFixture(repo)
 	q := NewQueryService(repo)
 
-	got, err := q.SyntaxaByRank(context.Background(), domain.SyntaxonRankAlliance, "",
+	got, err := q.SyntaxaByRank(context.Background(), domain.SyntaxonRankAlliance, "", "",
 		input.SyntaxonAreaFilter{Code: "austria-alps", Include: []string{domain.OccurrenceUncertain}})
 	if err != nil {
 		t.Fatalf("SyntaxaByRank: %v", err)
@@ -175,7 +175,7 @@ func TestSyntaxaByRankMitBeidenAuspraegungen(t *testing.T) {
 	seedAreaFixture(repo)
 	q := NewQueryService(repo)
 
-	got, err := q.SyntaxaByRank(context.Background(), domain.SyntaxonRankAlliance, "",
+	got, err := q.SyntaxaByRank(context.Background(), domain.SyntaxonRankAlliance, "", "",
 		input.SyntaxonAreaFilter{Code: "austria-alps",
 			Include: []string{domain.OccurrenceVerified, domain.OccurrenceUncertain}})
 	if err != nil {
@@ -191,7 +191,7 @@ func TestSyntaxaByRankOhneFilterMarkiertNichts(t *testing.T) {
 	seedAreaFixture(repo)
 	q := NewQueryService(repo)
 
-	got, err := q.SyntaxaByRank(context.Background(), domain.SyntaxonRankAlliance, "",
+	got, err := q.SyntaxaByRank(context.Background(), domain.SyntaxonRankAlliance, "", "",
 		input.SyntaxonAreaFilter{})
 	if err != nil {
 		t.Fatalf("SyntaxaByRank: %v", err)
@@ -211,7 +211,7 @@ func TestSyntaxaByRankMitUnbekanntemGebietscode(t *testing.T) {
 	seedAreaFixture(repo)
 	q := NewQueryService(repo)
 
-	_, err := q.SyntaxaByRank(context.Background(), domain.SyntaxonRankAlliance, "",
+	_, err := q.SyntaxaByRank(context.Background(), domain.SyntaxonRankAlliance, "", "",
 		input.SyntaxonAreaFilter{Code: "gibtsnicht", Include: []string{domain.OccurrenceVerified}})
 	if !errors.Is(err, input.ErrUnknownArea) {
 		t.Errorf("Fehler = %v, erwartet ErrUnknownArea", err)
@@ -228,7 +228,7 @@ func TestSyntaxaByRankMeldetFehlerDerGebietsabfragen(t *testing.T) {
 	seedAreaFixture(knownAreaCodesBroken)
 	knownAreaCodesBroken.areasErr = errBoom
 	if _, err := NewQueryService(knownAreaCodesBroken).
-		SyntaxaByRank(context.Background(), domain.SyntaxonRankAlliance, "", activeFilter); err == nil {
+		SyntaxaByRank(context.Background(), domain.SyntaxonRankAlliance, "", "", activeFilter); err == nil {
 		t.Error("SyntaxaByRank verschluckt den Fehler von KnownAreaCodes")
 	}
 
@@ -236,7 +236,7 @@ func TestSyntaxaByRankMeldetFehlerDerGebietsabfragen(t *testing.T) {
 	seedAreaFixture(occurrencesBroken)
 	occurrencesBroken.syntaxonOccurrencesInAreaErr = errBoom
 	if _, err := NewQueryService(occurrencesBroken).
-		SyntaxaByRank(context.Background(), domain.SyntaxonRankAlliance, "", activeFilter); err == nil {
+		SyntaxaByRank(context.Background(), domain.SyntaxonRankAlliance, "", "", activeFilter); err == nil {
 		t.Error("SyntaxaByRank verschluckt den Fehler von SyntaxonOccurrencesInArea")
 	}
 
@@ -244,7 +244,7 @@ func TestSyntaxaByRankMeldetFehlerDerGebietsabfragen(t *testing.T) {
 	seedAreaFixture(coverageBroken)
 	coverageBroken.syntaxaWithCoverageErr = errBoom
 	if _, err := NewQueryService(coverageBroken).
-		SyntaxaByRank(context.Background(), domain.SyntaxonRankAlliance, "", activeFilter); err == nil {
+		SyntaxaByRank(context.Background(), domain.SyntaxonRankAlliance, "", "", activeFilter); err == nil {
 		t.Error("SyntaxaByRank verschluckt den Fehler von SyntaxaWithCoverage")
 	}
 }

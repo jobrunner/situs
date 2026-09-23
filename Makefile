@@ -44,7 +44,7 @@ pipeline-test: ## Run every pipeline's Python tests
 	cd pipelines/eur28 && python3 -m unittest discover
 
 ## The one place that knows what an ingest needs: pipeline outputs plus the
-## two curated files from data/. Prose in a how-to could be skipped a line at
+## curated files from data/. Prose in a how-to could be skipped a line at
 ## a time; this cannot.
 ingest-input: ## Collect every ingest source into CSV_DIR (default: out/ingest-input)
 	@./scripts/collect-ingest-input.sh "$(or $(CSV_DIR),out/ingest-input)"

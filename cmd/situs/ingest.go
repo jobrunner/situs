@@ -185,14 +185,18 @@ func ingestLocalOverlays(ctx context.Context, db *sqlite.DB, csvDir string) (loc
 	return out, nil
 }
 
-// ingestLocalizationFiles reads both localization files through the same code
-// path and sums their rows: localizations.csv carries the labels (produced by
-// pipelines/eurlex), localizations_descriptions.csv the German factsheet
-// descriptions (hand-curated in data/). Keeping them apart keeps eurlex'
-// strict merge from having to know about descriptions; both are optional.
+// ingestLocalizationFiles reads all three localization files through the same
+// code path and sums their rows: localizations.csv carries the habitat-type
+// labels (produced by pipelines/eurlex), localizations_descriptions.csv the
+// German factsheet descriptions and localizations_syntaxa.csv the German names
+// of the 25 syntaxa formations (both hand-curated in data/). Keeping them apart
+// keeps eurlex' strict merge from having to know about descriptions or syntaxa;
+// all three are optional.
 func ingestLocalizationFiles(ctx context.Context, db *sqlite.DB, csvDir string) (int, error) {
 	total := 0
-	for _, name := range []string{"localizations.csv", "localizations_descriptions.csv"} {
+	for _, name := range []string{
+		"localizations.csv", "localizations_descriptions.csv", "localizations_syntaxa.csv",
+	} {
 		path := filepath.Join(csvDir, name)
 		n, err := application.IngestLocalizations(ctx, db, path)
 		if err != nil {

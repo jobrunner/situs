@@ -461,13 +461,16 @@ paths:
         Ahnenpfad (leer) noch Kinderliste — die holt der nächste Schritt.
         `?area=` (mit `?include=`) filtert zusätzlich auf Vorkommen in einem
         Gebiet; Syntaxa ohne Aussage bleiben mitgeführt, siehe die
-        Parameterbeschreibung.
+        Parameterbeschreibung. `?lang=de` legt den deutschen Namen der
+        Formationen als `name_de` zusätzlich auf — nur die 25 Formationen sind
+        übersetzt, tiefere Ränge tragen das Feld nicht.
       operationId: syntaxa
       parameters:
         - $ref: "#/components/parameters/Rank"
         - $ref: "#/components/parameters/LifeFormGroup"
         - $ref: "#/components/parameters/SyntaxonArea"
         - $ref: "#/components/parameters/SyntaxonInclude"
+        - $ref: "#/components/parameters/Lang"
       responses:
         "200":
           description: Die Syntaxa des angefragten Rangs, nach `id` sortiert.
@@ -493,8 +496,11 @@ paths:
         Formation ohne Ahnen sind der Normalfall an den Rändern der Daten, kein
         Fehler. Es gibt bewusst keine eigene `/children`- oder
         `/ancestors`-Route: sie wären ein zweiter Weg zu denselben Daten.
-        `?lang=` wird angenommen; deutsche Syntaxa-Namen sind eine eigene Runde,
-        bis dahin antworten die Namen englisch. `id` nimmt sowohl die aktuelle
+        `?lang=de` legt `name_de` additiv auf — auf die Einheit selbst, auf
+        jeden Ahnen und auf jedes Kind. Die Ahnen sind der Grund: sie sind die
+        Brotkrumenzeile, und eine deutsche Zeile, die in einer englischen
+        Wurzel endet, wäre halb übersetzt. Übersetzt sind die 25 Formationen;
+        die übrigen Ränge tragen das Feld nicht. `id` nimmt sowohl die aktuelle
         Syntaxon-ID (EVC-Primärcode, z. B. `AA01A`) als auch den historischen
         EEA-EUNIS-Code (z. B. `PAP-01A`, gespeichert in `eea_code`) an: findet
         sich keine ID-Zeile, wird zusätzlich per `eea_code` gesucht. Der
@@ -820,6 +826,17 @@ components:
             Die Lebensform-Gruppe der Formation. Nur auf Formationszeilen
             gesetzt und deshalb in Antworten, die Verbände oder Ordnungen
             tragen, nicht vorhanden.
+        name_de:
+          allOf:
+            - $ref: "#/components/schemas/GermanLabel"
+          description: >-
+            Der deutsche Name, additiv zu `name` — `name` bleibt die Identität
+            und trägt weiter den wissenschaftlichen Namen. Nur mit `?lang=de`
+            und nur dort, wo eine Übersetzung existiert: übersetzt sind die
+            **25 Formationen** (`data/localizations-de-syntaxa.csv`,
+            `provenance: situs`). Klassen, Ordnungen und Verbände tragen das
+            Feld nicht — ein Verband, der das Label seiner Formation erbte,
+            hieße falsch, statt hilfsweise zu heißen.
         occurrence:
           type: string
           enum: [verified, uncertain]

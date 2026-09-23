@@ -290,7 +290,7 @@ func TestSyntaxon_MeldetFehlerDerKantenzaehlung(t *testing.T) {
 func TestSyntaxaByRank_ListetEinenRang(t *testing.T) {
 	q := NewQueryService(seedNavRepo(t))
 
-	got, err := q.SyntaxaByRank(t.Context(), domain.SyntaxonRankClass, "", input.SyntaxonAreaFilter{})
+	got, err := q.SyntaxaByRank(t.Context(), domain.SyntaxonRankClass, "", "", input.SyntaxonAreaFilter{})
 	if err != nil {
 		t.Fatalf("SyntaxaByRank: %v", err)
 	}
@@ -302,7 +302,7 @@ func TestSyntaxaByRank_ListetEinenRang(t *testing.T) {
 func TestSyntaxaByRank_KombiniertRangUndGruppeAlsUnd(t *testing.T) {
 	q := NewQueryService(seedNavRepo(t))
 
-	got, err := q.SyntaxaByRank(t.Context(), domain.SyntaxonRankAlliance, domain.LifeFormBryophyteLichen, input.SyntaxonAreaFilter{})
+	got, err := q.SyntaxaByRank(t.Context(), domain.SyntaxonRankAlliance, domain.LifeFormBryophyteLichen, "", input.SyntaxonAreaFilter{})
 	if err != nil {
 		t.Fatalf("SyntaxaByRank: %v", err)
 	}
@@ -314,7 +314,7 @@ func TestSyntaxaByRank_KombiniertRangUndGruppeAlsUnd(t *testing.T) {
 func TestSyntaxaByRank_UnbekannterRangIstInvalidQueryMitDenErlaubtenWerten(t *testing.T) {
 	q := NewQueryService(seedNavRepo(t))
 
-	_, err := q.SyntaxaByRank(t.Context(), "association", "", input.SyntaxonAreaFilter{})
+	_, err := q.SyntaxaByRank(t.Context(), "association", "", "", input.SyntaxonAreaFilter{})
 	if !errors.Is(err, input.ErrInvalidQuery) {
 		t.Fatalf("Fehler = %v, erwartet input.ErrInvalidQuery", err)
 	}
@@ -331,14 +331,14 @@ func TestSyntaxaByRank_MeldetFehlerDerRanglisteUndDerAbfrage(t *testing.T) {
 	ranksBroken := seedNavRepo(t)
 	ranksBroken.syntaxonRanksErr = errors.New("boom")
 	if _, err := NewQueryService(ranksBroken).
-		SyntaxaByRank(t.Context(), domain.SyntaxonRankClass, "", input.SyntaxonAreaFilter{}); err == nil {
+		SyntaxaByRank(t.Context(), domain.SyntaxonRankClass, "", "", input.SyntaxonAreaFilter{}); err == nil {
 		t.Error("SyntaxaByRank verschluckt den Fehler der Rangliste")
 	}
 
 	queryBroken := seedNavRepo(t)
 	queryBroken.syntaxaByRankErr = errors.New("boom")
 	if _, err := NewQueryService(queryBroken).
-		SyntaxaByRank(t.Context(), domain.SyntaxonRankClass, "", input.SyntaxonAreaFilter{}); err == nil {
+		SyntaxaByRank(t.Context(), domain.SyntaxonRankClass, "", "", input.SyntaxonAreaFilter{}); err == nil {
 		t.Error("SyntaxaByRank verschluckt den Fehler der Abfrage")
 	}
 }

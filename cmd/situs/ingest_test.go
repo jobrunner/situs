@@ -986,6 +986,8 @@ func TestIngestCommandReadsBothLocalizationFiles(t *testing.T) {
 		header+"habitat_type,eunis@2021:R22,de,name,Mähwiese,situs@test,situs\n")
 	writeIngestCSV(t, dir, "localizations_descriptions.csv",
 		header+"habitat_type,eunis@2021:R22,de,description,Wiesen der Tieflagen.,situs@test,situs\n")
+	writeIngestCSV(t, dir, "localizations_syntaxa.csv",
+		header+"syntaxon,C,de,name,Vegetation der nemoralen Waldzone,situs,situs\n")
 	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
 
 	root := newRootCmd()
@@ -996,8 +998,89 @@ func TestIngestCommandReadsBothLocalizationFiles(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("executing ingest: %v", err)
 	}
-	if !strings.Contains(out.String(), `"Localizations": 2`) {
-		t.Errorf("output = %q, want both localization files counted", out.String())
+	if !strings.Contains(out.String(), `"Localizations": 3`) {
+		t.Errorf("output = %q, want all three localization files counted", out.String())
+	}
+}
+
+// The German formation labels are situs' own translations and have to survive
+// the whole command, not just the CSV reader: what the index answers here is
+// what GET /v1/syntaxa?lang=de serves.
+func TestIngestCommandStoresTheGermanSyntaxonLabels(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t)
+	writeIngestCSV(t, dir, "localizations_syntaxa.csv",
+		"entity_type,entity_key,lang,field,value,source,provenance\n"+
+			"syntaxon,C,de,name,Vegetation der nemoralen Waldzone,situs,situs\n"+
+			"syntaxon,C,de,vernacular,Sommergruene Laubwaldzone,situs,situs\n")
+	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
+
+	root := newRootCmd()
+	root.SetOut(&bytes.Buffer{})
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", dbPath})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("executing ingest: %v", err)
+	}
+
+	db, err := sqlite.OpenReadOnly(t.Context(), dbPath)
+	if err != nil {
+		t.Fatalf("OpenReadOnly: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	rows, err := db.LocalizationsByEntityType(t.Context(), "syntaxon", "de")
+	if err != nil {
+		t.Fatalf("LocalizationsByEntityType: %v", err)
+	}
+	if len(rows["C"]) != 2 {
+		t.Fatalf("formation C carries %d localization rows, want 2", len(rows["C"]))
+	}
+	for _, l := range rows["C"] {
+		if l.Provenance != "situs" {
+			t.Errorf("%s row provenance = %q, want situs", l.Field, l.Provenance)
+		}
+	}
+}
+
+// A missing localizations_syntaxa.csv is 0 rows, not an error — the same
+// tolerance the other two localization files get. The guard against a silently
+// English index is scripts/collect-ingest-input.sh, which carries the file as a
+// REQUIRED source and aborts without it; making this one file mandatory here
+// and localizations.csv (567 rows, the habitat-type labels) optional would be
+// the inconsistency, not the fix.
+func TestIngestCommandRunsWithoutASyntaxonLocalizationFile(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t)
+	writeIngestCSV(t, dir, "localizations.csv",
+		"entity_type,entity_key,lang,field,value,source,provenance\n"+
+			"habitat_type,eunis@2021:R22,de,name,Mähwiese,situs@test,situs\n")
+	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", dbPath})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("executing ingest without localizations_syntaxa.csv: %v", err)
+	}
+	// The other file still counts, so this pins tolerance and not a swallowed
+	// failure that happens to leave the count at 0.
+	if !strings.Contains(out.String(), `"Localizations": 1`) {
+		t.Errorf("output = %q, want the remaining localization file counted", out.String())
+	}
+
+	db, err := sqlite.OpenReadOnly(t.Context(), dbPath)
+	if err != nil {
+		t.Fatalf("OpenReadOnly: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	rows, err := db.LocalizationsByEntityType(t.Context(), "syntaxon", "de")
+	if err != nil {
+		t.Fatalf("LocalizationsByEntityType: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Errorf("index carries %d syntaxon labels without the file", len(rows))
 	}
 }
 

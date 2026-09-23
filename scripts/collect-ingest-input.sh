@@ -3,7 +3,7 @@
 # situs collect-ingest-input.sh — füllt das Eingabeverzeichnis für `situs ingest`.
 #
 # Der Ingest liest ALLE seine Quellen aus einem Verzeichnis, die Pipelines
-# schreiben aber jede in ihr eigenes out/ bzw. output/, und zwei kuratierte
+# schreiben aber jede in ihr eigenes out/ bzw. output/, und mehrere kuratierte
 # Dateien liegen versioniert in data/. Dieses Skript ist die eine Stelle, die
 # weiß, was dazugehört. Vorher stand diese Liste nur als Prosa in der
 # Anleitung, und eine übersprungene Zeile ergab still einen Index ohne die
@@ -45,6 +45,13 @@ REQUIRED=(
   # Index ohne Hierarchie und das darf nicht stillschweigend passieren.
   "pipelines/eurovegchecklist/out/syntaxa_hierarchy.csv:syntaxa_hierarchy.csv"
   "data/syntaxa_formations.csv:syntaxa_formations.csv"
+  # Die deutschen Namen der 25 Formationen. Pflichtquelle wie jede kuratierte
+  # data/-Datei: sie ist versioniert, ihr Fehlen ist ein kaputter Checkout.
+  # `situs ingest` selbst behandelt sie duldsam (fehlt sie, sind das 0 Zeilen,
+  # kein Fehler) — der Waechter ist dieses Skript, nicht der Ingest. Ohne den
+  # Abbruch hier entstuende ein Index, der auf ?lang=de fuer jede Formation
+  # den englischen Namen zeigt, und zwar lautlos.
+  "data/localizations-de-syntaxa.csv:localizations_syntaxa.csv"
 )
 
 # Fehlt eine davon, läuft der Ingest trotzdem; die betroffenen Daten fehlen

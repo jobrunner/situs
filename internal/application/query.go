@@ -209,7 +209,7 @@ func (q *QueryService) summary(ctx context.Context, key domain.HabitatTypeKey, l
 		Priority: h.Priority,
 	}
 	if lang == deLang {
-		labels, err := q.repo.Localization(ctx, "habitat_type", key.String(), deLang)
+		labels, err := q.repo.Localization(ctx, entityHabitatType, key.String(), deLang)
 		if err != nil {
 			return input.HabitatTypeSummary{}, fmt.Errorf("fetching German label of %s: %w", key, err)
 		}

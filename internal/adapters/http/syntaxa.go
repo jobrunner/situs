@@ -45,7 +45,7 @@ func (s *Server) handleSyntaxa(w http.ResponseWriter, r *http.Request) {
 	// (SELECT DISTINCT rank), which only the use case can ask. It answers
 	// ErrInvalidQuery naming them, and writeQueryError turns that into the same
 	// 400 as the check above.
-	refs, err := s.deps.Query.SyntaxaByRank(r.Context(), rank, group, filter)
+	refs, err := s.deps.Query.SyntaxaByRank(r.Context(), rank, group, language(r), filter)
 	if err != nil {
 		s.writeQueryError(w, r, err)
 		return

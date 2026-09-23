@@ -953,7 +953,10 @@ type fakeQueryService struct {
 	// counts it, so a test can prove a rejected filter never reached the port.
 	gotRank          string
 	gotLifeFormGroup string
-	rankCalls        int
+	// gotSyntaxaLang records the ?lang= the handler passed on. The list route
+	// has to forward it or the German formation labels never reach the wire.
+	gotSyntaxaLang string
+	rankCalls      int
 	// syntaxonAreaFilter records the last filter SyntaxaByRank received, so a
 	// test can prove the parsed ?area=/?include= actually reached the port.
 	syntaxonAreaFilter input.SyntaxonAreaFilter
@@ -1060,10 +1063,10 @@ func (f *fakeQueryService) Syntaxon(_ context.Context, id, lang string) (input.S
 // SyntaxaByRank restates the use case's contract closely enough for the adapter
 // to be tested against it: an unknown rank is INVALID_QUERY with the allowed
 // values in the message, never an empty list.
-func (f *fakeQueryService) SyntaxaByRank(_ context.Context, rank, lifeFormGroup string,
+func (f *fakeQueryService) SyntaxaByRank(_ context.Context, rank, lifeFormGroup, lang string,
 	filter input.SyntaxonAreaFilter) ([]input.SyntaxonRef, error) {
 	f.rankCalls++
-	f.gotRank, f.gotLifeFormGroup = rank, lifeFormGroup
+	f.gotRank, f.gotLifeFormGroup, f.gotSyntaxaLang = rank, lifeFormGroup, lang
 	f.syntaxonAreaFilter = filter
 	if f.syntaxaErr != nil {
 		return nil, f.syntaxaErr

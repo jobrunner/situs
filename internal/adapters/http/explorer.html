@@ -431,6 +431,8 @@ async function loadFormations() {
   const params = new URLSearchParams();
   const group = document.getElementById("syn-nav-group").value;
   if (group) { params.set("life_form_group", group); }
+  const lang = document.getElementById("g-lang").value;
+  if (lang) { params.set("lang", lang); }
   const body = await call("syn-nav", withQuery("/v1/syntaxa", params));
   const view = document.getElementById("syn-nav-view");
   view.innerHTML = "";
@@ -460,10 +462,18 @@ function renderSyntaxon(s) {
     crumbs.appendChild(document.createTextNode(" › "));
   }
   const here = document.createElement("strong");
-  here.textContent = `${s.id} — ${s.name}${s.author ? " " + s.author : ""} (${s.rank})`;
+  here.textContent = `${s.id} — ${syntaxonLabel(s)}${s.author ? " " + s.author : ""} (${s.rank})`;
   crumbs.appendChild(here);
   view.appendChild(crumbs);
 
+  // The vernacular is shown apart from the name, never merged into it: it is a
+  // second statement about the same unit, and only the 25 formations carry one.
+  if (s.name_de && s.name_de.vernacular) {
+    const v = document.createElement("p");
+    v.className = "note";
+    v.textContent = `Gebräuchlich: ${s.name_de.vernacular} (${s.name_de.provenance})`;
+    view.appendChild(v);
+  }
   if (s.life_form_group) {
     const g = document.createElement("p");
     g.className = "note";
@@ -509,9 +519,17 @@ function syntaxonButton(s) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "hit";
-  btn.textContent = `${s.id} — ${s.name}`;
+  btn.textContent = `${s.id} — ${syntaxonLabel(s)}`;
   btn.onclick = () => openSyntaxon(s.id);
   return btn;
+}
+
+// With lang=de the German name leads and the scientific one follows in
+// parentheses. It is NEVER dropped: name stays the identity a client cites,
+// and only the formations carry a translation at all, so most rows show the
+// scientific name alone and that is the normal case, not a gap.
+function syntaxonLabel(s) {
+  return s.name_de ? `${s.name_de.value} (${s.name})` : s.name;
 }
 
 // Both habitat-type panels take a typology id. Filled from one shared fetch
