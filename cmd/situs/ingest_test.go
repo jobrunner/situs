@@ -1042,6 +1042,48 @@ func TestIngestCommandStoresTheGermanSyntaxonLabels(t *testing.T) {
 	}
 }
 
+// A missing localizations_syntaxa.csv is 0 rows, not an error — the same
+// tolerance the other two localization files get. The guard against a silently
+// English index is scripts/collect-ingest-input.sh, which carries the file as a
+// REQUIRED source and aborts without it; making this one file mandatory here
+// and localizations.csv (567 rows, the habitat-type labels) optional would be
+// the inconsistency, not the fix.
+func TestIngestCommandRunsWithoutASyntaxonLocalizationFile(t *testing.T) {
+	stubHostus(t)
+	dir := seedIngestDir(t)
+	writeIngestCSV(t, dir, "localizations.csv",
+		"entity_type,entity_key,lang,field,value,source,provenance\n"+
+			"habitat_type,eunis@2021:R22,de,name,Mähwiese,situs@test,situs\n")
+	dbPath := filepath.Join(t.TempDir(), "situs.sqlite")
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"ingest", "--csv-dir", dir, "--db", dbPath})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("executing ingest without localizations_syntaxa.csv: %v", err)
+	}
+	// The other file still counts, so this pins tolerance and not a swallowed
+	// failure that happens to leave the count at 0.
+	if !strings.Contains(out.String(), `"Localizations": 1`) {
+		t.Errorf("output = %q, want the remaining localization file counted", out.String())
+	}
+
+	db, err := sqlite.OpenReadOnly(t.Context(), dbPath)
+	if err != nil {
+		t.Fatalf("OpenReadOnly: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	rows, err := db.LocalizationsByEntityType(t.Context(), "syntaxon", "de")
+	if err != nil {
+		t.Fatalf("LocalizationsByEntityType: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Errorf("index carries %d syntaxon labels without the file", len(rows))
+	}
+}
+
 func TestIngestCommandRunsWithoutADescriptionLocalizationFile(t *testing.T) {
 	stubHostus(t)
 	dir := seedIngestDir(t) // neither localizations file written

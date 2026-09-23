@@ -28,6 +28,28 @@ Dateien vor jedem Lauf, damit keine Ausgabe von gestern stehen bleibt und
 ungeprüft mit ingestiert wird. Ein Pipeline- oder `data/`-Verzeichnis als Ziel
 lehnt es ab, weil es dort Quelle auf Quelle kopieren würde.
 
+### „Pflicht" und „optional" meinen zwei verschiedene Grenzen
+
+Das ist die eine Stelle, an der sich beides zu widersprechen scheint, deshalb
+hier ausdrücklich:
+
+- **Pflichtquelle des Sammelskripts** heißt: die Datei muss im Repo liegen,
+  sonst bricht `make ingest-input` ab und nennt sie. Das gilt für alle
+  kuratierten Dateien aus `data/` — sie sind versioniert, ihr Fehlen ist ein
+  kaputter Checkout, keine Konfiguration.
+- **Optional am Ingest-Rand** heißt: fehlt die Datei im `--csv-dir`, ist das
+  für `situs ingest` kein Fehler, sondern „keine Zeilen dieser Art" — geloggt
+  auf `info`, im Report als 0 gezählt.
+
+Beides zugleich ist kein Widerspruch, sondern die Arbeitsteilung: **das Skript
+ist der Wächter, nicht der Ingest.** Der Ingest bleibt absichtlich duldsam,
+damit ein Teilindex für einen Test oder eine Fehlersuche baubar bleibt; wer
+`situs ingest --csv-dir` am Sammelskript vorbei aufruft, umgeht damit den
+Wächter und muss die Zeilenzähler im Report selbst lesen. Dieselbe Teilung
+gilt seit jeher für `localizations.csv`, ohne die lautlos ein Index ganz ohne
+deutsche Habitattyp-Labels entstünde — die 567 Zeilen wiegen schwerer als die
+28 der Formationen, und keine der beiden ist am Ingest-Rand erzwungen.
+
 ### Warum drei Dateien in `data/` versioniert sind
 
 `data/annex1_descriptions.csv`, `data/localizations_descriptions.csv` und
@@ -48,7 +70,9 @@ Liest die von `pipelines/eunis/xlsx_to_csv.py` erzeugten CSVs
 `syntaxon_distribution.csv`/`syntaxon_distribution_coverage.csv` von
 `pipelines/evc-distribution`, `habitat_descriptions.csv` von
 `pipelines/floraveg-factsheets`, `localizations_descriptions.csv` und
-`localizations_syntaxa.csv` (beide aus `data/`) und die drei Zeigerwert-CSVs
+`localizations_syntaxa.csv` (beide aus `data/` und dort Pflichtquellen des
+Sammelskripts, hier am Ingest-Rand duldsam behandelt — siehe oben) und die
+drei Zeigerwert-CSVs
 (`eive_traits.csv`, `tichy_traits.csv`, `midolo_traits.csv` — erzeugt von
 `pipelines/{eive,tichy,midolo}`) — alle Pipelines schreiben in denselben
 `--csv-dir` — aus `--csv-dir` und schreibt in die SQLite-Datei `--db`. Die
@@ -364,7 +388,9 @@ Schritt bräuchte schon ein reiner Leser ein beschreibbares Verzeichnis.
    Habitattyp-Labels, aus `pipelines/eurlex`), `localizations_descriptions.csv`
    (die deutschen Beschreibungen) und `localizations_syntaxa.csv` (die
    deutschen Namen der 25 Formationen) — die letzten beiden gepflegt in
-   `data/`. Alle drei sind optional, ihre Zeilen werden im Report
+   `data/`. Alle drei sind **am Ingest-Rand** optional (fehlt eine, sind das 0
+   Zeilen, kein Fehler); die beiden aus `data/` sind zugleich Pflichtquellen
+   des Sammelskripts, siehe oben. Ihre Zeilen werden im Report
    zusammengezählt. Abgeleitet (`DeriveGermanLabels`) wird nur auf der
    Habitattyp-Seite: die Syntaxa-Labels sind von situs verfasst und dürfen
    als `provenance: situs` nie eine Ableitung anstoßen.

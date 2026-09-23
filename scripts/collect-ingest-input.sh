@@ -45,9 +45,12 @@ REQUIRED=(
   # Index ohne Hierarchie und das darf nicht stillschweigend passieren.
   "pipelines/eurovegchecklist/out/syntaxa_hierarchy.csv:syntaxa_hierarchy.csv"
   "data/syntaxa_formations.csv:syntaxa_formations.csv"
-  # Die deutschen Namen der 25 Formationen. Pflicht, nicht optional: ohne sie
-  # entsteht ein Index, der auf ?lang=de für jede Formation den englischen
-  # Namen zeigt, und zwar lautlos.
+  # Die deutschen Namen der 25 Formationen. Pflichtquelle wie jede kuratierte
+  # data/-Datei: sie ist versioniert, ihr Fehlen ist ein kaputter Checkout.
+  # `situs ingest` selbst behandelt sie duldsam (fehlt sie, sind das 0 Zeilen,
+  # kein Fehler) — der Waechter ist dieses Skript, nicht der Ingest. Ohne den
+  # Abbruch hier entstuende ein Index, der auf ?lang=de fuer jede Formation
+  # den englischen Namen zeigt, und zwar lautlos.
   "data/localizations-de-syntaxa.csv:localizations_syntaxa.csv"
 )
 
