@@ -153,10 +153,16 @@ Zwei Report-Felder betreffen genau das:
 Am Referenzlauf vom 2026-09-16 gemessen: `Localizations: 567`
 (233 amtlich + 334 von situs verfasst), `DerivedLabels: 29`. Seitdem sind die
 EUNIS-Level 1 und 2 dazugekommen (49 Typen, die nie einen `=`-Crosswalk
-tragen): `merge.py` erzeugt am 2026-09-21 **394** verfasste Zeilen. Dazu kommen
+tragen): `merge.py` erzeugt am 2026-09-21 **394** verfasste Zeilen, zusammen mit
+den 233 amtlichen also eine `localizations.csv` mit **627** Zeilen. Dazu kommen
+die **469** deutschen Beschreibungen aus `localizations_descriptions.csv` und
 seit 2026-09-23 die **28** Zeilen aus `data/localizations-de-syntaxa.csv` (25
-Formationsnamen plus 3 gebräuchliche Ausdrücke). Der nächste volle Lauf misst
-also `Localizations: 655`. Siehe `../reference/measured-index.md`.
+Formationsnamen plus 3 gebräuchliche Ausdrücke).
+
+`Localizations` zählt alle drei Dateien zusammen und ist am Lauf vom 2026-09-23
+mit **1124** gemessen (627 + 469 + 28). Die früher hier genannten 567 und 627
+waren die Zeilen der `localizations.csv` allein — dieselbe Zahl im Report meinte
+schon damals die Summe. Siehe `../reference/measured-index.md`.
 
 ## Der fertige Index ist eine Datei
 

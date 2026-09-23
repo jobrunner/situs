@@ -785,14 +785,28 @@ print(len(formations), len(named), sorted({r["letter"] for r in formations} - na
 PY
 ```
 
-Nach einem vollen Ingest liegen diese 28 Zeilen in `localization` mit
-`entity_type = syntaxon` und sind über `GET /v1/syntaxa?lang=de` sowie
-`GET /v1/syntaxon/{id}?lang=de` sichtbar:
+Am vollen Lauf vom 2026-09-23 nachgemessen, gegen den echten Index:
+
+| Kennzahl | Wert | Abfrage |
+|---|---|---|
+| Zeilen in `localization` mit `entity_type='syntaxon'`, `lang='de'` | **28** | `SELECT COUNT(*) FROM localization WHERE entity_type='syntaxon' AND lang='de'` |
+| davon `field='name'` / `field='vernacular'` | **25** / **3** | dieselbe Abfrage mit `AND field=…` |
+| Formationen **ohne** deutschen Namen | **0** | Anti-Join `syntaxon` → `localization` |
+| Label **ohne** passende Formation | **0** | Anti-Join `localization` → `syntaxon` |
+| `Localizations` im Ingest-Report | **1124** | 627 Labels + 469 Beschreibungen + 28 Syntaxa |
 
 ```sh
-sqlite3 situs.sqlite \
-  "SELECT COUNT(*) FROM localization WHERE entity_type='syntaxon' AND lang='de';"
+sqlite3 situs.sqlite "
+SELECT COUNT(*) FROM syntaxon s WHERE s.rank='formation' AND NOT EXISTS (
+  SELECT 1 FROM localization l
+  WHERE l.entity_type='syntaxon' AND l.entity_key=s.id AND l.field='name' AND l.lang='de');"
 ```
+
+Über HTTP gegengeprüft: `GET /v1/syntaxa?lang=de` liefert 25 Formationen, jede
+mit `name_de`; `GET /v1/syntaxon/P?lang=de` trägt zusätzlich das `vernacular`
+„Moorvegetation"; und `GET /v1/syntaxon/PA01A?lang=de` zeigt die Regel im
+Betrieb — der Ahne `P` trägt `name_de`, die Ahnen `PA` (Klasse) und `PA01`
+(Ordnung) und der Verband selbst tragen es nicht.
 
 ### Warum nur die Formationen
 

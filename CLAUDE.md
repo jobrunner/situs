@@ -69,7 +69,10 @@ plus 3 `vernacular`s, all `provenance: situs`), served as `name_de` on every
 `SyntaxonRef` under `?lang=de`. Deeper ranks are deliberately NOT translated:
 from class down the names are nomenclatural Latin with an author citation, and
 an alliance inheriting its formation's label would simply be named wrong. The
-next full ingest measures `Localizations: 655`.
+2026-09-23 reference run measures `Localizations: 1124` — that counter is the
+SUM of all three localization files (627 labels + 469 descriptions + 28 syntaxa
+names), not `localizations.csv` alone, which is what the older 567/627 figures
+named.
 
 **The index really does carry mixed backbones.** That run measured
 `concept_backbones: ["cdm", "eurosl", "wcvp"]` — 8 of 3323 concepts are
