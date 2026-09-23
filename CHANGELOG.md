@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.13.0](https://github.com/jobrunner/situs/compare/v0.12.0...v0.13.0) (2026-09-23)
+
+
+### Features
+
+* **syntaxa:** deutsche Namen fuer die 25 Formationen ([f4d0457](https://github.com/jobrunner/situs/commit/f4d045746e404663423596a5eabb2d9de9f9d097))
+
+
+### Bug Fixes
+
+* **explorer:** Breadcrumb-Text im Syntaxa-Navigationspanel sichtbar machen ([7ac4d95](https://github.com/jobrunner/situs/commit/7ac4d95a76afeb834ad01f446ed14179e37c2f12))
+
 ## [0.12.0](https://github.com/jobrunner/situs/compare/v0.11.1...v0.12.0) (2026-09-22)
 
 
