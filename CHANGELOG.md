@@ -1,5 +1,86 @@
 # Changelog
 
+## [0.12.0](https://github.com/jobrunner/situs/compare/v0.11.1...v0.12.0) (2026-09-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* **syntaxa:** Syntaxon-IDs folgen dem EVC-Primaercode (AA01A) statt dem EEA-Code (PAP-01A). Anders als zunaechst dokumentiert bleibt die alte ID nutzbar: sie steht im Feld eea_code, und GET /v1/syntaxon/{id} nimmt sie weiterhin an. Das Feld hiess in einer frueheren Fassung dieses Branches alt_code.
+* **api:** Syntaxon-IDs folgen jetzt dem EVC-Primaercode (AA01A) statt dem EEA-Code (PAP-01A). Die alte ID steht im neuen Feld alt_code. GET /v1/syntaxon/{id}/habitat-types beantwortet eine alte ID mit NOT_FOUND.
+
+### Features
+
+* **api:** /v1/areas nimmt scheme, Vorgabe wgsrpd_l3 ([fab00b4](https://github.com/jobrunner/situs/commit/fab00b4bc506875345edd5e160d6a8d1d9f53006))
+* **api:** /v1/info misst Syntaxa-Gebietsschema und Abdeckung ([bab7fd7](https://github.com/jobrunner/situs/commit/bab7fd7d911969ec8a409e104c08daa982adff45))
+* **api:** /v1/syntaxa nimmt area und include, Unbeurteilbare bleiben unmarkiert stehen ([a5600af](https://github.com/jobrunner/situs/commit/a5600af159a6693ebb3e93549ea1db23e2218f24))
+* **api:** SyntaxonDetail traegt die Verbreitungsaussage, fehlt ohne Abdeckung ([e4989ac](https://github.com/jobrunner/situs/commit/e4989acb93ac989a61932d3a779b9803eb1626d4))
+* **application:** Syntaxon-Detail mit Ahnenpfad und Kindern, Liste je Rang ([84d9729](https://github.com/jobrunner/situs/commit/84d97297649e806daf22e06f3c2fe492e5b5c35e))
+* **data:** Formationsebene A-Y als Datendatei, Hierarchie-CSV wird Pflichtquelle ([8fb4656](https://github.com/jobrunner/situs/commit/8fb465686e33a52ef830687389e98d6df8749318))
+* **domain,sqlite:** Syntaxon um Altcode, Quelle, Elternteil-Provenienz und Lebensform ([f99aabd](https://github.com/jobrunner/situs/commit/f99aabd012aea783faadadf2c48a7c65257412c9))
+* **domain,sqlite:** zweites Gebietsschema und die zwei Verbreitungstabellen ([0dcbf59](https://github.com/jobrunner/situs/commit/0dcbf59f3dbec60b91e3dc50b57278597775fa6e))
+* **eurovegchecklist:** Altcode ausgeben und Zellen ueber ihren Bezug lesen ([86f4c31](https://github.com/jobrunner/situs/commit/86f4c31cebaf65ae003497b62675dd263000fb45))
+* **evc-distribution:** Quelle pinnen, Pipeline verdrahten, gemessene Zahlen dokumentieren ([d999f68](https://github.com/jobrunner/situs/commit/d999f684d0c9f5fb502cf81ffbe7bb59b996fe50))
+* **evc-distribution:** Verbreitungstabelle ueber den Zellbezug in drei CSVs ([12400ad](https://github.com/jobrunner/situs/commit/12400ad8ac2620f84ca561c8d05144e0c12304ae))
+* **explorer:** Panel Syntaxa-Navigation mit Brotkrumen und Kinderliste ([f5245a2](https://github.com/jobrunner/situs/commit/f5245a2a3b51973c3d928a113e5e8bdaccb287ab))
+* **http:** Routen /v1/syntaxa und /v1/syntaxon/{id} samt OpenAPI-Vertrag ([d502bf9](https://github.com/jobrunner/situs/commit/d502bf99753b43a4cf2c9ff1cd2145797a65421c))
+* **ingest,api:** IngestSyntaxa verdrahten, Herkunftsfelder ausliefern ([6aa1ff7](https://github.com/jobrunner/situs/commit/6aa1ff794952bb30d5cfa3e8839fc85634d16ad7))
+* **ingest:** EEA-eigene Syntaxa erhalten, Kanten ueber den Altcode aufloesen ([59b52f8](https://github.com/jobrunner/situs/commit/59b52f8ae5b2141a5cfd35ca8ea2a24fb0d688ac))
+* **ingest:** Formationen und EVC-Hierarchie als primaere Syntaxa-Quelle ([de40071](https://github.com/jobrunner/situs/commit/de40071d793e7dcb17c68445bb7196e183d107b7))
+* **ingest:** Restelternteile per Namensabgleich und Geschwisterkonsens, Waisen brechen ab ([fe168b3](https://github.com/jobrunner/situs/commit/fe168b3e14788d30637b473a9bfffc0f3ec46ede))
+* **ingest:** Syntaxa-Verbreitung und Abdeckung aus CSV einlesen ([395219e](https://github.com/jobrunner/situs/commit/395219e6c50f6f93ed18fee591caac3b824d0c41))
+* **ingest:** Territorien und Syntaxa-Verbreitung als lokale Overlays einhaengen ([e315176](https://github.com/jobrunner/situs/commit/e315176d08f6e7324bc0321cd7cc798c48abc5e6))
+* **sqlite:** Kinder, Ahnenpfad und Kantenzahl eines Syntaxons lesen ([598ac56](https://github.com/jobrunner/situs/commit/598ac563ffd8ec502074f5a5b46c9bc6878caa95))
+* **sqlite:** Syntaxa nach Rang und Lebensform-Gruppe lesen, Raenge aus dem Index ([a47267a](https://github.com/jobrunner/situs/commit/a47267ab0384c88e448dd727ba586ca1de1c65c3))
+* **sqlite:** Syntaxa-Verbreitung schreiben und lesen, Gebietsabfragen je Schema ([a13b6f5](https://github.com/jobrunner/situs/commit/a13b6f5771dfa98e5354180c1d904fec4ac9a104))
+* **sqlite:** Syntaxon-Felder schreiben, Elternteil setzen, Kanten umschreiben ([7e50837](https://github.com/jobrunner/situs/commit/7e5083735aab63bf32fcec3b714f46995f55b7e5))
+* **syntaxa:** EEA-Code-Fallback auch fuer die Habitattyp-Kanten eines Syntaxons ([257791a](https://github.com/jobrunner/situs/commit/257791a52509f7d3f718bd06e8a0d04ea9647488))
+* **syntaxa:** Syntaxon ueber seinen frueheren EEA-Code auffindbar machen ([ba7d0c9](https://github.com/jobrunner/situs/commit/ba7d0c9be4e6f2385480dd83fbf40bac787317bb))
+
+
+### Bug Fixes
+
+* **api:** area-Filter fuer rank=class und rank=order ablehnen ([43f6b27](https://github.com/jobrunner/situs/commit/43f6b27f541223902dfa0e8a47702add05bb2392))
+* **eurovegchecklist:** Altcode-Kollision abbrechen statt nur zaehlen ([c952bc1](https://github.com/jobrunner/situs/commit/c952bc1985119f3361a6a9b93837e2b155a9762b))
+* **eurovegchecklist:** Code-Kommentare ins Englische uebersetzen ([0413577](https://github.com/jobrunner/situs/commit/0413577763019bd726600d4379f5b890e7cf7e94))
+* **evc-distribution:** Summenspalten-Grenze strukturell statt namentlich erkennen ([a1c4f3a](https://github.com/jobrunner/situs/commit/a1c4f3a65d5ecbe2e675dc2d9c0b5554d724691d))
+* **ingest:** den ganzen Syntaxon-ID-Namensraum vor dem Schreiben pruefen ([78740a8](https://github.com/jobrunner/situs/commit/78740a8cecb632ded3306071bc8e0dfd7e1f304f))
+* **ingest:** doppelten Primaercode auf beiden Seiten zurueckweisen ([968c3c0](https://github.com/jobrunner/situs/commit/968c3c0281e06f8f45703783d0e02c151ce94b80))
+* **ingest:** EEA-Zeile ohne id verwerfen statt als Syntaxon zu schreiben ([20a966d](https://github.com/jobrunner/situs/commit/20a966d5fc12252ea76c4fcb1600b1a8b84c77c9))
+* **ingest:** Elternteil vom falschen Rang den Ingest scheitern lassen ([b55f011](https://github.com/jobrunner/situs/commit/b55f011174c9abadf3a2f46eb24e252ef545d468))
+* **ingest:** Formation mit Elternteil auf beiden Seiten schliessen ([8297fcd](https://github.com/jobrunner/situs/commit/8297fcdb1c5259921805f917e8f3ca02ebb964dd))
+* **ingest:** Formationsbuchstaben als Schluessel pruefen statt als Spalte lesen ([c69b357](https://github.com/jobrunner/situs/commit/c69b3575a8505b4625e058c97cd9711ba08bc488))
+* **ingest:** Gebietsnamen gegen die Menge der bekannten Schemata pruefen ([1a4a47d](https://github.com/jobrunner/situs/commit/1a4a47d4414bbafb6d8d4ac4bc6545777af6c8a1))
+* **ingest:** Hierarchiezeile ohne code verwerfen statt namenlos schreiben ([71e0592](https://github.com/jobrunner/situs/commit/71e0592f2a2f8f6adba5048d2c2176be5ee11f34))
+* **ingest:** jede Beanspruchung einer Syntaxon-ID zaehlen, nicht jede Quelle ([6305469](https://github.com/jobrunner/situs/commit/63054692e6830317ba1ea99273088c2177bbfffe))
+* **ingest:** Kollidierende EEA-Codes vom Remapping ausschliessen statt Gewinner zu kueren ([4c9ccba](https://github.com/jobrunner/situs/commit/4c9ccba57e4e1a8a9f35e7aa0c90dcf26679ac27))
+* **ingest:** Kollidierenden EEA-Code auch beim Elternabgleich ausschliessen ([4b391cb](https://github.com/jobrunner/situs/commit/4b391cb4444d8a1a2ca636891a29ccb46bf84f9d)), closes [#54](https://github.com/jobrunner/situs/issues/54)
+* **ingest:** Kollidierenden EEA-Code den Ingest scheitern lassen ([ef50b28](https://github.com/jobrunner/situs/commit/ef50b2833ba158114114736bd3f291673a21b14c))
+* **ingest:** leeren Formationssatz vor der Transaktion zurueckweisen ([0bda433](https://github.com/jobrunner/situs/commit/0bda433e2c24aba5c9a614d36cea4401664999e3))
+* **ingest:** Mehrdeutigen Namensabgleich nicht mehr vom Geschwisterkonsens abhalten ([6532428](https://github.com/jobrunner/situs/commit/65324283fa82dcab7c305ca4db7775f3d0ecdc72))
+* **ingest:** Ordnung/Verband an uebersprungener Klasse als Waise erkennen ([9cec1f6](https://github.com/jobrunner/situs/commit/9cec1f65ebe2f284a44c59dd56fecf321b843e91))
+* **ingest:** Syntaxa vor dem Schreiben leeren statt zu upserten ([1c39029](https://github.com/jobrunner/situs/commit/1c39029990596dcf990bba85723c680f4384ec24))
+* **ingest:** Syntaxa-Verbreitungstabellen beim Ingest ersetzen statt ergaenzen ([7cce1da](https://github.com/jobrunner/situs/commit/7cce1da4f2c35df8578a1a2d4f0e7f9abe75e58d)), closes [#53](https://github.com/jobrunner/situs/issues/53)
+* **ingest:** Timeout einer Konzeptanfrage nicht als Abbruch des Laufs deuten ([643f381](https://github.com/jobrunner/situs/commit/643f38160e9aae5dbd6a8990ad2155d5b13d56da))
+* **ingest:** Verbreitungszeile ohne Coverage-Zeile den Ingest scheitern lassen ([ddc3642](https://github.com/jobrunner/situs/commit/ddc36421ea03f2e578546ac29f29164dd887b1b3))
+* **ingest:** Verbreitungszeilen nur fuer Verbaende schreiben ([6ae735f](https://github.com/jobrunner/situs/commit/6ae735f27d8b18afad5e9691c5500719cdb24c00))
+* **pipelines:** doppelten Verbandscode in evc-distribution zurueckweisen ([22e6b52](https://github.com/jobrunner/situs/commit/22e6b5271b4d7e5422865e03a51ea63cffdb6135))
+* **pipelines:** eurovegchecklist raeumt out/ vor dem Lauf ([31bd577](https://github.com/jobrunner/situs/commit/31bd5774dba1b2fae11e300f59fa362538daf717))
+* **pipelines:** evc-distribution bei null Verbaenden scheitern lassen ([1612e1a](https://github.com/jobrunner/situs/commit/1612e1a518d26af2c96ef3e86ba0ddca69cdf96c))
+* **pipelines:** evc-distribution raeumt out/ vor dem Lauf, statt alte CSVs stehen zu lassen ([463713a](https://github.com/jobrunner/situs/commit/463713a0751d49e19efaaa9a11c85926d528ac12))
+* **pipelines:** Slug-Kollision auch bei identischen Spaltenueberschriften abbrechen ([acf8cba](https://github.com/jobrunner/situs/commit/acf8cbab5b7fa025ddc667f00cac7bf1b7310fdf))
+* **serve:** SyntaxonByEEACode raet bei mehrdeutigem Index nicht mehr ([dd5687a](https://github.com/jobrunner/situs/commit/dd5687accb533e79d1c7b804a26f488ccb39952d))
+* **sqlite:** CTE-Schrittgrenze gegen maxSyntaxonAncestors testen ([fdaea8f](https://github.com/jobrunner/situs/commit/fdaea8f4beec653a81dd018863a04609dca0b428))
+* **sqlite:** SetSyntaxonParent auf eine unbekannte ID scheitern lassen ([383053c](https://github.com/jobrunner/situs/commit/383053c5eb59cb66f58a07f25cce0f0ccf5a600e))
+* **syntaxa:** EEA-Code-Fallback verschluckt keine echten Fehler mehr ([032432c](https://github.com/jobrunner/situs/commit/032432ccd41c8b06c67739552f7e8bc74bc7f117))
+* **syntaxa:** Formationen tragen ParentProvenance official ([2a72052](https://github.com/jobrunner/situs/commit/2a72052959d6bf996e680618ed939558ac994e71))
+* **syntaxa:** Verbreitungs-Ingest verlangt evc_territory statt jedes bekannten Schemas ([149dba6](https://github.com/jobrunner/situs/commit/149dba6440f6163e6d6791099b006a8d7326ead1))
+* **syntaxa:** Zykel im parent_code werden beim Ingest erkannt ([4280c6b](https://github.com/jobrunner/situs/commit/4280c6b4d11d9d95c03da480bb098a8cde59e448))
+
+
+### Documentation
+
+* **api:** Wechsel des Syntaxon-Identifikators dokumentieren ([b98587e](https://github.com/jobrunner/situs/commit/b98587e2d726651f93a5b78487eaf1e86c469154))
+
 ## [0.11.1](https://github.com/jobrunner/situs/compare/v0.11.0...v0.11.1) (2026-09-21)
 
 
