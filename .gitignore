@@ -43,6 +43,12 @@ __pycache__/
 .claude/*
 !.claude/skills
 !.claude/skills/**
+# ... und die Projektkonfiguration, die fuer alle gelten soll. Ohne diese
+# Ausnahmen nimmt "git add -A" sie stillschweigend nicht mit: der Hook lag
+# lokal und war gleichzeitig in CLAUDE.md als geltend beschrieben.
+!.claude/settings.json
+!.claude/hooks
+!.claude/hooks/**
 
 # Browser-Automation-Artefakte (Playwright-MCP), nie Teil des Repos
 /.playwright-mcp/
