@@ -20,8 +20,16 @@
              padding:.75rem 1rem; border:1px solid var(--line); border-radius:6px; margin-bottom:1.5rem; }
   .panel { border:1px solid var(--line); border-radius:6px; padding:1rem; margin-bottom:1rem; }
   label { display:block; font-size:.8rem; color:var(--muted); margin-bottom:.2rem; }
+  /* max-width alone does not help: the flex item around a control keeps
+     min-width:auto, so "100%" stays the control's own min-content width. A
+     <select> is as wide as its longest <option> — the typology filter measured
+     421px, the page then needed 462px, and a phone answers that by scaling the
+     whole page to 84%. Both rules together, and only both, keep the layout
+     viewport at the device width. */
   input, select, textarea, button { font:inherit; padding:.4rem .6rem; border:1px solid var(--line);
-                                    border-radius:4px; background:var(--bg); color:var(--fg); }
+                                    border-radius:4px; background:var(--bg); color:var(--fg);
+                                    max-width:100%; }
+  .globals > div, .row > div { min-width:0; }
   textarea { width:100%; min-height:5rem; font-family:ui-monospace,monospace; font-size:.85rem; }
   button { cursor:pointer; background:var(--accent); color:#fff; border-color:var(--accent); }
   button.secondary { background:transparent; color:var(--muted); border-color:var(--line); }
