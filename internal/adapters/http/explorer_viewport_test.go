@@ -37,7 +37,7 @@ func cssRules(t *testing.T, page string) map[string]string {
 			continue
 		}
 		sel := strings.Join(strings.Fields(block[:brace]), " ")
-		rules[sel] = rules[sel] + block[brace+1:]
+		rules[sel] += block[brace+1:]
 	}
 	return rules
 }
