@@ -108,7 +108,11 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      # Auf die exakte Version gepinnt, nicht auf einen Major: setup-uv pflegt
+      # ab v8 keine beweglichen Major-Tags mehr (v1 bis v7 gibt es, v8/v9/v10
+      # nicht). Ein @v10 laesst sich nicht aufloesen und bricht den Job sofort
+      # mit "unable to find version" ab.
+      - uses: astral-sh/setup-uv@v10.2.0
       # Derselbe Aufruf, den `make verify` und der CI-Docs-Job als Gate nutzen —
       # hier wird das Ergebnis aber veröffentlicht statt verworfen. An den Release
       # gebunden, damit die sichtbare Doku zur veröffentlichten Version passt.
