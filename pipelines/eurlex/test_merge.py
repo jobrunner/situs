@@ -2,11 +2,12 @@
 """Tests for merge.py — the promises the authored file has to keep."""
 import os
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from merge import normalise, rows_for, validate, version_problem  # noqa: E402
+from merge import main, normalise, rows_for, validate, version_problem  # noqa: E402
 
 
 def entry(code, name_en="English", name_de="Deutsch", vernacular=""):
@@ -142,6 +143,49 @@ class TestVersionStamp(unittest.TestCase):
         for bad in ("0.13.0#x", "0.13.0,extra", '0.13.0"'):
             with self.subTest(bad=bad):
                 self.assertNotEqual(version_problem(bad), "")
+
+
+class TestMainRefusesABadVersion(unittest.TestCase):
+    """version_problem alone proves the rule, not that main() obeys it.
+
+    The damage this PR is about did not happen in a helper: it happened
+    because a real command wrote a real file. So the CLI is tested for the
+    thing that actually matters — that nothing is written.
+    """
+
+    def authored_file(self, d):
+        path = os.path.join(d, "authored.csv")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("code,name_en,name_de,vernacular_de\n")
+            fh.write("R22,English,Deutsch,\n")
+        return path
+
+    def run_main(self, version):
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "localizations.csv")
+            code = main([self.authored_file(d), "--version", version, "-o", out])
+            return code, os.path.exists(out)
+
+    def test_the_release_please_marker_writes_nothing(self):
+        code, wrote = self.run_main("0.13.0 # x-release-please-version")
+        self.assertEqual(code, 1)
+        # The point of the whole change: no half-written, poisoned output.
+        self.assertFalse(wrote, "merge.py wrote a file despite refusing the version")
+
+    def test_a_clean_version_still_writes(self):
+        code, wrote = self.run_main("0.13.0")
+        self.assertEqual(code, 0)
+        self.assertTrue(wrote)
+
+    # The check has to run BEFORE the authored file is read: a caller with two
+    # faults should hear about the one they can fix from the command line, and
+    # a missing authored file must not mask a bad version.
+    def test_the_version_is_checked_before_the_authored_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "localizations.csv")
+            missing = os.path.join(d, "does-not-exist.csv")
+            self.assertEqual(main([missing, "--version", "0.13.0 #x", "-o", out]), 1)
+            self.assertFalse(os.path.exists(out))
 
 
 if __name__ == "__main__":
