@@ -11,7 +11,19 @@ payload=$(cat)
 
 # Ohne diesen Abbruch blockiert der Hook seine eigene Nacharbeit endlos: die
 # Antwort auf einen Kommentar endet wieder in einem Stop.
-if [ "$(printf '%s' "$payload" | jq -r '.stop_hook_active // false')" = "true" ]; then
+#
+# Bewusst ohne jq: dieser Schutz muss auch dann greifen, wenn jq fehlt —
+# sonst liefe die Meldung darueber gleich in die Endlosschleife, die er
+# verhindern soll.
+case "$payload" in
+  *'"stop_hook_active":true'* | *'"stop_hook_active": true'*) exit 0 ;;
+esac
+
+# jq ist Voraussetzung fuer jede Meldung dieses Hooks. Fehlt es, kaeme keine
+# einzige Blockade zustande und der Guard wuerde stillschweigend durchwinken —
+# also sagt er genau das, von Hand zusammengesetzt.
+if ! command -v jq >/dev/null 2>&1; then
+  printf '%s\n' '{"decision":"block","reason":"Der Review-Guard braucht jq und findet es nicht. Ohne jq kann er keine Meldung bilden und wuerde jeden offenen Review-Befund stillschweigend durchwinken. jq installieren (brew install jq) oder den Hook in .claude/settings.json abschalten."}'
   exit 0
 fi
 
