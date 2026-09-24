@@ -41,25 +41,41 @@ bleibt `404`.
 Ein **Footer** schließt die Seite ab: die Verweise auf `/docs`, `/openapi` und
 `/health/ready`, die Urheberangabe (`© 2026 Jo Brunner · Code unter MIT`), die
 Herkunft **jeder** Quelle mit der Lizenz, die sie tatsächlich trägt, und die
-gebaute Version. Die Vollständigkeit ist keine Höflichkeit: EUNIS-ESy, die
+gebaute Version. Ohne ihn war die Spezifikation zwar vorhanden, aber von der
+Startseite aus nur zu erraten.
+
+Die Vollständigkeit der Quellenangabe ist keine Höflichkeit: EUNIS-ESy, die
 EVC-Verbreitungskarten, die Habitat-Factsheets und die drei Zeigerwert-Quellen
 (EIVE, Tichý, Midolo) stehen unter CC BY 4.0 und verlangen die Namensnennung
-ausdrücklich auch für abgeleitete Daten — und die Zeigerwerte gehen über
-`GET /v1/species/{conceptId}/traits` an die Nutzer. Die EuroVegChecklist steht
-dabei **nicht** unter CC BY 4.0, sondern unter den Nutzungsbedingungen von
-FloraVeg.EU. Die Versionszeile im Footer trägt bewusst kein `opacity`: ein
-früheres `opacity:.75` drückte ihren Kontrast auf gemessene 3,3:1 (hell) und
-4,34:1 (dunkel), wo WCAG AA bei 12,8px 4,5:1 verlangt. Ohne diese Deklaration
-misst dieselbe Zeile 5,64:1 und 6,74:1. Ohne ihn war die Spezifikation zwar vorhanden, aber von
-der Startseite aus nur zu erraten. Die Version wird **beim Bau der Seite einmal
-ersetzt** (Platzhalter `<!--situs:version-->` in `explorer.html`, ersetzt in
-`NewServer`), nicht aus `/v1/info` nachgeladen: ein Footer, der den Index fragen
-muss, wer er ist, bleibt genau dann leer, wenn der Index das Kaputte ist. Ein
-ungestempelter Bau zeigt `situs dev` — derselbe Platzhalter, den auch
-`situs version` ausgibt. Weil die Ersetzung an einem fehlenden Platzhalter
-stillschweigend nichts tut, prüft ein eigener Test das eingebettete Asset auf
-genau ein Vorkommen, und ein zweiter, dass jedes `href` im Footer eine
-registrierte Route trifft.
+der **Urheber** ausdrücklich auch für abgeleitete Daten — und die Zeigerwerte
+gehen über `GET /v1/species/{conceptId}/traits` an die Nutzer. Die
+EuroVegChecklist steht dabei **nicht** unter CC BY 4.0, sondern unter den
+Nutzungsbedingungen von FloraVeg.EU.
+
+Die Version wird **beim Bau der Seite einmal ersetzt** (Platzhalter
+`<!--situs:version-->` in `explorer.html`, ersetzt in `NewServer`), nicht aus
+`/v1/info` nachgeladen: ein Footer, der den Index fragen muss, wer er ist,
+bleibt genau dann leer, wenn der Index das Kaputte ist. Ein ungestempelter Bau
+zeigt `situs dev` — derselbe Platzhalter, den auch `situs version` ausgibt.
+Weil die Ersetzung an einem fehlenden Platzhalter stillschweigend nichts tut,
+prüft ein eigener Test das eingebettete Asset auf genau ein Vorkommen, und ein
+zweiter, dass jedes `href` im Footer eine registrierte Route trifft. Die
+Versionszeile trägt bewusst kein `opacity`: ein früheres `opacity:.75` drückte
+ihren Kontrast auf gemessene 3,3:1 (hell) und 4,34:1 (dunkel), wo WCAG AA bei
+12,8px 4,5:1 verlangt; ohne diese Deklaration misst dieselbe Zeile 5,64:1 und
+6,74:1.
+
+Die Seite ist **auf ein Telefon ausgelegt**, und das ist mehr als eine
+Medienabfrage: ein `<select>` lässt sich nicht schmaler setzen als seine
+längste `<option>`. Die Typologie-Auswahl trägt
+`annex1 — Habitats Directive Annex I (2013…)` und maß damit 421 px, worauf die
+Seite 462 px brauchte — ein Telefon beantwortet das mit einem geweiteten
+Layout-Viewport und skaliert die ganze Seite auf 84 %, sodass aus 15 px 12,7 px
+werden. Zwei Regeln halten das auf, und gemessen sind beide nötig:
+`max-width:100%` auf den Formularelementen und `min-width:0` auf den
+Flex-Kindern — ohne die zweite bleibt die erste wirkungslos, weil ein Flex-Item
+mit `min-width:auto` gar nicht erst unter seine eigene min-content-Breite
+schrumpft. Mit beiden bleibt der Layout-Viewport auf der Gerätebreite.
 
 **Die Leseseite läuft ohne hostus.** Jede Route hier wird allein aus der lokalen
 SQLite-Datei beantwortet; kein Lesepfad ruft einen Upstream-Dienst. hostus wird
