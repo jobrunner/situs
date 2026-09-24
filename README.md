@@ -178,7 +178,7 @@ Fundament-Spec und Implementierungsplan liegen unter `docs/`:
 |---|---|---|
 | EUNIS terrestrial habitat classification 2021_1 (EEA) | Habitattypen, Syntaxa-Crosswalk, Versions- und Anhang-I-Crosswalk | EEA-Datenpolitik |
 | EUNIS-ESy `Characteristic-species-combinations` (Zenodo) | Kennarten / konstante / dominante Arten je Habitattyp | CC BY 4.0 |
-| Euroveg Checklist 2016 | Syntaxonomie (Klasse, Ordnung, Verband) | — |
+| Euroveg Checklist 2016 (FloraVeg.EU) | Syntaxonomie (Klasse, Ordnung, Verband) | FloraVeg.EU-Nutzungsbedingungen |
 | FFH-Richtlinie Anhang I, deutsche Fassung (EUR-Lex) | amtliche deutsche LRT-Bezeichnungen (CELEX `01992L0043-20130701`, `pipelines/eurlex`) | EU-Recht (Beschluss 2011/833/EU) |
 | WGSRPD Level 3, 2. Auflage (TDWG) | Namen der Verbreitungsgebiete für `GET /v1/areas` (`pipelines/wgsrpd`) | TDWG-Standard |
 | EUNIS Habitat Factsheets 2021-06-01 (FloraVeg.EU / EUNIS-ESy) | Beschreibung je Habitattyp (`pipelines/floraveg-factsheets`) | CC BY 4.0 |
