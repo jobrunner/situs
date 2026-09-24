@@ -218,6 +218,19 @@ func (q *QueryService) summary(ctx context.Context, key domain.HabitatTypeKey, l
 	return s, nil
 }
 
+// syntaxaOf deliberately does NOT overlay the German label, unlike the
+// navigation routes in syntaxon_nav.go. Only the 25 formations are translated,
+// and a habitat type never links one: measured against the 2026-09-23 index,
+// all 1282 habitat_type_syntaxon rows point at an alliance (1281) or at the one
+// order, so the overlay would cost a query per response and set the field zero
+// times.
+//
+// The asymmetry is therefore invisible today, which is exactly why it is
+// written down rather than left to be rediscovered — and why
+// TestHabitatTypeSyntaxaLinkNoTranslatedRank pins the measurement: should a
+// source ever link a formation, that test fails and this decision gets revisited
+// instead of quietly producing a habitat-type response that disagrees with the
+// navigation response about the same syntaxon.
 func (q *QueryService) syntaxaOf(ctx context.Context, key domain.HabitatTypeKey) ([]input.SyntaxonRef, error) {
 	syntaxa, err := q.repo.Syntaxa(ctx, key)
 	if err != nil {

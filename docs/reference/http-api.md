@@ -405,6 +405,16 @@ Formation, zu der ein Syntaxon gehört (feste Wertemenge, s.o.). Ein
 unbekannter Wert bei beiden Parametern ist `INVALID_QUERY`, und die Meldung
 nennt die erlaubten Werte. Die Antwort trägt `SyntaxonRef`.
 
+`name_de` steht **nur in diesen beiden Navigationsrouten**, nicht an den
+Syntaxon-Referenzen im `syntaxa`-Feld von `GET /v1/habitat-type/{typology}/{code}`
+oder in den Artenantworten. Das ist ohne beobachtbare Wirkung und deshalb so
+gelassen: gemessen am Index vom 2026-09-23 zeigen **alle 1282**
+Habitattyp-Syntaxon-Kanten auf einen Verband (1281) oder auf die eine Ordnung,
+**keine einzige** auf eine Formation — das Feld wäre dort also in jedem Fall
+leer, und der Overlay kostete eine Abfrage je Antwort für null gesetzte Werte.
+`TestHabitatTypeSyntaxaLinkNoTranslatedRank` hält die Messung fest und schlägt
+fehl, sobald die Daten das ändern.
+
 `?lang=de` legt `name_de` additiv auf jede Referenz — Wert, Provenienz, Quelle
 und, wo es einen gibt, den gebräuchlichen deutschen Ausdruck (`vernacular`).
 `name` bleibt dabei die Identität und trägt weiter den wissenschaftlichen
