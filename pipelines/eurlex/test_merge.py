@@ -107,8 +107,6 @@ class TestSchemaDrift(unittest.TestCase):
         self.assertEqual(fields, ["name"])
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class TestVersionStamp(unittest.TestCase):
@@ -144,3 +142,7 @@ class TestVersionStamp(unittest.TestCase):
         for bad in ("0.13.0#x", "0.13.0,extra", '0.13.0"'):
             with self.subTest(bad=bad):
                 self.assertNotEqual(version_problem(bad), "")
+
+
+if __name__ == "__main__":
+    unittest.main()
