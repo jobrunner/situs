@@ -385,6 +385,12 @@ and region data), and full plot classification.
 2. Conventional commits (`feat:`, `fix:`, `docs:`, `chore:` …).
 3. `VERSION` and `CHANGELOG.md` are owned by **release-please** — never
    hand-edit them in a feature PR.
+4. **A PR with open review threads is not done.** Every review comment —
+   `copilot-pull-request-reviewer` included — is either fixed or declined with
+   technical reasoning, answered in its thread, and the thread resolved. The
+   Copilot review lands minutes *after* `gh pr create`, so look again rather
+   than assuming silence means clean. The `Stop` hook in `.claude/settings.json`
+   enforces this (`.claude/hooks/pr-review-threads-guard.sh`).
 
 ## Code Style
 
