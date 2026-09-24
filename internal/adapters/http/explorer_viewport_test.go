@@ -9,6 +9,57 @@ import (
 	httpapi "github.com/jobrunner/situs/internal/adapters/http"
 )
 
+// cssRules splits the page's <style> block into (selector, declarations)
+// pairs. Crude on purpose — the stylesheet holds no at-rules with nested
+// blocks except the one media query, whose inner rule this still yields.
+func cssRules(t *testing.T, page string) map[string]string {
+	t.Helper()
+	open := strings.Index(page, "<style>")
+	closeAt := strings.Index(page, "</style>")
+	if open < 0 || closeAt < 0 {
+		t.Fatal("die Seite hat keinen <style>-Block")
+	}
+	style := page[open+len("<style>") : closeAt]
+	// Strip CSS comments, or a rule's explanation ends up in its selector and
+	// the failure message becomes unreadable.
+	for {
+		from := strings.Index(style, "/*")
+		to := strings.Index(style, "*/")
+		if from < 0 || to < from {
+			break
+		}
+		style = style[:from] + style[to+2:]
+	}
+	rules := map[string]string{}
+	for _, block := range strings.Split(style, "}") {
+		brace := strings.Index(block, "{")
+		if brace < 0 {
+			continue
+		}
+		sel := strings.Join(strings.Fields(block[:brace]), " ")
+		rules[sel] = rules[sel] + block[brace+1:]
+	}
+	return rules
+}
+
+// ruleFor finds the one rule whose selector list contains every given part.
+func ruleFor(t *testing.T, rules map[string]string, parts ...string) (string, string) {
+	t.Helper()
+	for sel, decls := range rules {
+		all := true
+		for _, p := range parts {
+			if !strings.Contains(sel, p) {
+				all = false
+				break
+			}
+		}
+		if all {
+			return sel, decls
+		}
+	}
+	return "", ""
+}
+
 // A <select> cannot be laid out narrower than its widest <option>: that text is
 // its min-content width, and neither flex-shrink nor min-width on the select
 // itself changes it. The typology filter carries
@@ -18,23 +69,29 @@ import (
 // 15 px body text arrives as 12.7 px and the 12.8 px labels as 10.8 px —
 // everything unreadable, the drop-downs most visibly.
 //
-// Two rules are needed and measured, not one: max-width alone left the page at
-// 462 px, because the flex item around the select keeps min-width:auto and so
-// never shrinks below its own min-content width — "100 %" of an unshrunk parent
-// is still 421 px. With both, the layout viewport measured 393 px, exactly the
-// device width, and no scaling at all.
+// The assertions bind each declaration to the selector it has to sit on. The
+// earlier version searched the whole stylesheet for the two tokens and would
+// have stayed green with max-width moved to an unrelated rule — which is the
+// one way this regression actually comes back.
 func TestExplorerPage_FormularelementeSprengenDenViewportNicht(t *testing.T) {
 	srv := newTestServerWithOptions(t, seededQueryService(), httpapi.Options{})
 	rec := httptest.NewRecorder()
 	srv.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
-	body := rec.Body.String()
+	rules := cssRules(t, rec.Body.String())
 
-	style := body[strings.Index(body, "<style>"):strings.Index(body, "</style>")]
-
-	if !strings.Contains(style, "max-width:100%") {
-		t.Error("kein max-width:100% im Stylesheet; ein select waechst auf die Breite seiner laengsten Option und sprengt den Viewport")
+	sel, decls := ruleFor(t, rules, "input", "select", "textarea", "button")
+	if sel == "" {
+		t.Fatal("keine Regel fuer die Formularelemente gefunden")
 	}
-	if !strings.Contains(style, "min-width:0") {
-		t.Error("kein min-width:0 im Stylesheet; die Flex-Kinder schrumpfen nicht unter ihre min-content-Breite, und max-width:100% bleibt damit wirkungslos")
+	if !strings.Contains(decls, "max-width:100%") {
+		t.Errorf("die Regel %q begrenzt die Breite nicht (max-width:100%%); ein select waechst auf die Breite seiner laengsten Option und sprengt den Viewport", sel)
+	}
+
+	sel, decls = ruleFor(t, rules, ".globals > div", ".row > div")
+	if sel == "" {
+		t.Fatal("keine Regel fuer die Flex-Kinder von .globals und .row gefunden")
+	}
+	if !strings.Contains(decls, "min-width:0") {
+		t.Errorf("die Regel %q setzt kein min-width:0; ein Flex-Item mit min-width:auto schrumpft nie unter seine min-content-Breite, und max-width:100%% bleibt damit wirkungslos", sel)
 	}
 }
