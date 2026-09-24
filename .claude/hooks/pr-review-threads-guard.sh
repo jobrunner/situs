@@ -31,21 +31,25 @@ case "$branch" in main | master | HEAD) exit 0 ;; esac
 # abgelaufenes Token, ein Rate Limit oder ein Netzfehler sieht sonst genauso
 # aus wie ein sauberer Zustand — und waere dieselbe Fail-open-Luecke, die
 # weiter unten schon geschlossen ist.
-pr_err=$(mktemp) || exit 0
-pr=$(gh pr view --json number --jq .number 2>"$pr_err")
+# Ohne temporaere Datei: ein mktemp, das scheitert, waere wieder ein stiller
+# Ausstieg an einer Stelle, die gerade fail-closed werden sollte. stdout und
+# stderr kommen zusammen, das Ergebnis wird danach auseinandergehalten.
+pr_out=$(gh pr view --json number --jq .number 2>&1)
 pr_rc=$?
-pr_msg=$(head -n 1 "$pr_err" 2>/dev/null)
-rm -f "$pr_err"
 
 if [ $pr_rc -ne 0 ]; then
-  case "$pr_msg" in
+  case "$pr_out" in
     *"no pull requests found"* | *"no open pull requests"* | *"no pull request found"*) exit 0 ;;
   esac
-  # Noch ohne jq-Pruefung an dieser Stelle, also von Hand gebildet.
+  # Noch vor der jq-Pruefung, also von Hand gebildet.
   printf '{"decision":"block","reason":"Der Review-Guard konnte nicht feststellen, ob zu diesem Branch ein PR gehoert: %s. Das ist keine Freigabe — Ursache beheben (gh auth status, Netz, Rate Limit) oder den Hook in .claude/settings.json abschalten."}\n' \
-    "$(printf '%s' "$pr_msg" | tr -d '"\\' | tr '\n\r' '  ' | cut -c1-200)"
+    "$(printf '%s' "$pr_out" | tr -d '"\\' | tr '\n\r' '  ' | cut -c1-200)"
   exit 0
 fi
+
+# gh schreibt die Nummer als einzige Zeile auf stdout; eine etwaige Warnung
+# auf stderr steht davor.
+pr=$(printf '%s\n' "$pr_out" | tail -n 1 | tr -dc '0-9')
 [ -n "$pr" ] || exit 0
 
 # Erst ab hier wird jq gebraucht — und erst ab hier darf sein Fehlen
