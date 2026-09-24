@@ -47,9 +47,10 @@ EVC-Verbreitungskarten, die Habitat-Factsheets und die drei Zeigerwert-Quellen
 ausdrücklich auch für abgeleitete Daten — und die Zeigerwerte gehen über
 `GET /v1/species/{conceptId}/traits` an die Nutzer. Die EuroVegChecklist steht
 dabei **nicht** unter CC BY 4.0, sondern unter den Nutzungsbedingungen von
-FloraVeg.EU. Die Versionszeile trägt bewusst kein `opacity`: gemessen fiel der
-Kontrast damit auf 3,3:1 (hell) und 4,34:1 (dunkel), wo WCAG AA bei 12,8px
-4,5:1 verlangt. Ohne ihn war die Spezifikation zwar vorhanden, aber von
+FloraVeg.EU. Die Versionszeile im Footer trägt bewusst kein `opacity`: ein
+früheres `opacity:.75` drückte ihren Kontrast auf gemessene 3,3:1 (hell) und
+4,34:1 (dunkel), wo WCAG AA bei 12,8px 4,5:1 verlangt. Ohne diese Deklaration
+misst dieselbe Zeile 5,64:1 und 6,74:1. Ohne ihn war die Spezifikation zwar vorhanden, aber von
 der Startseite aus nur zu erraten. Die Version wird **beim Bau der Seite einmal
 ersetzt** (Platzhalter `<!--situs:version-->` in `explorer.html`, ersetzt in
 `NewServer`), nicht aus `/v1/info` nachgeladen: ein Footer, der den Index fragen

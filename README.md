@@ -187,7 +187,7 @@ Fundament-Spec und Implementierungsplan liegen unter `docs/`:
 | Tichý et al. 2023, Indicator values v2.0 (Zenodo `10.5281/zenodo.7427088`) | Zeigerwerte (`pipelines/tichy`) | CC BY 4.0 |
 | Midolo et al. 2023, v3 (Zenodo `10.5281/zenodo.7116957`) | Zeigerwerte (`pipelines/midolo`) | CC BY 4.0 |
 
-Die vier CC-BY-Zeilen verlangen die Namensnennung ausdrücklich auch für
+Die sechs CC-BY-Zeilen verlangen die Namensnennung ausdrücklich auch für
 abgeleitete Daten; der Footer des Explorers nennt sie deshalb alle.
 
 Die Artefakte werden **gepinnt** und **nicht** ins Repo eingecheckt — je

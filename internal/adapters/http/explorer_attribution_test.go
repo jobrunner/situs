@@ -29,9 +29,11 @@ func TestExplorerFooter_NenntJedeQuelleMitIhrerLizenz(t *testing.T) {
 	footer := body[start:]
 
 	for _, want := range []string{
-		"EEA EUNIS",        // EEA-Datenpolitik (ODC-BY)
-		"EUNIS-ESy",        // Zenodo, CC BY 4.0
-		"EuroVegChecklist", // FloraVeg.EU-Nutzungsbedingungen, NICHT CC BY
+		"EEA EUNIS",              // EEA-Datenpolitik (ODC-BY)
+		"EUNIS-ESy",              // Zenodo, CC BY 4.0
+		"EVC-Verbreitungskarten", // Zenodo, CC BY 4.0
+		"Habitat-Factsheets",     // FloraVeg.EU, CC BY 4.0
+		"EuroVegChecklist",       // FloraVeg.EU-Nutzungsbedingungen, NICHT CC BY
 		"FloraVeg.EU",
 		"EUR-Lex", // FFH-Anhang I, Beschluss 2011/833/EU
 		"WGSRPD",  // TDWG
