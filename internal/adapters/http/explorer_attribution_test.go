@@ -28,28 +28,28 @@ func TestExplorerFooter_NenntJedeQuelleMitIhrerLizenz(t *testing.T) {
 	}
 	footer := body[start:]
 
-	for _, want := range []string{
-		"EEA EUNIS",              // EEA-Datenpolitik (ODC-BY)
-		"EUNIS-ESy",              // Zenodo, CC BY 4.0
-		"EVC-Verbreitungskarten", // Zenodo, CC BY 4.0
-		"Habitat-Factsheets",     // FloraVeg.EU, CC BY 4.0
-		"EuroVegChecklist",       // FloraVeg.EU-Nutzungsbedingungen, NICHT CC BY
-		"FloraVeg.EU",
-		"EUR-Lex", // FFH-Anhang I, Beschluss 2011/833/EU
-		"WGSRPD",  // TDWG
-		"EIVE",    // Zenodo, CC BY 4.0
-		"Tichý",   // Zenodo, CC BY 4.0
-		"Midolo",  // Zenodo, CC BY 4.0
-		"CC BY 4.0",
+	// Die Zuordnung Quelle -> Lizenz ist der Punkt, nicht die blosse Nennung:
+	// ein Footer, der die EEA-Zeile unter CC BY 4.0 fuehrt, waere falsch und
+	// stuende trotzdem voller richtiger Namen. Geprueft werden deshalb die
+	// ganzen Klauseln. Der Footer bricht sie ueber mehrere Zeilen um, also wird
+	// vorher der Weissraum vereinheitlicht.
+	normalized := strings.Join(strings.Fields(footer), " ")
+
+	for _, klausel := range []string{
+		"EEA EUNIS 2021 (EEA-Datenpolitik)",
+		"EUNIS-ESy, EVC-Verbreitungskarten, Habitat-Factsheets, EIVE, Tichý, Midolo (je CC BY 4.0)",
+		"EuroVegChecklist / FloraVeg.EU (Nutzungsbedingungen)",
+		"FFH-Anhang I (EUR-Lex)",
+		"WGSRPD (TDWG)",
 	} {
-		if !strings.Contains(footer, want) {
-			t.Errorf("der Footer nennt %q nicht", want)
+		if !strings.Contains(normalized, klausel) {
+			t.Errorf("der Footer fuehrt die Klausel %q nicht; entweder fehlt die Quelle oder ihre Lizenz ist anders zugeordnet", klausel)
 		}
 	}
 
-	// Die Fehlzuordnung, die den Anlass gab: EuroVegChecklist darf nicht in
-	// derselben Klammer wie die CC-BY-Quellen stehen.
-	if strings.Contains(footer, "EuroVegChecklist · FloraVeg.EU (CC BY 4.0)") {
+	// Die Fehlzuordnung, die den Anlass gab: die EuroVegChecklist stand in
+	// derselben Klammer wie die CC-BY-Quellen.
+	if strings.Contains(normalized, "EuroVegChecklist · FloraVeg.EU (CC BY 4.0)") {
 		t.Error("EuroVegChecklist steht weiterhin unter CC BY 4.0; FloraVeg.EU veroeffentlicht sie unter eigenen Nutzungsbedingungen")
 	}
 }
@@ -57,7 +57,7 @@ func TestExplorerFooter_NenntJedeQuelleMitIhrerLizenz(t *testing.T) {
 // axe-core measured the version line at 3.3:1 (light) and 4.34:1 (dark) —
 // both below the 4.5:1 WCAG AA asks for at 12.8px. The cause was opacity:.75,
 // carried over from ortus, which fades var(--muted) toward the background in
-// both themes. Without it the same text measures 5.6:1 and 6.9:1.
+// both themes. Without it the same text measures 5.64:1 and 6.74:1.
 func TestExplorerFooter_VersionszeileWirdNichtAusgeblichen(t *testing.T) {
 	srv := newTestServerWithOptions(t, seededQueryService(), httpapi.Options{})
 	rec := httptest.NewRecorder()
