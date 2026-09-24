@@ -7,7 +7,7 @@
 # Anlegen sieht garantiert null Kommentare und meldet faelschlich "sauber".
 set -uo pipefail
 
-payload=$(cat)
+payload=$(</dev/stdin)
 
 # Ohne diesen Abbruch blockiert der Hook seine eigene Nacharbeit endlos: die
 # Antwort auf einen Kommentar endet wieder in einem Stop.
@@ -19,14 +19,6 @@ case "$payload" in
   *'"stop_hook_active":true'* | *'"stop_hook_active": true'*) exit 0 ;;
 esac
 
-# jq ist Voraussetzung fuer jede Meldung dieses Hooks. Fehlt es, kaeme keine
-# einzige Blockade zustande und der Guard wuerde stillschweigend durchwinken —
-# also sagt er genau das, von Hand zusammengesetzt.
-if ! command -v jq >/dev/null 2>&1; then
-  printf '%s\n' '{"decision":"block","reason":"Der Review-Guard braucht jq und findet es nicht. Ohne jq kann er keine Meldung bilden und wuerde jeden offenen Review-Befund stillschweigend durchwinken. jq installieren (brew install jq) oder den Hook in .claude/settings.json abschalten."}'
-  exit 0
-fi
-
 command -v gh >/dev/null 2>&1 || exit 0
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 
@@ -35,8 +27,34 @@ case "$branch" in main | master | HEAD) exit 0 ;; esac
 
 # Kein PR zum Branch: nichts zu pruefen. Das ist der haeufige Fall und muss
 # billig sein.
-pr=$(gh pr view --json number --jq .number 2>/dev/null) || exit 0
+# "Kein PR zum Branch" ist das einzige Ergebnis, das hier schweigen darf. Ein
+# abgelaufenes Token, ein Rate Limit oder ein Netzfehler sieht sonst genauso
+# aus wie ein sauberer Zustand — und waere dieselbe Fail-open-Luecke, die
+# weiter unten schon geschlossen ist.
+pr_err=$(mktemp) || exit 0
+pr=$(gh pr view --json number --jq .number 2>"$pr_err")
+pr_rc=$?
+pr_msg=$(head -n 1 "$pr_err" 2>/dev/null)
+rm -f "$pr_err"
+
+if [ $pr_rc -ne 0 ]; then
+  case "$pr_msg" in
+    *"no pull requests found"* | *"no open pull requests"* | *"no pull request found"*) exit 0 ;;
+  esac
+  # Noch ohne jq-Pruefung an dieser Stelle, also von Hand gebildet.
+  printf '{"decision":"block","reason":"Der Review-Guard konnte nicht feststellen, ob zu diesem Branch ein PR gehoert: %s. Das ist keine Freigabe — Ursache beheben (gh auth status, Netz, Rate Limit) oder den Hook in .claude/settings.json abschalten."}\n' \
+    "$(printf '%s' "$pr_msg" | tr -d '"\\' | tr '\n\r' '  ' | cut -c1-200)"
+  exit 0
+fi
 [ -n "$pr" ] || exit 0
+
+# Erst ab hier wird jq gebraucht — und erst ab hier darf sein Fehlen
+# blockieren: auf main, ausserhalb eines Repos oder ohne PR bleibt der Hook
+# still, auch ohne jq.
+if ! command -v jq >/dev/null 2>&1; then
+  printf '%s\n' '{"decision":"block","reason":"Der Review-Guard braucht jq und findet es nicht. Ohne jq kann er keine Meldung bilden und wuerde jeden offenen Review-Befund dieses PR stillschweigend durchwinken. jq installieren (brew install jq) oder den Hook in .claude/settings.json abschalten."}'
+  exit 0
+fi
 
 # Ab hier steht fest, dass es einen PR gibt — und ab hier ist Schweigen eine
 # Aussage ("nichts offen"), die der Hook nur treffen darf, wenn er wirklich
