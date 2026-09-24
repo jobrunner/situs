@@ -178,10 +178,22 @@ Fundament-Spec und Implementierungsplan liegen unter `docs/`:
 |---|---|---|
 | EUNIS terrestrial habitat classification 2021_1 (EEA) | Habitattypen, Syntaxa-Crosswalk, Versions- und Anhang-I-Crosswalk | EEA-Datenpolitik |
 | EUNIS-ESy `Characteristic-species-combinations` (Zenodo) | Kennarten / konstante / dominante Arten je Habitattyp | CC BY 4.0 |
-| Euroveg Checklist 2016 | Syntaxonomie (Klasse, Ordnung, Verband) | — |
+| Euroveg Checklist 2016 (FloraVeg.EU) | Syntaxonomie (Klasse, Ordnung, Verband) | FloraVeg.EU-Nutzungsbedingungen |
 | FFH-Richtlinie Anhang I, deutsche Fassung (EUR-Lex) | amtliche deutsche LRT-Bezeichnungen (CELEX `01992L0043-20130701`, `pipelines/eurlex`) | EU-Recht (Beschluss 2011/833/EU) |
 | WGSRPD Level 3, 2. Auflage (TDWG) | Namen der Verbreitungsgebiete für `GET /v1/areas` (`pipelines/wgsrpd`) | TDWG-Standard |
 | EUNIS Habitat Factsheets 2021-06-01 (FloraVeg.EU / EUNIS-ESy) | Beschreibung je Habitattyp (`pipelines/floraveg-factsheets`) | CC BY 4.0 |
+| Verbreitungskarten der Vegetationsverbände Europas, v2 2024-06-12 (Zenodo) | Syntaxa-Verbreitung je EVC-Territorium (`pipelines/evc-distribution`) | CC BY 4.0 |
+| EIVE 1.0 (Zenodo `10.5281/zenodo.7534792`) | Zeigerwerte (`pipelines/eive`) | CC BY 4.0 |
+| Tichý et al. 2023, Indicator values v2.0 (Zenodo `10.5281/zenodo.7427088`) | Zeigerwerte (`pipelines/tichy`) | CC BY 4.0 |
+| Midolo et al. 2023, v3 (Zenodo `10.5281/zenodo.7116957`) | Zeigerwerte (`pipelines/midolo`) | CC BY 4.0 |
+
+Die sechs CC-BY-Zeilen verlangen die Namensnennung ausdrücklich auch für
+abgeleitete Daten, und zwar die der **Urheber**, nicht nur des Datensatzes.
+Der Footer des Explorers führt sie deshalb mit Kurzzitat: EUNIS-ESy und die
+Habitat-Factsheets nach Chytrý et al. (2020), die Verbreitungskarten nach
+Preislerová et al. (2022, 2024), EIVE nach Dengler et al. (2023), die
+Zeigerwerte nach Tichý et al. (2023) und die Störungszeiger nach Midolo et al.
+(2023).
 
 Die Artefakte werden **gepinnt** und **nicht** ins Repo eingecheckt — je
 Pipeline dort, wo es zur Quelle passt: URL + Prüfsumme in
