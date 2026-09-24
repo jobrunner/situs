@@ -2,11 +2,12 @@
 """Tests for merge.py — the promises the authored file has to keep."""
 import os
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from merge import normalise, rows_for, validate  # noqa: E402
+from merge import main, normalise, rows_for, validate, version_problem  # noqa: E402
 
 
 def entry(code, name_en="English", name_de="Deutsch", vernacular=""):
@@ -105,6 +106,86 @@ class TestSchemaDrift(unittest.TestCase):
     def test_rows_for_tolerates_an_absent_vernacular_column(self):
         fields = [r["field"] for r in rows_for({"code": "R22", "name_de": "x"}, "0.3.0")]
         self.assertEqual(fields, ["name"])
+
+
+
+
+class TestVersionStamp(unittest.TestCase):
+    """The source field is data. A version that is not a version poisons it.
+
+    This is not hypothetical: the prod index built on 2026-08-31 carries
+    `situs@0.2.0 # x-release-please-version` in `localization.source`, because
+    the README told the caller to pass `$(cat VERSION)` and that file keeps a
+    release-please marker behind the number. Nothing noticed for three weeks.
+    """
+
+    def test_a_bare_version_is_accepted(self):
+        self.assertEqual(version_problem("0.13.0"), "")
+
+    def test_the_release_please_marker_is_rejected(self):
+        problem = version_problem("0.13.0 # x-release-please-version")
+        self.assertIn("0.13.0 # x-release-please-version", problem)
+        # The message has to name the fix, not just the fault: the caller is a
+        # shell line in a README, and "invalid version" would send them reading
+        # merge.py instead of correcting the pipe.
+        self.assertIn("cut -d' ' -f1", problem)
+
+    def test_any_whitespace_is_rejected(self):
+        self.assertNotEqual(version_problem("0.13.0\n"), "")
+        self.assertNotEqual(version_problem("0 13"), "")
+
+    def test_an_empty_version_is_rejected(self):
+        self.assertNotEqual(version_problem(""), "")
+
+    # A comment marker without whitespace would still be a comment, and a
+    # comma would split the CSV column it is written into.
+    def test_a_structural_character_is_rejected(self):
+        for bad in ("0.13.0#x", "0.13.0,extra", '0.13.0"'):
+            with self.subTest(bad=bad):
+                self.assertNotEqual(version_problem(bad), "")
+
+
+class TestMainRefusesABadVersion(unittest.TestCase):
+    """version_problem alone proves the rule, not that main() obeys it.
+
+    The damage this PR is about did not happen in a helper: it happened
+    because a real command wrote a real file. So the CLI is tested for the
+    thing that actually matters — that nothing is written.
+    """
+
+    def authored_file(self, d):
+        path = os.path.join(d, "authored.csv")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("code,name_en,name_de,vernacular_de\n")
+            fh.write("R22,English,Deutsch,\n")
+        return path
+
+    def run_main(self, version):
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "localizations.csv")
+            code = main([self.authored_file(d), "--version", version, "-o", out])
+            return code, os.path.exists(out)
+
+    def test_the_release_please_marker_writes_nothing(self):
+        code, wrote = self.run_main("0.13.0 # x-release-please-version")
+        self.assertEqual(code, 1)
+        # The point of the whole change: no half-written, poisoned output.
+        self.assertFalse(wrote, "merge.py wrote a file despite refusing the version")
+
+    def test_a_clean_version_still_writes(self):
+        code, wrote = self.run_main("0.13.0")
+        self.assertEqual(code, 0)
+        self.assertTrue(wrote)
+
+    # The check has to run BEFORE the authored file is read: a caller with two
+    # faults should hear about the one they can fix from the command line, and
+    # a missing authored file must not mask a bad version.
+    def test_the_version_is_checked_before_the_authored_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "localizations.csv")
+            missing = os.path.join(d, "does-not-exist.csv")
+            self.assertEqual(main([missing, "--version", "0.13.0 #x", "-o", out]), 1)
+            self.assertFalse(os.path.exists(out))
 
 
 if __name__ == "__main__":

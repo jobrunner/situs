@@ -23,7 +23,7 @@ sqlite3 situs.sqlite "SELECT h.code FROM habitat_type h
 sqlite3 -separator '\t' situs.sqlite \
   "SELECT code,name_en FROM habitat_type WHERE typology_id='eunis@2021' AND level IN (1,2,3)" > index-names.tsv
 python3 pipelines/eurlex/merge.py data/localizations-de-situs.csv \
-  --version "$(cat VERSION)" --official localizations.csv \
+  --version "$(cut -d' ' -f1 VERSION)" --official localizations.csv \
   --expected-codes expected.txt --index-names index-names.tsv -o localizations.csv
 ```
 
@@ -32,6 +32,15 @@ Die Level-Menge ist **1 bis 3**, nicht nur 3: Level 1 und 2 tragen keinen
 erreicht sie also nie, und ohne verfasste Zeilen bliebe die Ebene englisch, die
 in der App als Gruppenknopf zuerst sichtbar ist. Gemessen am 2026-09-21: **290**
 verfasste Typen, **394** Zeilen, davon 104 `vernacular`.
+
+`--version` will **nur die Nummer**, nicht die ganze `VERSION`-Zeile: dahinter
+steht der release-please-Marker `# x-release-please-version`, und `merge.py`
+stempelt den Wert unverändert als `situs@<version>` in die `source`-Spalte. Der
+Prod-Index vom 2026-08-31 trägt deshalb `situs@0.2.0 # x-release-please-version`
+— hier stand früher `$(cat VERSION)`, und drei Wochen lang ist es niemandem
+aufgefallen. `merge.py` weist so einen Wert inzwischen zurück, statt ihn zu
+schreiben oder still zurechtzuschneiden: ein stillschweigend repariertes
+Kommando bleibt für den nächsten Lauf kaputt.
 
 `merge.py` schreibt **nichts**, wenn die verfasste Datei ihre Zusagen bricht:
 eine fehlende oder überzählige Code-Menge, ein doppelter Code, ein
