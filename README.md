@@ -188,7 +188,12 @@ Fundament-Spec und Implementierungsplan liegen unter `docs/`:
 | Midolo et al. 2023, v3 (Zenodo `10.5281/zenodo.7116957`) | Zeigerwerte (`pipelines/midolo`) | CC BY 4.0 |
 
 Die sechs CC-BY-Zeilen verlangen die Namensnennung ausdrücklich auch für
-abgeleitete Daten; der Footer des Explorers nennt sie deshalb alle.
+abgeleitete Daten, und zwar die der **Urheber**, nicht nur des Datensatzes.
+Der Footer des Explorers führt sie deshalb mit Kurzzitat: EUNIS-ESy und die
+Habitat-Factsheets nach Chytrý et al. (2020), die Verbreitungskarten nach
+Preislerová et al. (2022, 2024), EIVE nach Dengler et al. (2023), die
+Zeigerwerte nach Tichý et al. (2023) und die Störungszeiger nach Midolo et al.
+(2023).
 
 Die Artefakte werden **gepinnt** und **nicht** ins Repo eingecheckt — je
 Pipeline dort, wo es zur Quelle passt: URL + Prüfsumme in
