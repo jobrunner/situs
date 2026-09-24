@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pr-review-threads-guard.sh\"",
+            "timeout": 20,
+            "statusMessage": "Prüfe offene Review-Befunde…"
+          }
+        ]
+      }
+    ]
+  }
+}
