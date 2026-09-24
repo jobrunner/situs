@@ -74,10 +74,10 @@ jobs:
       contents: write # Archive + checksums an den Release hängen
       packages: write # Image nach ghcr.io pushen
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       # QEMU + buildx sind es, die den arm64-Build auf einem amd64-Runner möglich
@@ -107,7 +107,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v5
       # Derselbe Aufruf, den `make verify` und der CI-Docs-Job als Gate nutzen —
       # hier wird das Ergebnis aber veröffentlicht statt verworfen. An den Release
