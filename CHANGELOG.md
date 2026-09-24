@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.14.0](https://github.com/jobrunner/situs/compare/v0.13.1...v0.14.0) (2026-09-24)
+
+
+### Features
+
+* **explorer:** Footer mit Doku-Verweisen, Urheberangabe und Version ([005d58e](https://github.com/jobrunner/situs/commit/005d58e9f379f2724cfb445a558a3714603b74f6))
+
+
+### Bug Fixes
+
+* **explorer:** die Nachlese aus dem Copilot-Review zu [#70](https://github.com/jobrunner/situs/issues/70) ([ca202e6](https://github.com/jobrunner/situs/commit/ca202e649c0fdd3988a9cead3d4fbcd76ccf75ab))
+* **explorer:** die Urheber der CC-BY-Quellen nennen, nicht nur die Datensaetze ([9f9b096](https://github.com/jobrunner/situs/commit/9f9b0961411f8f296fc3163dd0e86187140efaf3))
+* **explorer:** die Version als HTML-Text escapen ([3fc18d7](https://github.com/jobrunner/situs/commit/3fc18d72e3c58ee4ade25cabe1a276a018722e4b))
+* **explorer:** Quellenangabe vervollstaendigen und Versionszeile lesbar machen ([ff5e399](https://github.com/jobrunner/situs/commit/ff5e399909c62cd27cd157533737c2e514a98739))
+* **explorer:** Quellenangabe vervollständigen und Versionszeile lesbar machen ([3a9da3a](https://github.com/jobrunner/situs/commit/3a9da3a97fc4b6e946435a971ab370f5242569fa))
+* **hooks:** bei gescheiterter Pruefung blockieren statt durchwinken ([d2f4cfa](https://github.com/jobrunner/situs/commit/d2f4cfad8ba1f655baed4229c3c9fe5dcb95a8a9))
+* **hooks:** den Guard wirklich einchecken und Review-Zusammenfassungen pruefen ([74017af](https://github.com/jobrunner/situs/commit/74017afaa057e769fe25fafda291487e57c85d85))
+* **hooks:** die Pruefreihenfolge richtigstellen und gh-Fehler unterscheiden ([9d3eddb](https://github.com/jobrunner/situs/commit/9d3eddb9f652433f4a083a199e37e4ea27fcc7fc))
+* **hooks:** die temporaere Datei entfernen statt ihren Fehlerfall zu flicken ([3ef4900](https://github.com/jobrunner/situs/commit/3ef4900639f9d6a2e3c822e2d71d2cf281ad4c2f))
+* **hooks:** jq als Voraussetzung pruefen statt stillschweigend zu scheitern ([585538e](https://github.com/jobrunner/situs/commit/585538ef6486642627211e377b950d2d4b26f69c))
+* **hooks:** Reviews einzeln quittieren statt Commits als Beleg zu nehmen ([737091f](https://github.com/jobrunner/situs/commit/737091f8636d7176307ba869f76b82a60633c806))
+
 ## [0.13.1](https://github.com/jobrunner/situs/compare/v0.13.0...v0.13.1) (2026-09-24)
 
 
