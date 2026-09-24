@@ -14,21 +14,22 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: gofmt
         run: make fmt-check
-      # Action v8 is the major that supports golangci-lint v2 (it requires
+      # Action v8 was the first major supporting golangci-lint v2 (it requires
       # >= v2.1.0); v6 supports the v1 line only and would reject this
-      # `version: "2"` config. install-mode: goinstall is not a preference: the
+      # `version: "2"` config. v9 changes only the Node runtime (20 -> 24) and
+      # adds two inputs, so the v2 support and everything below still holds. install-mode: goinstall is not a preference: the
       # published release binaries are built with Go 1.25, and golangci-lint
       # refuses a module whose `go` directive is newer than its own build
       # toolchain ("the Go language version used to build golangci-lint is lower
       # than the targeted Go version"). goinstall compiles it with the toolchain
       # actions/setup-go just installed from go.mod, which satisfies that.
-      - uses: golangci/golangci-lint-action@v8
+      - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12.2
           install-mode: goinstall
@@ -38,8 +39,8 @@ jobs:
     name: Architecture
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       # `make arch` shells out to golangci-lint, so this job needs the binary
@@ -56,8 +57,8 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: go vet
@@ -73,8 +74,8 @@ jobs:
     name: Pipeline
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
       - name: Pipeline tests
@@ -84,8 +85,8 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - run: make build
@@ -94,8 +95,8 @@ jobs:
     name: Security
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: Known vulnerabilities
@@ -107,7 +108,11 @@ jobs:
     name: Docs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      # Auf die exakte Version gepinnt, nicht auf einen Major: setup-uv pflegt
+      # ab v8 keine beweglichen Major-Tags mehr (v1 bis v7 gibt es, v8/v9/v10
+      # nicht). Ein @v10 laesst sich nicht aufloesen und bricht den Job sofort
+      # mit "unable to find version" ab.
+      - uses: astral-sh/setup-uv@v10.2.0
       - name: mkdocs build --strict
         run: make docs

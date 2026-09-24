@@ -74,10 +74,10 @@ jobs:
       contents: write # Archive + checksums an den Release hängen
       packages: write # Image nach ghcr.io pushen
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       # QEMU + buildx sind es, die den arm64-Build auf einem amd64-Runner möglich
@@ -107,16 +107,20 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      # Auf die exakte Version gepinnt, nicht auf einen Major: setup-uv pflegt
+      # ab v8 keine beweglichen Major-Tags mehr (v1 bis v7 gibt es, v8/v9/v10
+      # nicht). Ein @v10 laesst sich nicht aufloesen und bricht den Job sofort
+      # mit "unable to find version" ab.
+      - uses: astral-sh/setup-uv@v10.2.0
       # Derselbe Aufruf, den `make verify` und der CI-Docs-Job als Gate nutzen —
       # hier wird das Ergebnis aber veröffentlicht statt verworfen. An den Release
       # gebunden, damit die sichtbare Doku zur veröffentlichten Version passt.
       - name: mkdocs build --strict
         run: make docs
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
