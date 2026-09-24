@@ -405,6 +405,12 @@ Formation, zu der ein Syntaxon gehört (feste Wertemenge, s.o.). Ein
 unbekannter Wert bei beiden Parametern ist `INVALID_QUERY`, und die Meldung
 nennt die erlaubten Werte. Die Antwort trägt `SyntaxonRef`.
 
+`name_de` steht **nur in diesen beiden Navigationsrouten**, nicht an den
+Syntaxon-Referenzen im `syntaxa`-Feld von `GET /v1/habitat-type/{typology}/{code}`
+und nicht in den Artenantworten. Das ist ohne Wirkung: dort stehen ausschließlich
+Verbände und eine Ordnung, und übersetzt sind nur Formationen (gemessen, siehe
+`measured-index.md`).
+
 `?lang=de` legt `name_de` additiv auf jede Referenz — Wert, Provenienz, Quelle
 und, wo es einen gibt, den gebräuchlichen deutschen Ausdruck (`vernacular`).
 `name` bleibt dabei die Identität und trägt weiter den wissenschaftlichen

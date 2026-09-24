@@ -218,6 +218,11 @@ func (q *QueryService) summary(ctx context.Context, key domain.HabitatTypeKey, l
 	return s, nil
 }
 
+// syntaxaOf does NOT overlay the German label, unlike the navigation routes in
+// syntaxon_nav.go. Only formations are translated, and no habitat type links one:
+// measured against the 2026-09-23 index, all 1282 habitat_type_syntaxon rows
+// point at an alliance or at the one order. The overlay would cost a query per
+// response and set the field zero times.
 func (q *QueryService) syntaxaOf(ctx context.Context, key domain.HabitatTypeKey) ([]input.SyntaxonRef, error) {
 	syntaxa, err := q.repo.Syntaxa(ctx, key)
 	if err != nil {

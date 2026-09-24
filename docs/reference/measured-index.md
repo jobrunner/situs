@@ -794,6 +794,24 @@ sqlite3 situs.sqlite \
   "SELECT COUNT(*) FROM localization WHERE entity_type='syntaxon' AND lang='de';"
 ```
 
+### Habitattypen verknüpfen keine Formation
+
+| Kennzahl | Wert |
+|---|---|
+| `habitat_type_syntaxon`-Kanten auf einen Verband | **1281** |
+| auf eine Ordnung | **1** |
+| auf eine Formation | **0** |
+
+```sh
+sqlite3 situs.sqlite "SELECT s.rank, COUNT(*) FROM habitat_type_syntaxon h
+  JOIN syntaxon s ON s.id = h.syntaxon_id GROUP BY s.rank;"
+```
+
+Deshalb trägt `SyntaxonRef` in der Habitattyp-Antwort kein `name_de`, obwohl
+die Navigationsrouten es tragen: übersetzt sind nur Formationen, und keine ist
+hier verknüpft. Kein Test hält das fest — die Kanten stehen in
+`habitat_type_syntaxa.csv`, einer nicht versionierten Pipeline-Ausgabe.
+
 ### Warum nur die Formationen
 
 Die 25 Formationen sind die Einstiegsebene der Navigation und die einzige,

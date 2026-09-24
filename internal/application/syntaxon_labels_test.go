@@ -71,9 +71,12 @@ func TestSyntaxaByRank_WithoutLangCarriesNoGermanLabel(t *testing.T) {
 	}
 }
 
-// A rank nobody translated stays untranslated rather than borrowing its
-// formation's label: only the 25 formations are authored, and an alliance
-// showing its formation's German name would be a wrong name, not a fallback.
+// A syntaxon with no localization row of its own stays untranslated rather than
+// borrowing its formation's label. This guards the CODE, not the data: the
+// fixture gives labels to the formations only, so an implementation that walked
+// up the ancestor path for a fallback would light this up. Which ranks actually
+// carry a translation is a property of data/localizations-de-syntaxa.csv and is
+// checked there (cmd/situs/curated_test.go), not here.
 func TestSyntaxaByRank_UntranslatedRankStaysUntranslated(t *testing.T) {
 	repo := seedNavRepo(t)
 	seedFormationLabels(repo)

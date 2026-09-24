@@ -975,10 +975,13 @@ func TestIngestCommandFailsOnMalformedDescriptions(t *testing.T) {
 	}
 }
 
-// The German descriptions live in their own localizations file: they are
-// hand-curated in data/, while localizations.csv is produced by
-// pipelines/eurlex. Both go through the same ingest, and the report sums them.
-func TestIngestCommandReadsBothLocalizationFiles(t *testing.T) {
+// The localization overlay is spread over three files: localizations.csv (the
+// habitat-type labels, produced by pipelines/eurlex), and two hand-curated in
+// data/ — the German descriptions and the syntaxa formation names. All three
+// go through the same ingest, and the report sums them, which is what this
+// pins: a file silently dropped from the loop would still leave a green run
+// and a plausible-looking count.
+func TestIngestCommandReadsEveryLocalizationFile(t *testing.T) {
 	stubHostus(t)
 	dir := seedIngestDir(t)
 	header := "entity_type,entity_key,lang,field,value,source,provenance\n"
