@@ -26,6 +26,21 @@ case "$branch" in main | master | HEAD) exit 0 ;; esac
 pr=$(gh pr view --json number --jq .number 2>/dev/null) || exit 0
 [ -n "$pr" ] || exit 0
 
+# Ab hier steht fest, dass es einen PR gibt — und ab hier ist Schweigen eine
+# Aussage ("nichts offen"), die der Hook nur treffen darf, wenn er wirklich
+# nachgesehen hat. Ein abgelaufenes Token, ein Rate Limit oder ein Netzfehler
+# sind kein sauberer PR. Ein Guard, der bei Stoerung durchwinkt, ist wertlos.
+unverifiable() {
+  jq -n --arg pr "$pr" --arg what "$1" '{
+    decision: "block",
+    reason: ("Die Review-Pruefung fuer PR #\($pr) konnte nicht durchgefuehrt werden: \($what). " +
+             "Das ist keine Freigabe — der Hook blockiert absichtlich, statt ungeprueft " +
+             "durchzuwinken. Ursache beheben (gh auth status, Netz, Rate Limit) und erneut " +
+             "versuchen; oder den Hook in .claude/settings.json bewusst abschalten.")
+  }'
+  exit 0
+}
+
 # --paginate: reviewThreads(first:100) allein sieht nur die erste Seite, und
 # ein offener Thread dahinter waere unsichtbar — genau die Sorte stiller
 # Fehler, gegen die dieser Hook gebaut ist. gh blaettert ueber $endCursor
@@ -46,7 +61,8 @@ open=$(gh api graphql --paginate -f query='
   -F n="$pr" \
   --jq '.data.repository.pullRequest.reviewThreads.nodes[]
          | select(.isResolved | not)
-         | "  - \(.comments.nodes[0].author.login): \(.comments.nodes[0].path)"' 2>/dev/null) || exit 0
+         | "  - \(.comments.nodes[0].author.login): \(.comments.nodes[0].path)"' 2>/dev/null) \
+  || unverifiable "die GraphQL-Abfrage der Review-Threads schlug fehl"
 
 if [ -n "$open" ] && [ "$open" != "null" ]; then
   jq -n --arg pr "$pr" --arg open "$open" '{
@@ -73,19 +89,22 @@ fi
 # Eine frueher hier verwendete Zeit-Heuristik ("Review aelter als der letzte
 # Commit gilt als bearbeitet") ist an PR #67 durchgefallen: der Commit danach
 # war ein Lint-Fix und hatte mit dem Befund nichts zu tun.
-acked=$(
-  {
-    gh api "repos/{owner}/{repo}/issues/$pr/comments" --paginate --jq '.[].body' 2>/dev/null
-    gh api "repos/{owner}/{repo}/pulls/$pr/comments" --paginate --jq '.[].body' 2>/dev/null
-  } | grep -oE 'acked-review:[[:space:]]*[0-9]+' | grep -oE '[0-9]+' | sort -u
-)
+acked_raw=$(gh api "repos/{owner}/{repo}/issues/$pr/comments" --paginate --jq '.[].body' 2>/dev/null) \
+  || unverifiable "die Abfrage der PR-Kommentare schlug fehl"
+acked_raw2=$(gh api "repos/{owner}/{repo}/pulls/$pr/comments" --paginate --jq '.[].body' 2>/dev/null) \
+  || unverifiable "die Abfrage der Review-Kommentare schlug fehl"
+acked=$(printf '%s\n%s\n' "$acked_raw" "$acked_raw2" \
+  | grep -oE 'acked-review:[[:space:]]*[0-9]+' | grep -oE '[0-9]+' | sort -u)
 
+# try/catch um capture(): ohne ###-Ueberschrift wirft es, und der Fehler riss
+# die gesamte Abfrage mit — jeder Zusammenfassungs-Befund dieses Laufs waere
+# stillschweigend verschwunden. Auch .body kann null sein.
 pending=$(gh api "repos/{owner}/{repo}/pulls/$pr/reviews" --paginate \
   --jq '.[]
-        | select(.state != "APPROVED")
-        | select(.body | test("Changes recommended|Needs a closer look"))
-        | "\(.id)\t\(.user.login)\t\(.body | capture("### [^\n]*\n+(?<head>[^\n]+)").head // "siehe Zusammenfassung")"' \
-  2>/dev/null) || exit 0
+        | select(.state != "APPROVED" and .state != "DISMISSED")
+        | select(((.body // "")) | test("Changes recommended|Needs a closer look"))
+        | "\(.id)\t\(.user.login)\t\((try ((.body // "") | capture("### [^\n]*\n+(?<head>[^\n]+)").head) catch null) // "siehe Zusammenfassung")"' \
+  2>/dev/null) || unverifiable "die Abfrage der Reviews schlug fehl"
 
 open_reviews=""
 while IFS=$'\t' read -r id who head; do
