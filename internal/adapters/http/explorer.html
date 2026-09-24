@@ -49,7 +49,10 @@
   footer a { color:var(--accent); text-decoration:none; }
   footer a:hover { text-decoration:underline; }
   footer p { margin:.4rem 0 0; }
-  footer .version { font-variant-numeric:tabular-nums; opacity:.75; }
+  /* Kein opacity hier: es blich var(--muted) gegen den Hintergrund aus und
+     druckte den Kontrast auf gemessene 3,3:1 (hell) und 4,34:1 (dunkel) —
+     WCAG AA verlangt bei 12,8px 4,5:1. Ohne sind es gemessene 5,64:1 und 6,74:1. */
+  footer .version { font-variant-numeric:tabular-nums; }
 </style>
 </head>
 <body>
@@ -637,7 +640,10 @@ loadAreas();
   <a href="/openapi">OpenAPI-Spezifikation</a> ·
   <a href="/health/ready">Health</a>
   <p>© 2026 Jo Brunner · Code unter MIT</p>
-  <p>Daten: EEA EUNIS 2021 · EUNIS-ESy (CC BY 4.0) · EuroVegChecklist · FloraVeg.EU (CC BY 4.0)</p>
+  <p>Daten: EEA EUNIS 2021 (EEA-Datenpolitik) ·
+     EUNIS-ESy, EVC-Verbreitungskarten, Habitat-Factsheets, EIVE, Tichý, Midolo (je CC BY 4.0) ·
+     EuroVegChecklist / FloraVeg.EU (Nutzungsbedingungen) ·
+     FFH-Anhang I (EUR-Lex) · WGSRPD (TDWG)</p>
   <p class="version">situs <!--situs:version--></p>
 </footer>
 

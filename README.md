@@ -182,6 +182,13 @@ Fundament-Spec und Implementierungsplan liegen unter `docs/`:
 | FFH-Richtlinie Anhang I, deutsche Fassung (EUR-Lex) | amtliche deutsche LRT-Bezeichnungen (CELEX `01992L0043-20130701`, `pipelines/eurlex`) | EU-Recht (Beschluss 2011/833/EU) |
 | WGSRPD Level 3, 2. Auflage (TDWG) | Namen der Verbreitungsgebiete für `GET /v1/areas` (`pipelines/wgsrpd`) | TDWG-Standard |
 | EUNIS Habitat Factsheets 2021-06-01 (FloraVeg.EU / EUNIS-ESy) | Beschreibung je Habitattyp (`pipelines/floraveg-factsheets`) | CC BY 4.0 |
+| Verbreitungskarten der Vegetationsverbände Europas, v2 2024-06-12 (Zenodo) | Syntaxa-Verbreitung je EVC-Territorium (`pipelines/evc-distribution`) | CC BY 4.0 |
+| EIVE 1.0 (Zenodo `10.5281/zenodo.7534792`) | Zeigerwerte (`pipelines/eive`) | CC BY 4.0 |
+| Tichý et al. 2023, Indicator values v2.0 (Zenodo `10.5281/zenodo.7427088`) | Zeigerwerte (`pipelines/tichy`) | CC BY 4.0 |
+| Midolo et al. 2023, v3 (Zenodo `10.5281/zenodo.7116957`) | Zeigerwerte (`pipelines/midolo`) | CC BY 4.0 |
+
+Die vier CC-BY-Zeilen verlangen die Namensnennung ausdrücklich auch für
+abgeleitete Daten; der Footer des Explorers nennt sie deshalb alle.
 
 Die Artefakte werden **gepinnt** und **nicht** ins Repo eingecheckt — je
 Pipeline dort, wo es zur Quelle passt: URL + Prüfsumme in
