@@ -114,3 +114,19 @@ func TestExplorerFooter_NenntCopyrightUndDatenherkunft(t *testing.T) {
 // package cannot read it, and duplicating it here is deliberate: the internal
 // sentinel test pins the asset side, this pins the rendered side.
 const explorerVersionSentinel = "<!--situs:version-->"
+
+// The version reaches the page as HTML text. It comes from the linker or the
+// Docker VERSION build argument today, so nothing untrusted reaches it in
+// practice — but Options.Version is an exported knob, and a value carrying
+// markup would run for everyone opening "/". Escaping costs one call, so the
+// page does not depend on every future caller being careful.
+func TestExplorerFooter_EntschaerftMarkupInDerVersion(t *testing.T) {
+	body := explorerBody(t, httpapi.Options{Version: `</p><script>alert(1)</script>`})
+
+	if strings.Contains(body, "<script>alert(1)</script>") {
+		t.Error("die Version wird unescaped eingesetzt; Markup aus ihr landet ausfuehrbar in der Seite")
+	}
+	if !strings.Contains(body, "&lt;script&gt;alert(1)&lt;/script&gt;") {
+		t.Error("die Version steht nicht escaped in der Seite; sie muss als Text sichtbar bleiben, nicht verschwinden")
+	}
+}

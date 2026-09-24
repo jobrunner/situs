@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	_ "embed"
+	"html"
 	"net/http"
 	"strings"
 )
@@ -39,6 +40,11 @@ func (s *Server) handleExplorer(w http.ResponseWriter, _ *http.Request) {
 // construction. Not per request: the document is immutable for a given build,
 // and not from /v1/info either — a footer that has to ask the index which
 // version it is stays empty exactly when the index is the broken part.
+//
+// The version is escaped as HTML text. In practice it comes from the linker or
+// the Docker VERSION build argument, so nothing untrusted reaches it — but
+// Options.Version is an exported knob, and the page should not rely on every
+// future caller passing something markup-free.
 func renderExplorer(version string) []byte {
-	return []byte(strings.Replace(string(explorerAsset), explorerVersionSentinel, version, 1))
+	return []byte(strings.Replace(string(explorerAsset), explorerVersionSentinel, html.EscapeString(version), 1))
 }
