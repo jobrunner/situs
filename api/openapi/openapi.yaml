@@ -34,7 +34,9 @@ paths:
         Dienstes ausprobierbar macht und dabei die jeweils abgesetzte URL
         mitzeigt. Stylesheet und Skript sind eingebettet, nichts wird aus dem
         Netz nachgeladen — situs läuft lokal und im Feld ohne Netz. Die Seite
-        rechnet nichts selbst aus: sie zeigt, was der Dienst antwortet.
+        rechnet nichts selbst aus: sie zeigt, was der Dienst antwortet. Ihr
+        Footer verweist auf /docs, /openapi und /health/ready und nennt die
+        gebaute Version.
       operationId: explorer
       responses:
         "200":

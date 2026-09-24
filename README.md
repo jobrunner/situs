@@ -65,7 +65,8 @@ make build       # ./situs
 ```
 
 Unter `http://localhost:8070/` liegt der API-Explorer — eine selbst-enthaltene
-Seite, die jeden Lese-Endpunkt ausprobierbar macht, ohne Netz.
+Seite, die jeden Lese-Endpunkt ausprobierbar macht, ohne Netz. Ihr Footer führt
+zu `/docs` und `/openapi` und nennt die gebaute Version.
 
 Erreichbar sind außerdem `GET /health/live`, `GET /health/ready`,
 `GET /metrics`, `GET /openapi`, `GET /docs` (Swagger-UI, Assets eingebettet —
