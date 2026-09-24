@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/jobrunner/situs/compare/v0.13.0...v0.13.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* **eurlex:** kaputten Versionsstempel zurueckweisen statt schreiben ([1ca23a8](https://github.com/jobrunner/situs/commit/1ca23a8362d2004743f3b57202b4c16ee4bc87ce))
+
 ## [0.13.0](https://github.com/jobrunner/situs/compare/v0.12.0...v0.13.0) (2026-09-23)
 
 
