@@ -225,12 +225,17 @@ func (q *QueryService) summary(ctx context.Context, key domain.HabitatTypeKey, l
 // order, so the overlay would cost a query per response and set the field zero
 // times.
 //
-// The asymmetry is therefore invisible today, which is exactly why it is
-// written down rather than left to be rediscovered — and why
-// TestHabitatTypeSyntaxaLinkNoTranslatedRank pins the measurement: should a
-// source ever link a formation, that test fails and this decision gets revisited
-// instead of quietly producing a habitat-type response that disagrees with the
-// navigation response about the same syntaxon.
+// The asymmetry is therefore invisible today, which is exactly why it is written
+// down rather than left to be rediscovered. It is NOT guarded by a test, and
+// that is a limit worth stating: the linking data is habitat_type_syntaxa.csv, a
+// pipeline output that is not versioned (.gitignore: /pipelines/*/out/), so no
+// test in this repo can observe it. A fixture-based check would only assert
+// whatever the fixture itself linked — green by construction, and a false
+// promise. The honest place for a real guard is the ingest report, which already
+// counts links by rank elsewhere (SyntaxonDistribution.NonAllianceSyntaxa).
+//
+// If the data ever does link a formation, the symptom is a habitat-type response
+// that disagrees with the navigation response about the same syntaxon.
 func (q *QueryService) syntaxaOf(ctx context.Context, key domain.HabitatTypeKey) ([]input.SyntaxonRef, error) {
 	syntaxa, err := q.repo.Syntaxa(ctx, key)
 	if err != nil {

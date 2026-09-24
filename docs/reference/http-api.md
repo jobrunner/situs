@@ -412,8 +412,24 @@ gelassen: gemessen am Index vom 2026-09-23 zeigen **alle 1282**
 Habitattyp-Syntaxon-Kanten auf einen Verband (1281) oder auf die eine Ordnung,
 **keine einzige** auf eine Formation — das Feld wäre dort also in jedem Fall
 leer, und der Overlay kostete eine Abfrage je Antwort für null gesetzte Werte.
-`TestHabitatTypeSyntaxaLinkNoTranslatedRank` hält die Messung fest und schlägt
-fehl, sobald die Daten das ändern.
+
+```sql
+SELECT s.rank, COUNT(*) FROM habitat_type_syntaxon h
+  JOIN syntaxon s ON s.id = h.syntaxon_id GROUP BY s.rank;
+-- alliance|1281
+-- order|1
+```
+
+Diese Messung ist **nicht durch einen Test abgesichert**, und das ist eine
+Grenze, die hier stehen soll statt beschwiegen zu werden: die Kantendaten
+stehen in `habitat_type_syntaxa.csv`, einer Pipeline-Ausgabe, die nicht
+versioniert ist (`.gitignore`: `/pipelines/*/out/`). Kein Test in diesem Repo
+kann sie also lesen, und ein Test gegen ein selbstgebautes Fixture würde nur
+prüfen, was das Fixture selbst verknüpft hat. Verknüpft eine künftige
+Quellfassung eine Formation, ist das Symptom eine Habitattyp-Antwort, die der
+Navigationsantwort über dasselbe Syntaxon widerspricht; der richtige Ort für
+eine echte Absicherung wäre der Ingest-Report, der Kanten nach Rang an anderer
+Stelle bereits zählt (`SyntaxonDistribution.NonAllianceSyntaxa`).
 
 `?lang=de` legt `name_de` additiv auf jede Referenz — Wert, Provenienz, Quelle
 und, wo es einen gibt, den gebräuchlichen deutschen Ausdruck (`vernacular`).

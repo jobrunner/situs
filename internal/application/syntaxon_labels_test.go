@@ -71,9 +71,12 @@ func TestSyntaxaByRank_WithoutLangCarriesNoGermanLabel(t *testing.T) {
 	}
 }
 
-// A rank nobody translated stays untranslated rather than borrowing its
-// formation's label: only the 25 formations are authored, and an alliance
-// showing its formation's German name would be a wrong name, not a fallback.
+// A syntaxon with no localization row of its own stays untranslated rather than
+// borrowing its formation's label. This guards the CODE, not the data: the
+// fixture gives labels to the formations only, so an implementation that walked
+// up the ancestor path for a fallback would light this up. Which ranks actually
+// carry a translation is a property of data/localizations-de-syntaxa.csv and is
+// checked there (cmd/situs/curated_test.go), not here.
 func TestSyntaxaByRank_UntranslatedRankStaysUntranslated(t *testing.T) {
 	repo := seedNavRepo(t)
 	seedFormationLabels(repo)
@@ -166,42 +169,6 @@ func TestSyntaxonLabels_RepositoryFailureSurfaces(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "German syntaxon labels") {
 			t.Errorf("%s: Fehler = %q, nennt den Schritt nicht", tc.name, err)
-		}
-	}
-}
-
-// The habitat-type response carries SyntaxonRefs too, and syntaxaOf does not
-// overlay name_de on them (see its comment). That is only defensible while no
-// habitat type links a translated rank — which is a property of the DATA, not
-// of the code, so it is measured here rather than assumed.
-//
-// If this fails, the data changed: either overlay the label in syntaxaOf, or
-// re-justify leaving it out. What must not happen is the same syntaxon coming
-// back named in one route and unnamed in another.
-func TestHabitatTypeSyntaxaLinkNoTranslatedRank(t *testing.T) {
-	repo := seedNavRepo(t)
-	seedFormationLabels(repo)
-	// The fixture links CA01A, an alliance — the shape the real index has.
-	if err := repo.LinkSyntaxon(domain.HabitatTypeKey{Typology: "eunis@2021", Code: "T13"}, "CA01A"); err != nil {
-		t.Fatalf("LinkSyntaxon: %v", err)
-	}
-
-	labels, err := repo.LocalizationsByEntityType(t.Context(), entitySyntaxon, deLang)
-	if err != nil {
-		t.Fatalf("LocalizationsByEntityType: %v", err)
-	}
-	for _, code := range []string{"T11", "T12", "T13"} {
-		key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: code}
-		linked, err := repo.Syntaxa(t.Context(), key)
-		if err != nil {
-			t.Fatalf("Syntaxa(%s): %v", key, err)
-		}
-		for _, s := range linked {
-			if _, translated := labels[s.ID]; translated {
-				t.Errorf("habitat type %s links %s (rank %s), which HAS a German label — "+
-					"syntaxaOf drops it, so this response would disagree with GET /v1/syntaxon/%s",
-					code, s.ID, s.Rank, s.ID)
-			}
 		}
 	}
 }
