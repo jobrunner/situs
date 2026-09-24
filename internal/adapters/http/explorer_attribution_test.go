@@ -70,7 +70,11 @@ func TestExplorerFooter_VersionszeileWirdNichtAusgeblichen(t *testing.T) {
 	const rule = "footer .version {"
 	at := strings.Index(page, rule)
 	if at < 0 {
-		return // keine eigene Regel: dann bleicht auch nichts aus
+		// Nicht zurueckkehren: ein Test, der sich stilllegt, sobald sein
+		// Pruefgegenstand fehlt, prueft im entscheidenden Moment nichts. Die
+		// eigene Regel ist ausserdem die einzige Stelle, an der die
+		// Versionszeile ueberhaupt auf opacity geprueft wird.
+		t.Fatal("die Regel footer .version fehlt; ohne sie prueft dieser Test die Kontrastanforderung gar nicht")
 	}
 	decls := page[at+len(rule):]
 	end := strings.Index(decls, "}")
