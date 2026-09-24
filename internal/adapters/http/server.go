@@ -55,6 +55,7 @@ type Server struct {
 	version        string
 	tracerProvider trace.TracerProvider // nil when tracing is disabled
 	corsPatterns   []domain.OriginPattern
+	explorerPage   []byte
 }
 
 // Options carries the optional dependencies.
@@ -87,6 +88,7 @@ func NewServer(addr string, deps Deps, logger *slog.Logger, opts Options) *Serve
 		serviceName:    name,
 		version:        version,
 		tracerProvider: opts.TracerProvider,
+		explorerPage:   renderExplorer(version),
 	}
 	s.router = s.setupRoutes()
 	s.initCORS(opts.CORSAllowedOrigins)

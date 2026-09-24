@@ -38,6 +38,20 @@ was der Dienst antwortet, keine eigene Aggregation, kein eigenes Ranking. Die
 Route ist exakt gebunden (`GET /`, kein Prefix-Match), ein unbekannter Pfad
 bleibt `404`.
 
+Ein **Footer** schließt die Seite ab: die Verweise auf `/docs`, `/openapi` und
+`/health/ready`, die Urheberangabe (`© 2026 Jo Brunner · Code unter MIT`), die
+Herkunft der Daten (EEA EUNIS 2021, EUNIS-ESy, EuroVegChecklist, FloraVeg.EU)
+und die gebaute Version. Ohne ihn war die Spezifikation zwar vorhanden, aber von
+der Startseite aus nur zu erraten. Die Version wird **beim Bau der Seite einmal
+ersetzt** (Platzhalter `<!--situs:version-->` in `explorer.html`, ersetzt in
+`NewServer`), nicht aus `/v1/info` nachgeladen: ein Footer, der den Index fragen
+muss, wer er ist, bleibt genau dann leer, wenn der Index das Kaputte ist. Ein
+ungestempelter Bau zeigt `situs dev` — derselbe Platzhalter, den auch
+`situs version` ausgibt. Weil die Ersetzung an einem fehlenden Platzhalter
+stillschweigend nichts tut, prüft ein eigener Test das eingebettete Asset auf
+genau ein Vorkommen, und ein zweiter, dass jedes `href` im Footer eine
+registrierte Route trifft.
+
 **Die Leseseite läuft ohne hostus.** Jede Route hier wird allein aus der lokalen
 SQLite-Datei beantwortet; kein Lesepfad ruft einen Upstream-Dienst. hostus wird
 nur beim `ingest` gebraucht (Namen → Konzept-IDs, Konzept → Verbreitung). Ein
