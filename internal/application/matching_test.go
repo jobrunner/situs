@@ -594,3 +594,196 @@ func TestMatchHabitatTypes_GebietHebtKeinenTypOhneTreffer(t *testing.T) {
 		t.Errorf("Matches = %+v, erwartet allein T01", got.Matches)
 	}
 }
+
+// Eine ausdrueckliche Stetigkeit von 0 heisst "kommt in keiner Aufnahme
+// dieses Typs vor" — das ist eine Angabe, keine fehlende Angabe. Sie mit
+// DEFAULT_P zu belegen machte aus einer Nicht-Vorkommen-Zeile einen positiven
+// Treffer. Dieselbe Verwechslung wie fehlende Verbreitung als Abwesenheit zu
+// lesen, nur andersherum.
+func TestMatchHabitatTypes_AusdrueckicheNullIstKeinTreffer(t *testing.T) {
+	repo := newFakeRepo()
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	level := 3
+	setzen := func(code string, constancy *float64) {
+		k := domain.HabitatTypeKey{Typology: "eunis@2021", Code: code}
+		repo.types = append(repo.types, domain.HabitatType{Key: k, Level: &level, NameEN: code})
+		id := "wcvp:c1"
+		repo.speciesRoles = append(repo.speciesRoles, domain.SpeciesRole{
+			Key: k, ConceptID: &id, VerbatimName: "c1", Role: "constant",
+			Constancy: constancy, Provenance: "observed",
+		})
+	}
+	null := 0.0
+	setzen("T01", &null) // ausdrueckliche Null
+	setzen("T02", nil)   // gar keine Angabe
+	svc := NewQueryService(repo)
+
+	got, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1"}, Typology: "eunis@2021", Level: 3, Limit: 5,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	if len(got.Matches) != 2 {
+		t.Fatalf("Matches = %d, erwartet 2", len(got.Matches))
+	}
+	byCode := map[string]float64{}
+	for _, m := range got.Matches {
+		byCode[m.Code] = m.Score
+	}
+	if byCode["T01"] >= byCode["T02"] {
+		t.Errorf("T01 (Stetigkeit 0) = %.3f, T02 (keine Angabe) = %.3f — "+
+			"eine ausdrueckliche Null darf nicht so gut bewertet werden wie eine fehlende Angabe",
+			byCode["T01"], byCode["T02"])
+	}
+}
+
+// species muss dieselbe Evidenz zeigen, die der Score gezaehlt hat: je Art
+// einen Eintrag, und zwar die Zeile, die tatsaechlich zaehlte. Drei Zeilen
+// fuer eine Art auszuweisen, waehrend matched sie einmal zaehlt, laesst die
+// Antwort mehr Belege behaupten, als in die Rangfolge eingingen.
+func TestMatchHabitatTypes_SpeciesZeigtJedeArtEinmal(t *testing.T) {
+	repo := newFakeRepo()
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	level := 3
+	k := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "T17"}
+	repo.types = append(repo.types, domain.HabitatType{Key: k, Level: &level, NameEN: "T17"})
+	id := "wcvp:c1"
+	for _, r := range []struct {
+		role      string
+		constancy float64
+	}{{"constant", 99}, {"dominant", 80}} {
+		c := r.constancy
+		repo.speciesRoles = append(repo.speciesRoles, domain.SpeciesRole{
+			Key: k, ConceptID: &id, VerbatimName: "c1", Role: r.role,
+			Constancy: &c, Provenance: "observed",
+		})
+	}
+	f := 31.0
+	repo.speciesRoles = append(repo.speciesRoles, domain.SpeciesRole{
+		Key: k, ConceptID: &id, VerbatimName: "c1", Role: "diagnostic",
+		Fidelity: &f, Provenance: "observed",
+	})
+
+	got, err := NewQueryService(repo).MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1"}, Typology: "eunis@2021", Level: 3, Limit: 5,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	if len(got.Matches) != 1 {
+		t.Fatalf("Matches = %d, erwartet 1", len(got.Matches))
+	}
+	m := got.Matches[0]
+	if len(m.Species) != m.Matched {
+		t.Errorf("species hat %d Eintraege, matched zaehlt %d — die Antwort weist mehr Belege aus, "+
+			"als in die Rangfolge eingingen", len(m.Species), m.Matched)
+	}
+	// Ausgewiesen wird die Zeile, die der Score genutzt hat: die hoechste
+	// Stetigkeit, plus den hoechsten Treuegrad derselben Art.
+	if len(m.Species) == 1 {
+		sp := m.Species[0]
+		if sp.Constancy == nil || *sp.Constancy != 99 {
+			t.Errorf("Constancy = %v, erwartet 99 (die Zeile, die zaehlte)", sp.Constancy)
+		}
+		if sp.Fidelity == nil || *sp.Fidelity != 31 {
+			t.Errorf("Fidelity = %v, erwartet 31 (der hoechste Treuegrad derselben Art)", sp.Fidelity)
+		}
+	}
+}
+
+// Die Verdichtung der Belege in allen Richtungen: kommt die staerkere Zeile
+// zuerst, bleibt sie stehen und nimmt nur den hoeheren Treuegrad auf; kommt
+// sie spaeter, ersetzt sie die schwaechere.
+func TestMatchHabitatTypes_BelegNimmtDieStaerkereZeileUnabhaengigVonDerReihenfolge(t *testing.T) {
+	baue := func(reihenfolge []struct {
+		role      string
+		constancy float64
+		fidelity  float64
+	}) input.MatchSpecies {
+		t.Helper()
+		repo := newFakeRepo()
+		repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+		level := 3
+		k := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "T17"}
+		repo.types = append(repo.types, domain.HabitatType{Key: k, Level: &level, NameEN: "T17"})
+		id := "wcvp:c1"
+		for _, r := range reihenfolge {
+			row := domain.SpeciesRole{
+				Key: k, ConceptID: &id, VerbatimName: "c1", Role: r.role, Provenance: "observed",
+			}
+			if r.constancy > 0 {
+				c := r.constancy
+				row.Constancy = &c
+			}
+			if r.fidelity > 0 {
+				f := r.fidelity
+				row.Fidelity = &f
+			}
+			repo.speciesRoles = append(repo.speciesRoles, row)
+		}
+		got, err := NewQueryService(repo).MatchHabitatTypes(context.Background(), input.MatchRequest{
+			ConceptIDs: []string{"wcvp:c1"}, Typology: "eunis@2021", Level: 3, Limit: 1,
+		})
+		if err != nil {
+			t.Fatalf("MatchHabitatTypes: %v", err)
+		}
+		if len(got.Matches) != 1 || len(got.Matches[0].Species) != 1 {
+			t.Fatalf("erwartet ein Match mit einem Beleg, bekam %+v", got.Matches)
+		}
+		return got.Matches[0].Species[0]
+	}
+
+	typ := []struct {
+		role      string
+		constancy float64
+		fidelity  float64
+	}{{"diagnostic", 0, 31}, {"constant", 99, 0}}
+	vorwaerts := baue(typ)
+	rueckwaerts := baue([]struct {
+		role      string
+		constancy float64
+		fidelity  float64
+	}{typ[1], typ[0]})
+
+	for name, sp := range map[string]input.MatchSpecies{"schwach zuerst": vorwaerts, "stark zuerst": rueckwaerts} {
+		if sp.Constancy == nil || *sp.Constancy != 99 {
+			t.Errorf("%s: Constancy = %v, erwartet 99", name, sp.Constancy)
+		}
+		if sp.Fidelity == nil || *sp.Fidelity != 31 {
+			t.Errorf("%s: Fidelity = %v, erwartet 31", name, sp.Fidelity)
+		}
+	}
+}
+
+// hoehere waehlt den groesseren von zwei optionalen Werten und behandelt das
+// Fehlen als "kein Wert", nicht als Null — sonst schluege eine fehlende
+// Angabe eine vorhandene.
+func TestHoehere(t *testing.T) {
+	zwei, fuenf := 2.0, 5.0
+	faelle := []struct {
+		name string
+		a, b *float64
+		want *float64
+	}{
+		{"beide fehlen", nil, nil, nil},
+		{"nur b", nil, &fuenf, &fuenf},
+		{"nur a", &zwei, nil, &zwei},
+		{"b groesser", &zwei, &fuenf, &fuenf},
+		{"a groesser", &fuenf, &zwei, &fuenf},
+		{"gleich", &zwei, &zwei, &zwei},
+	}
+	for _, f := range faelle {
+		t.Run(f.name, func(t *testing.T) {
+			got := hoehere(f.a, f.b)
+			switch {
+			case f.want == nil && got != nil:
+				t.Errorf("got = %v, erwartet nil", *got)
+			case f.want != nil && got == nil:
+				t.Errorf("got = nil, erwartet %v", *f.want)
+			case f.want != nil && *got != *f.want:
+				t.Errorf("got = %v, erwartet %v", *got, *f.want)
+			}
+		})
+	}
+}
