@@ -529,7 +529,25 @@ Habitattyp. Für *Fagus sylvatica* in `eunis@2021/T17` gemessen:
 
 Eine Zeile wegzulassen hieße, eine dieser Aussagen zu verlieren; sie zu einer
 zusammenzufassen hieße, zwei verschiedene Kennzahlen in ein Feld zu zwingen.
-`(typology, code, role)` ist eindeutig — echte Duplikate gibt es nicht.
+
+Der Schlüssel der Tabelle ist `(typology_id, code, verbatim_name, role)` —
+**mit** dem Namen: dass viele Arten sich Habitattyp und Rolle teilen, ist der
+Normalfall und keine Mehrfachnennung. Für **eine** Art ist innerhalb eines
+Habitattyps jede Rolle genau einmal belegt.
+
+**Zwei Fälle brechen selbst das**, und zwar nur auf der Konzept-Route: wenn der
+Ingest zwei verschiedene `verbatim_name` auf dieselbe Konzept-ID auflöst, trägt
+`GET /v1/species/{conceptId}/habitat-types` denselben Habitattyp zweimal mit
+derselben Rolle. Gemessen sind es 2 von 8950 (Habitattyp, Konzept)-Paaren:
+
+| Konzept | Habitattyp | Rolle | Namen |
+|---|---|---|---|
+| `wcvp:concept:2570774` | `eunis@2021/R1N` | `constant` | *Plantago holosteum*, *Plantago subulata* |
+| `wcvp:concept:2623542` | `eunis@2021/R53` | `diagnostic` | *Aeonium aureum*, *Aeonium diplocyclum* |
+
+Die Einträge unterscheiden sich in ihrer Kennzahl (bei R1N `constancy` 30 und
+13). Das sind echte Duplikate aus Sicht des Aufrufers, und sie sind die
+Ausnahme, nicht der Grund für die Mehrfachnennung dieses Abschnitts.
 
 **Betroffen sind die flachen Listen**, und zwar in beide Richtungen:
 
@@ -538,6 +556,12 @@ zusammenzufassen hieße, zwei verschiedene Kennzahlen in ein Feld zu zwingen.
 | `GET /v1/species/{conceptId}/habitat-types` | der Habitattyp | 34 Einträge, 22 Habitattypen |
 | `POST /v1/species/habitat-types` | der Habitattyp | ebenso |
 | `GET /v1/habitat-type/{typology}/{code}/species` | die **Art** | 77 Einträge, 65 Arten |
+
+Eine weitere Eigenheit derselben Tabelle: die aus Aggregaten abgeleiteten
+Zeilen (`provenance: derived_from_aggregate`) tragen **weder `fidelity` noch
+`constancy`** — gemessen bei allen 905. Die Kennzahl des Aggregats wird
+bewusst nicht auf die Mitgliedsarten vererbt; sie gilt für das Aggregat, nicht
+für jede einzelne Art darin.
 
 **Nicht betroffen** ist `GET /v1/habitat-type/{typology}/{code}`: dort ist
 `species` ein Objekt, das schon nach Rolle gruppiert

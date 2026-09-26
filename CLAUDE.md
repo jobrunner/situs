@@ -267,7 +267,14 @@ remain stdlib-only.
   `GET /v1/habitat-type/{t}/{c}/species` repeats the species. The detail route
   `GET /v1/habitat-type/{t}/{c}` groups by role instead; the unevenness is
   deliberate — the flat form is the contract existing callers know, and
-  `?role=` already narrows it.
+  `?role=` already narrows it. Two rows in the whole index **are** genuine
+  duplicates: the ingest resolved two `verbatim_name`s onto one concept id
+  (`R1N`/`wcvp:concept:2570774`, `R53`/`wcvp:concept:2623542`), so the concept
+  route repeats the habitat type with the same role. Measured, not assumed —
+  and the only two of 8950 (habitat type, concept) pairs. Aggregate-derived
+  rows (`provenance: derived_from_aggregate`, all 905 of them) carry neither
+  `fidelity` nor `constancy`: the figure belongs to the aggregate, not to each
+  member species.
 - **Unresolvable species names are kept**, not dropped: `verbatim_name` always
   set, `concept_id` NULL, and the resolution rate is measured and reported.
 - **Serving stays autark.** No read path may reach for hostus or any other
