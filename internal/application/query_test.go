@@ -668,6 +668,46 @@ func (r *fakeRepo) SpeciesRoles(_ context.Context, key domain.HabitatTypeKey, ro
 	return out, nil
 }
 
+// HabitatAreaCoverage: der Fake rechnet dieselbe Definition wie SQLite — Anteil
+// der Arten des Typs, die im Gebiet verbreitet sind. Typen ohne jede
+// Verbreitungsangabe fehlen im Ergebnis, weil unbeurteilbar nicht unplausibel
+// heisst.
+func (r *fakeRepo) HabitatAreaCoverage(_ context.Context, keys []domain.HabitatTypeKey, areaCode string) (map[domain.HabitatTypeKey]float64, error) {
+	out := map[domain.HabitatTypeKey]float64{}
+	if areaCode == "" {
+		return out, nil
+	}
+	for _, k := range keys {
+		mitDaten, imGebiet := 0, 0
+		for _, s := range r.speciesRoles {
+			if s.Key != k || s.ConceptID == nil {
+				continue
+			}
+			hatDaten, trifft := false, false
+			for _, d := range r.distribution {
+				if d.ConceptID != *s.ConceptID {
+					continue
+				}
+				hatDaten = true
+				if d.Area.Code == areaCode {
+					trifft = true
+				}
+			}
+			if !hatDaten {
+				continue
+			}
+			mitDaten++
+			if trifft {
+				imGebiet++
+			}
+		}
+		if mitDaten > 0 {
+			out[k] = float64(imGebiet) / float64(mitDaten)
+		}
+	}
+	return out, nil
+}
+
 func (r *fakeRepo) SpeciesRolesByConcept(_ context.Context, conceptID string) ([]domain.SpeciesRole, error) {
 	if r.speciesRolesErr != nil {
 		return nil, r.speciesRolesErr
