@@ -549,3 +549,48 @@ func TestFakeRepo_AbdeckungZaehltKonzepteNichtZeilen(t *testing.T) {
 			"der Fake zaehlt Zeilen statt Konzepte", v)
 	}
 }
+
+// Ein Typ ohne jeden Treffer erscheint nie — auch nicht mit perfekter
+// Gebietsabdeckung. Rechnerisch haette er den besseren Score: 3*log(MISS)
+// plus 3*log(1,0) = -11,74 schlaegt einen Kandidaten mit einem Treffer und
+// schlechter Abdeckung (-16,92). Fachlich waere das falsch. Die Artenliste
+// ist die Evidenz, das Gebiet nur ein Korrektiv — ein Typ, zu dem keine
+// einzige notierte Art passt, ist kein Kandidat, so einleuchtend die Geografie
+// auch sein mag.
+func TestMatchHabitatTypes_GebietHebtKeinenTypOhneTreffer(t *testing.T) {
+	repo := newFakeRepo()
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	repo.knownAreaCodes = map[string][]string{domain.SchemeWGSRPDL3: {"GER"}}
+	level := 3
+	anlegen := func(code, concept, areaCode string) {
+		k := domain.HabitatTypeKey{Typology: "eunis@2021", Code: code}
+		repo.types = append(repo.types, domain.HabitatType{Key: k, Level: &level, NameEN: code})
+		id, c := concept, 90.0
+		repo.speciesRoles = append(repo.speciesRoles, domain.SpeciesRole{
+			Key: k, ConceptID: &id, VerbatimName: concept, Role: "constant",
+			Constancy: &c, Provenance: "observed",
+		})
+		repo.distribution = append(repo.distribution, fakeDistribution{
+			ConceptID: concept, Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: areaCode},
+		})
+	}
+	anlegen("T01", "wcvp:treffer", "SPA") // Treffer, aber im Gebiet unplausibel
+	anlegen("T99", "wcvp:fremd", "GER")   // kein Treffer, im Gebiet perfekt
+
+	got, err := NewQueryService(repo).MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:treffer"}, Typology: "eunis@2021", Level: 3,
+		Area: "GER", Limit: 50,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	for _, m := range got.Matches {
+		if m.Code == "T99" {
+			t.Errorf("T99 erscheint in der Liste, fuehrt aber keine der notierten Arten — " +
+				"das Gebiet darf keinen Typ ohne Treffer heben")
+		}
+	}
+	if len(got.Matches) != 1 || got.Matches[0].Code != "T01" {
+		t.Errorf("Matches = %+v, erwartet allein T01", got.Matches)
+	}
+}

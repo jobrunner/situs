@@ -578,6 +578,19 @@ Ein Gebiet, in dem die Arten eines Typs kaum vorkommen, drückt ihn nach hinten
 zuverlässig geografisch unmögliche Vorschläge. Ein unbekannter Gebietscode ist
 `INVALID_QUERY`, niemals stillschweigend ignoriert.
 
+### Ein Typ ohne Treffer erscheint nie
+
+Auch nicht mit perfekter Gebietsabdeckung. Rechnerisch hätte er den besseren
+Score — `3·log(MISS) + 3·log(1,0) = −11,74` schlägt einen Kandidaten mit einem
+Treffer und schlechter Abdeckung (`−16,92`). Fachlich wäre das falsch: **die
+Artenliste ist die Evidenz, das Gebiet nur ein Korrektiv.** Ein Typ, zu dem
+keine einzige notierte Art passt, ist kein Kandidat, so plausibel die
+Geografie auch sein mag.
+
+`score` ist damit genau genommen ein Likelihood über die **Kandidaten**, nicht
+über alle Typen der Ebene. Für die Reihenfolge, die allein belastbar ist,
+ändert das nichts.
+
 ### Was die Route nie vorschlagen kann
 
 **Formation U (Fels und Geröll) führt keine einzige Kennart** — alle 36

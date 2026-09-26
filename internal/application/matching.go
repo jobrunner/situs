@@ -15,9 +15,18 @@ import (
 // MatchHabitatTypes ordnet Habitattypen danach, wie gut sie eine beobachtete
 // Artenliste erklaeren.
 //
-// Kandidat ist nur, wer mindestens eine Eingabe-Art fuehrt: jeder andere Typ
-// traegt den identischen Score k*log(MISS) und ist damit rangneutral. Das
-// erspart den vollen Durchlauf ueber alle Typen der Ebene.
+// Kandidat ist nur, wer mindestens eine Eingabe-Art fuehrt. Ohne area ist das
+// eine reine Ersparnis: jeder andere Typ traegt den identischen Score
+// k*log(MISS) und ist rangneutral.
+//
+// MIT area ist es eine Entscheidung. Ein Typ ohne Treffer, aber mit perfekter
+// Gebietsabdeckung haette rechnerisch den besseren Score als ein Kandidat mit
+// einem Treffer und schlechter Abdeckung (-11,74 gegen -16,92). Er erscheint
+// trotzdem nicht, und das ist fachlich richtig: die Artenliste ist die
+// Evidenz, das Gebiet nur ein Korrektiv. Ein Typ, zu dem keine einzige
+// notierte Art passt, ist kein Kandidat, so einleuchtend die Geografie auch sein
+// mag. Der Score ist damit ein Likelihood ueber die Kandidaten, nicht ueber
+// alle Typen der Ebene.
 func (q *QueryService) MatchHabitatTypes(ctx context.Context, req input.MatchRequest) (input.MatchResult, error) {
 	// Das Gebiet wird zuerst geprueft, vor jeder Artenabfrage: ein unbekannter
 	// Code ist ein Fehler des Aufrufers, und das haengt nicht davon ab, ob die
