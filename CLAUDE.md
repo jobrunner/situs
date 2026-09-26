@@ -256,6 +256,18 @@ remain stdlib-only.
   those correspondences are too imprecise to lend a name.
 - **Missing data is absence of rows**, never a placeholder code. A habitat type
   without an Annex I correspondence is the normal case.
+- **A habitat type may appear more than once in a flat list — that is the role,
+  not a duplicate.** `species_role` keys on
+  `(typology_id, code, verbatim_name, role)`, and measured **3489 of 10470**
+  (habitat type, species) pairs carry more than one role. Each row holds a
+  different figure: `fidelity` for `diagnostic`, `constancy` for `constant` and
+  `dominant`. Never "fix" this with a `DISTINCT` over `(typology, code)` — that
+  silently drops two of the three statements. It hits both directions:
+  `GET /v1/species/{id}/habitat-types` repeats the habitat type,
+  `GET /v1/habitat-type/{t}/{c}/species` repeats the species. The detail route
+  `GET /v1/habitat-type/{t}/{c}` groups by role instead; the unevenness is
+  deliberate — the flat form is the contract existing callers know, and
+  `?role=` already narrows it.
 - **Unresolvable species names are kept**, not dropped: `verbatim_name` always
   set, `concept_id` NULL, and the resolution rate is measured and reported.
 - **Serving stays autark.** No read path may reach for hostus or any other
