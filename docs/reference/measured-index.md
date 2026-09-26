@@ -56,6 +56,91 @@ Klassifikationshierarchie bis Level 8 reicht. Das ist die bekannte, bewusst
 akzeptierte Deckelung des Fundaments (siehe `CLAUDE.md`, „Known ceiling"), kein
 Datenfehler.
 
+### Eine Art, mehrere Rollen im selben Habitattyp
+
+Ein Drittel aller (Habitattyp, Art)-Paare trägt **mehr als eine Rolle**. Das
+ist der Grund, warum ein Habitattyp in den flachen Listen mehrfach erscheint —
+siehe `docs/reference/http-api.md`, „Warum ein Habitattyp mehrfach in einer
+Liste steht".
+
+Gezählt wird nach `verbatim_name`, denn so ist die Tabelle geschlüsselt —
+`(typology_id, code, verbatim_name, role)`. Es sind also (Habitattyp,
+**Name**)-Paare, nicht (Habitattyp, Konzept)-Paare; die konzeptbezogene
+Zählung steht darunter.
+
+| Größe | Gemessen |
+|---|---|
+| Zeilen in `species_role` | **14696** |
+| eindeutige (Habitattyp, **Name**)-Paare | **10470** |
+| Paare mit mehr als einer Rolle | **3489** (33 %) |
+| davon mit zwei Rollen / drei Rollen | 2752 / 737 |
+| Zeilen je Rolle | 8979 `constant`, 4608 `diagnostic`, 1109 `dominant` |
+| Zeilen ohne `concept_id` (nicht auflösbar) | 2173 |
+
+```sql
+SELECT rollen, COUNT(*) AS paare FROM (
+  SELECT typology_id, code, verbatim_name, COUNT(DISTINCT role) AS rollen
+  FROM species_role GROUP BY 1,2,3
+) GROUP BY rollen ORDER BY rollen;
+-- 1|6981   2|2752   3|737
+```
+
+Die Rollen sind **keine** Wiederholung derselben Aussage: jede trägt ihre
+eigene Kennzahl. Für *Fagus sylvatica* in `eunis@2021/T17` gemessen:
+
+```
+diagnostic | fidelity  = 31.0
+constant   | constancy = 99.0
+dominant   | constancy = 98.0
+```
+
+An den Endpunkten gemessen (dieselbe Art, derselbe Habitattyp):
+
+| Antwort | Einträge | eindeutig |
+|---|---|---|
+| `GET /v1/species/wcvp:concept:83891/habitat-types` | 34 | 22 Habitattypen |
+| `GET /v1/habitat-type/eunis@2021/T17/species` | 77 | 65 Arten |
+
+#### Konzeptbezogen gezählt — und die zwei echten Duplikate
+
+Die Leseroute fragt über die **Konzept-ID**, nicht über den Namen. Löst der
+Ingest zwei `verbatim_name` auf dasselbe Konzept auf, erscheint derselbe
+Habitattyp zweimal mit derselben Rolle. Gemessen:
+
+```sql
+SELECT COUNT(*) FROM (
+  SELECT typology_id, code, concept_id, role
+  FROM species_role WHERE concept_id IS NOT NULL AND concept_id <> ''
+  GROUP BY 1,2,3,4 HAVING COUNT(DISTINCT verbatim_name) > 1);
+-- 2
+```
+
+| Größe | Gemessen |
+|---|---|
+| (Habitattyp, Konzept, **Rolle**)-Gruppen | **12521** |
+| davon mit zwei Namen in derselben Rolle | **2** |
+| (Habitattyp, Konzept)-Paare (ohne Rolle) | **8950** |
+| davon betroffen | **2** |
+
+Es sind `eunis@2021/R1N` für `wcvp:concept:2570774` (*Plantago holosteum* /
+*Plantago subulata*, `constant`, Stetigkeit 30 und 13) und `eunis@2021/R53`
+für `wcvp:concept:2623542` (*Aeonium aureum* / *Aeonium diplocyclum*,
+`diagnostic`, Fidelity 17,9 und 16,9). Nur diese beiden sind echte Duplikate
+im Sinne des Aufrufers; die Mehrfachnennung im Übrigen kommt von der Rolle.
+
+#### Aggregat-Ableitungen tragen keine Kennzahl
+
+```sql
+SELECT provenance, COUNT(*),
+       SUM(fidelity IS NOT NULL), SUM(constancy IS NOT NULL)
+FROM species_role GROUP BY provenance;
+-- derived_from_aggregate | 905   | 0    | 0
+-- observed               | 13791 | 4377 | 9414
+```
+
+Alle 905 abgeleiteten Zeilen haben weder `fidelity` noch `constancy`: die
+Kennzahl gilt dem Aggregat, nicht jeder Mitgliedsart darin.
+
 ## Qualifier (offener Punkt 2)
 
 Tatsächlich vorkommende Symbole: **`=` `<` `>` `#` `≈`** — fünf, nicht vier.
