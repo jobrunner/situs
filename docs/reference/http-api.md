@@ -509,6 +509,77 @@ darunter jedem Moos-, Flechten- und Algenverband, weil die Quelle nur
 Gefäßpflanzen-Vegetation abdeckt. Abwesenheit wird nie aufgezählt: der Client
 kennt die 136 Codes des Schemas aus `GET /v1/areas?scheme=evc_territory`.
 
+## Warum ein Habitattyp mehrfach in einer Liste steht
+
+Die Listen der Endpunkte unten sind Listen von **(Habitattyp, Rolle)-Paaren**,
+nicht von Habitattypen. Derselbe Habitattyp erscheint deshalb mehrfach, wenn
+die Art in ihm mehrere Rollen spielt — und das ist der Normalfall, nicht die
+Ausnahme: **3489 von 10470** (Habitattyp, **Name**)-Paaren tragen mehr als
+eine Rolle, ein Drittel also. Gezählt wird nach `verbatim_name`, weil die
+Tabelle so geschlüsselt ist; nicht auflösbare Namen zählen mit.
+
+Das sind **keine Duplikate**. Jede Rolle trägt ihre eigene Kennzahl, und
+zusammen sind sie drei verschiedene Aussagen über dieselbe Art im selben
+Habitattyp. Für *Fagus sylvatica* in `eunis@2021/T17` gemessen:
+
+| Rolle | Kennzahl | Aussage |
+|---|---|---|
+| `diagnostic` | `fidelity` 31.0 | wie kennzeichnend die Art für den Typ ist |
+| `constant` | `constancy` 99.0 | in wie vielen Aufnahmen sie vorkommt |
+| `dominant` | `constancy` 98.0 | in wie vielen sie bestandsbildend ist |
+
+Eine Zeile wegzulassen hieße, eine dieser Aussagen zu verlieren; sie zu einer
+zusammenzufassen hieße, zwei verschiedene Kennzahlen in ein Feld zu zwingen.
+
+Der Schlüssel der Tabelle ist `(typology_id, code, verbatim_name, role)` —
+**mit** dem Namen: dass viele Arten sich Habitattyp und Rolle teilen, ist der
+Normalfall und keine Mehrfachnennung. Für **eine** Art ist innerhalb eines
+Habitattyps jede Rolle genau einmal belegt.
+
+**Zwei Fälle brechen selbst das**, und zwar nur auf der Konzept-Route: wenn der
+Ingest zwei verschiedene `verbatim_name` auf dieselbe Konzept-ID auflöst, trägt
+`GET /v1/species/{conceptId}/habitat-types` denselben Habitattyp zweimal mit
+derselben Rolle. Gemessen sind es 2 von **12521** (Habitattyp, Konzept,
+**Rolle**)-Gruppen — der Nenner, der zur Abfrage passt, denn das Duplikat
+entsteht je Rolle. Sie fallen auf 2 der 8950 (Habitattyp, Konzept)-Paare:
+
+| Konzept | Habitattyp | Rolle | Namen |
+|---|---|---|---|
+| `wcvp:concept:2570774` | `eunis@2021/R1N` | `constant` | *Plantago holosteum*, *Plantago subulata* |
+| `wcvp:concept:2623542` | `eunis@2021/R53` | `diagnostic` | *Aeonium aureum*, *Aeonium diplocyclum* |
+
+Die Einträge unterscheiden sich in ihrer Kennzahl (bei R1N `constancy` 30 und
+13). Das sind echte Duplikate aus Sicht des Aufrufers, und sie sind die
+Ausnahme, nicht der Grund für die Mehrfachnennung dieses Abschnitts.
+
+**Betroffen sind die flachen Listen**, und zwar in beide Richtungen:
+
+| Route | erscheint mehrfach | gemessen (Beispiel) |
+|---|---|---|
+| `GET /v1/species/{conceptId}/habitat-types` | der Habitattyp | 34 Einträge, 22 Habitattypen |
+| `POST /v1/species/habitat-types` | der Habitattyp | ebenso |
+| `GET /v1/habitat-type/{typology}/{code}/species` | die **Art** | 77 Einträge, 65 Arten |
+
+Eine weitere Eigenheit derselben Tabelle: die aus Aggregaten abgeleiteten
+Zeilen (`provenance: derived_from_aggregate`) tragen **weder `fidelity` noch
+`constancy`** — gemessen bei allen 905. Die Kennzahl des Aggregats wird
+bewusst nicht auf die Mitgliedsarten vererbt; sie gilt für das Aggregat, nicht
+für jede einzelne Art darin.
+
+**Nicht betroffen** ist `GET /v1/habitat-type/{typology}/{code}`: dort ist
+`species` ein Objekt, das schon nach Rolle gruppiert
+(`{"diagnostic": […], "constant": […], "dominant": […]}`). Ebenso wenig
+`GET /v1/syntaxon/{id}/habitat-types` — dort spielen Rollen keine Rolle.
+
+Dass derselbe Sachverhalt einmal gruppiert und einmal flach ausgeliefert wird,
+ist eine bewusst stehengelassene Ungleichheit: die flache Form ist der
+Vertrag, den die bestehenden Aufrufer kennen, und `?role=` filtert sie bereits
+auf eine Rolle, wenn man genau eine will. Wer eine Liste **eindeutiger**
+Habitattypen braucht, faltet clientseitig über `(typology, code)` — die
+Antwort rechnet bewusst nichts vor.
+
+Alle Zahlen mit ihrer Abfrage: `docs/reference/measured-index.md`.
+
 ## Die zwei Arten-Pfade
 
 `GET /v1/species/{conceptId}/habitat-types` antwortet **404**, wenn der Index zu

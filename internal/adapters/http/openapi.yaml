@@ -212,6 +212,15 @@ paths:
   /v1/habitat-type/{typology}/{code}/species:
     get:
       summary: Artenliste eines Habitattyps, optional nach Rolle gefiltert
+      description: >-
+        Die Liste führt (Art, Rolle)-Paare, nicht Arten: spielt eine Art in
+        diesem Typ mehrere Rollen, steht sie mehrfach darin. Jede Rolle trägt
+        ihre eigene Kennzahl. Ein gesetztes role filtert auf genau eine Rolle;
+        es macht die Liste aber nicht konzept-eindeutig, denn die Tabelle ist
+        über verbatim_name geschlüsselt — zwei Namen, die auf dieselbe
+        Konzept-ID auflösen, bleiben zwei Einträge (gemessen 2 Fälle im
+        ganzen Index). Aus Aggregaten abgeleitete Zeilen tragen weder fidelity
+        noch constancy.
       operationId: habitatTypeSpecies
       parameters:
         - $ref: "#/components/parameters/Typology"
@@ -290,6 +299,17 @@ paths:
       description: >-
         Die Kernfrage der Exkursions-App. Autark: eine Konzept-ID braucht keinen
         Upstream-Dienst.
+
+
+        Die Liste führt (Habitattyp, Rolle)-Paare, nicht Habitattypen: spielt
+        die Art in einem Typ mehrere Rollen, steht er mehrfach darin. Das sind
+        keine Duplikate — jede Rolle trägt ihre eigene Kennzahl (fidelity bei
+        diagnostic, constancy bei constant und dominant; aus Aggregaten
+        abgeleitete Zeilen tragen keine von beiden). Gemessen tragen 3489 von
+        10470 (Habitattyp, Name)-Paaren mehr als eine Rolle. Zwei Fälle im
+        ganzen Index sind echte Duplikate: dort löst der Ingest zwei Namen
+        auf dieselbe Konzept-ID auf. Wer eindeutige Habitattypen braucht,
+        faltet clientseitig über (typology, code).
       operationId: speciesHabitatTypes
       parameters:
         - name: conceptId
@@ -1061,6 +1081,11 @@ components:
               items:
                 $ref: "#/components/schemas/CrosswalkRef"
     HabitatTypeRole:
+      description: >-
+        Ein (Habitattyp, Rolle)-Paar. Derselbe Habitattyp kann in einer Liste
+        mehrfach vorkommen, einmal je Rolle, die die Art in ihm spielt — mit
+        je eigener Kennzahl. Siehe docs/reference/http-api.md, "Warum ein
+        Habitattyp mehrfach in einer Liste steht".
       allOf:
         - $ref: "#/components/schemas/HabitatTypeSummary"
         - type: object
