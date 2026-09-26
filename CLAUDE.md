@@ -269,8 +269,9 @@ remain stdlib-only.
   `GET /v1/habitat-type/{t}/{c}/species` repeats the species. The detail route
   `GET /v1/habitat-type/{t}/{c}` groups by role instead; the unevenness is
   deliberate — the flat form is the contract existing callers know, and
-  `?role=` already narrows it. Two rows in the whole index **are** genuine
-  duplicates: the ingest resolved two `verbatim_name`s onto one concept id
+  `?role=` already narrows it. Two **cases** in the whole index are genuine
+  duplicates — four rows, two per case: the ingest resolved two
+  `verbatim_name`s onto one concept id
   (`R1N`/`wcvp:concept:2570774`, `R53`/`wcvp:concept:2623542`), so the concept
   route repeats the habitat type with the same role. Measured, not assumed:
   2 of **12521** (habitat type, concept, **role**) groups — the denominator
