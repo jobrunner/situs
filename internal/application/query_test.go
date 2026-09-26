@@ -705,7 +705,10 @@ func (r *fakeRepo) abdeckungFuer(k domain.HabitatTypeKey, areaCode string) (mitD
 		gesehen[*s.ConceptID] = struct{}{}
 		hatDaten, trifft := false, false
 		for _, d := range r.distribution {
-			if d.ConceptID != *s.ConceptID {
+			// Auch das Schema filtern wie die echte Ablage: fuer die
+			// Artverbreitung zaehlt allein wgsrpd_l3. Ohne das zaehlte eine
+			// evc_territory-Zeile mit demselben Code hier mit und dort nicht.
+			if d.ConceptID != *s.ConceptID || d.Area.Scheme != domain.SchemeWGSRPDL3 {
 				continue
 			}
 			hatDaten = true

@@ -787,3 +787,31 @@ func TestHoehere(t *testing.T) {
 		})
 	}
 }
+
+// Der Fake muss auch das Schema so filtern wie SQLite: die echte Ablage joint
+// auf area_scheme = wgsrpd_l3. Ohne das zaehlte eine evc_territory-Zeile mit
+// demselben Code hier mit und dort nicht — Anwendungstests koennten mit einem
+// Abdeckungsverhalten gruen sein, das die echte Ablage nicht hat.
+func TestFakeRepo_AbdeckungFiltertDasSchema(t *testing.T) {
+	repo := newFakeRepo()
+	level := 3
+	k := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "T17"}
+	repo.types = append(repo.types, domain.HabitatType{Key: k, Level: &level, NameEN: "T17"})
+	id := "wcvp:c1"
+	repo.speciesRoles = append(repo.speciesRoles, domain.SpeciesRole{
+		Key: k, ConceptID: &id, VerbatimName: "c1", Role: "constant", Provenance: "observed",
+	})
+	// Die Art kommt in einem EVC-Territorium namens "GER" vor, nicht im
+	// WGSRPD-Gebiet GER. Fuer die Artverbreitung zaehlt allein wgsrpd_l3.
+	repo.distribution = []fakeDistribution{
+		{ConceptID: id, Area: domain.Area{Scheme: domain.SchemeEVCTerritory, Code: "GER"}},
+	}
+
+	got, err := repo.HabitatAreaCoverage(context.Background(), []domain.HabitatTypeKey{k}, "GER")
+	if err != nil {
+		t.Fatalf("HabitatAreaCoverage: %v", err)
+	}
+	if v, ok := got[k]; ok && v > 0 {
+		t.Errorf("Abdeckung = %.3f; eine Zeile aus einem anderen Gebietsschema darf nicht zaehlen", v)
+	}
+}
