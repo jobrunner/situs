@@ -344,9 +344,16 @@ The free EEA/Euroveg data reaches **EUNIS level 3** and **alliance (Verband)**.
 need EVA (European Vegetation Archive) access, which is only worth requesting
 once a real scientific project justifies it. Do not design around associations.
 
-Also deliberately out of scope for this foundation: scoring/ranking (plant set →
-ranked habitats), the ESy rule engine and the EUNIS-2012 key (both need cover
-and region data), and full plot classification.
+Also deliberately out of scope for this foundation: the ESy rule engine and the
+EUNIS-2012 key (both need cover and region data), and full plot classification.
+
+**Scoring/ranking was out of scope and no longer is.** `POST
+/v1/habitat-types/match` ranks habitat types for an observed species list —
+see `docs/superpowers/specs/2026-09-26-habitat-matching-design.md`, which
+revises the foundation decision and carries the measurement that motivated it:
+62 % of the 3561 species in the 198 level-3 types with a species list occur in
+exactly one type, and 53 % of all type pairs share no species at all. The score
+is a log-likelihood, never a probability — only the ordering is sound.
 
 ## Quality Gates
 

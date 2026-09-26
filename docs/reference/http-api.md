@@ -22,6 +22,7 @@ decken).
 | `GET /v1/species/search?q=&limit=` | Namenssuche über die im Index geführten `verbatim_name` |
 | `GET /v1/species/{conceptId}/habitat-types` | Habitattypen einer Art (mit Rolle) |
 | `POST /v1/species/habitat-types` | Batch über Konzept-IDs (`concept_ids`) |
+| `POST /v1/habitat-types/match` | Artenliste → Rangliste der Habitattypen (Log-Likelihood) |
 | `GET /v1/syntaxa?rank=&life_form_group=&area=&include=` | Wurzeln der Syntaxa-Hierarchie; ohne `?rank=` die 25 Formationen; `?area=` filtert auf Vorkommen |
 | `GET /v1/syntaxon/{id}` | ein Syntaxon mit Ahnenpfad und direkten Kindern |
 | `GET /v1/syntaxon/{id}/habitat-types` | Habitattypen einer Pflanzengesellschaft |
@@ -98,7 +99,14 @@ zwei Aufrufen der vorhandenen Routen beantwortet — erst
 `GET /v1/habitat-type/{typology}/{code}/species?role=diagnostic`. Ein
 zusammenfassender Endpunkt wäre nur eine Bequemlichkeit und würde die Gewichtung
 mehrerer Habitattypen vorwegnehmen — genau das, was dieses Fundament bewusst
-offen lässt (kein Scoring/Ranking). Nicht vergessen, sondern entschieden.
+offen lässt. Nicht vergessen, sondern entschieden.
+
+Das galt und gilt für die **Ko-Kennarten**. Für die umgekehrte Frage — welche
+Habitattypen erklären eine beobachtete Artenliste? — gibt es seit
+`POST /v1/habitat-types/match` sehr wohl einen zusammenfassenden Endpunkt. Die
+Entscheidung von 2026-08-18 ist dort bewusst revidiert worden, weil die
+Trennschärfe messbar in den Daten liegt; siehe „Habitattypen zu einer
+Artenliste" weiter unten.
 
 Die Crosswalk-Liste trägt beides: andere EUNIS-Fassungen und
 Anhang-I-Entsprechungen, in beiden Richtungen abfragbar. Sie ist leer, wenn es
@@ -508,6 +516,65 @@ fehlende Feld. Gemessen fehlt `distribution` bei 212 von 1326 Verbänden,
 darunter jedem Moos-, Flechten- und Algenverband, weil die Quelle nur
 Gefäßpflanzen-Vegetation abdeckt. Abwesenheit wird nie aufgezählt: der Client
 kennt die 136 Codes des Schemas aus `GET /v1/areas?scheme=evc_territory`.
+
+## Habitattypen zu einer Artenliste: `POST /v1/habitat-types/match`
+
+Die umgekehrte Frage zu allen übrigen Routen: nicht „welche Arten hat dieser
+Typ?", sondern „welche Typen erklären diese Arten?". Eingabe sind die im
+Gelände notierten **Konzept-IDs**, Ausgabe eine Rangliste.
+
+```json
+{"concept_ids": ["wcvp:concept:83891"], "area": "GER", "limit": 10}
+```
+
+```json
+{"input":   [{"concept_id": "wcvp:concept:83891", "known": true}],
+ "matches": [{"typology": "eunis@2021", "code": "T17",
+              "name_en": "Fagus forest on non-acid soils",
+              "score": -1.30, "matched": 3, "of": 3}]}
+```
+
+### `score` ist ein Log-Likelihood, keine Wahrscheinlichkeit
+
+Das ist eine bewusste Entscheidung und keine Auslassung. Die vier Parameter des
+Verfahrens sind **gesetzt und nicht kalibriert**, und die
+Unabhängigkeitsannahme des naiven Bayes trifft bei gemeinsam auftretenden Arten
+nicht zu. Ein Prozentwert würde eine Genauigkeit behaupten, die die Daten nicht
+tragen. Belastbar ist die **Reihenfolge**; `matched`/`of` macht nachvollziehbar,
+worauf sie beruht.
+
+### Wie gewichtet wird
+
+`constancy` **ist** bereits `P(Art | Habitat)`: 99 heißt, die Art kommt in 99 %
+der Aufnahmen dieses Typs vor.
+
+| Parameter | Wert | Rolle |
+|---|---|---|
+| `MatchMiss` | `0.02` | eine genannte Art, die der Typ nicht führt |
+| `MatchDefaultP` | `0.35` | Zeilen ohne Stetigkeit (nur `diagnostic` geführt) |
+| `MatchFidelityWeight` | `0.012` | Kennart vor Begleitart |
+| `MatchAreaWeight` | `3.0` | Gewicht der Gebietsplausibilität |
+
+Der `MatchMiss`-Term ist der Kern: eine unpassende Art **wertet ab, schließt
+aber nicht aus**. Gemessen verliert ein harter UND-Filter bei einer einzigen
+Störart in 96 bis 97 % der Fälle den richtigen Typ; mit diesem Verfahren kosten
+zwei Störarten zwei Prozentpunkte.
+
+### `area` ist Plausibilitätsprüfung, kein Filter
+
+Ein Gebiet, in dem die Arten eines Typs kaum vorkommen, drückt ihn nach hinten
+— es entfernt ihn nicht. Gemessen verbessert `area` die Trefferquote **nicht**
+(die Artenliste trägt die geografische Information bereits), verhindert aber
+zuverlässig geografisch unmögliche Vorschläge. Ein unbekannter Gebietscode ist
+`INVALID_QUERY`, niemals stillschweigend ignoriert.
+
+### Was die Route nie vorschlagen kann
+
+**Formation U (Fels und Geröll) führt keine einzige Kennart** — alle 36
+Level-3-Typen. Formation V nur 12 von 31. Über Artenlisten sind 198 der 270
+Level-3-Typen erreichbar, und die Lücke trifft gezielt die vegetationsarmen
+Standorte. Ob eine Aufnahme überhaupt in diese Typologie fällt, beantwortet die
+Route ebenfalls nicht.
 
 ## Die zwei Arten-Pfade
 

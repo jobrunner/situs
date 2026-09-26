@@ -56,6 +56,47 @@ Klassifikationshierarchie bis Level 8 reicht. Das ist die bekannte, bewusst
 akzeptierte Deckelung des Fundaments (siehe `CLAUDE.md`, „Known ceiling"), kein
 Datenfehler.
 
+## Trennschärfe der Level-3-Habitattypen
+
+Grundlage der Entscheidung, Scoring doch anzubieten (siehe
+`docs/superpowers/specs/2026-09-26-habitat-matching-design.md`). Gezählt über
+die beobachteten Zeilen, Aggregat-Ableitungen ausgeschlossen.
+
+| Größe | Gemessen |
+|---|---|
+| Level-3-Typen mit Artenliste | **198** von 270 |
+| verschiedene Arten darin | **3561** |
+| Arten in genau einem Typ | **2223** (62 %) |
+| Habitatpaare ohne gemeinsame Art | **53 %** von 19503 |
+| häufigste Art | *Dactylis glomerata*, 65/198 |
+
+```sql
+SELECT substr(code,1,1) AS formation, COUNT(DISTINCT code)
+FROM habitat_type WHERE typology_id='eunis@2021' AND level=3 GROUP BY 1;
+-- N 25 | Q 22 | R 58 | S 44 | T 54 | U 36 | V 31
+```
+
+**Formation U führt keine einzige Kennart** — alle 36 Level-3-Typen, gemessen.
+Formation V nur 12 von 31. Über Artenlisten ist damit kein Fels-, Geröll- und
+kaum ein Ruderalhabitat erreichbar; die Lücke trifft gezielt die
+vegetationsarmen Standorte.
+
+### Abnahmewerte des Matchings
+
+Simulierte Aufnahmen (Arten nach ihrer Stetigkeit gezogen), 198 Typen, 40
+Ziehungen je Typ, Rang des wahren Typs:
+
+| Arten | Störarten | Rang 1 | Top 3 | Top 5 |
+|---|---|---|---|---|
+| 3 | 0 | 82 % | 96 % | 99 % |
+| 3 | 2 | 80 % | 95 % | 99 % |
+| 5 | 0 | 90 % | 99 % | 100 % |
+| 5 | 2 | 90 % | 99 % | 100 % |
+
+Zum Vergleich der verworfene harte UND-Filter: mit einer einzigen Störart in
+der Eingabe bleibt der wahre Typ nur in **3 bis 4 %** der Fälle in der Liste,
+die meist leer ist.
+
 ## Qualifier (offener Punkt 2)
 
 Tatsächlich vorkommende Symbole: **`=` `<` `>` `#` `≈`** — fünf, nicht vier.
