@@ -536,13 +536,18 @@ Gelände notierten **Konzept-IDs**, Ausgabe eine Rangliste.
               "name_en": "Fagus forest on non-acid soils",
               "score": -1.30, "matched": 3, "of": 3,
               "species": [{"concept_id": "wcvp:concept:83891",
-                           "role": "constant", "constancy": 99}]}]}
+                           "role": "constant", "constancy": 99, "fidelity": 31},
+                          {"concept_id": "wcvp:concept:2638482",
+                           "role": "constant", "constancy": 26},
+                          {"concept_id": "wcvp:concept:87028",
+                           "role": "constant", "constancy": 51, "fidelity": 29.8}]}]}
 ```
 
 `species` nennt, welche Eingabe-Art für diesen Typ gesprochen hat, mit Rolle
 und Kennzahl — im Gelände die Anschlussfrage: welche der anderen Kennarten
-suche ich jetzt? Ein `name_de` gibt es **nicht**: die Route nimmt keinen
-`lang`-Parameter.
+suche ich jetzt? Je Art steht dort **genau ein** Eintrag — die Zeile, die der
+Score genutzt hat —, sodass `species` und `matched` dasselbe zählen. Ein
+`name_de` gibt es **nicht**: die Route nimmt keinen `lang`-Parameter.
 
 ### `score` ist ein Log-Likelihood, keine Wahrscheinlichkeit
 
