@@ -444,3 +444,108 @@ func TestMatchHabitatTypes_ReichtTypologiefehlerDurch(t *testing.T) {
 		t.Errorf("err = %v, erwartet den Typologiefehler", err)
 	}
 }
+
+// constancy 100 heisst "in jeder Aufnahme dieses Typs" — das ist P = 1,0 und
+// nicht 0,99. Ein stilles Kappen verschoebe die Rangfolge gegen einen
+// Kandidaten mit echten 99. Gemessen fuehrt der Index solche Zeilen.
+func TestMatchHabitatTypes_HundertProzentBleibenHundertProzent(t *testing.T) {
+	repo := newFakeRepo()
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	level := 3
+	setzen := func(code string, constancy float64) {
+		k := domain.HabitatTypeKey{Typology: "eunis@2021", Code: code}
+		repo.types = append(repo.types, domain.HabitatType{Key: k, Level: &level, NameEN: code})
+		id, c := "wcvp:c1", constancy
+		repo.speciesRoles = append(repo.speciesRoles, domain.SpeciesRole{
+			Key: k, ConceptID: &id, VerbatimName: "c1", Role: "constant",
+			Constancy: &c, Provenance: "observed",
+		})
+	}
+	setzen("T01", 100) // voll stet
+	setzen("T02", 99)  // fast voll stet
+	svc := NewQueryService(repo)
+
+	got, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1"}, Typology: "eunis@2021", Level: 3, Limit: 5,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	if len(got.Matches) != 2 {
+		t.Fatalf("Matches = %d, erwartet 2", len(got.Matches))
+	}
+	if got.Matches[0].Code != "T01" {
+		t.Errorf("Rang 1 = %s, erwartet T01 — eine Stetigkeit von 100 darf nicht auf 99 gekappt werden",
+			got.Matches[0].Code)
+	}
+	if got.Matches[0].Score == got.Matches[1].Score {
+		t.Error("100 und 99 ergeben denselben Score; das Kappen macht sie ununterscheidbar")
+	}
+}
+
+// Ein Wert ausserhalb 0..100 ist ein Datenfehler und wird sichtbar begrenzt,
+// nicht still verrechnet.
+func TestMatchHabitatTypes_UnplausibleStetigkeitWirdBegrenzt(t *testing.T) {
+	repo := newFakeRepo()
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	level := 3
+	k := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "T01"}
+	repo.types = append(repo.types, domain.HabitatType{Key: k, Level: &level, NameEN: "T01"})
+	id, c := "wcvp:c1", 150.0
+	repo.speciesRoles = append(repo.speciesRoles, domain.SpeciesRole{
+		Key: k, ConceptID: &id, VerbatimName: "c1", Role: "constant",
+		Constancy: &c, Provenance: "observed",
+	})
+
+	got, err := NewQueryService(repo).MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1"}, Typology: "eunis@2021", Level: 3, Limit: 5,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	if len(got.Matches) != 1 {
+		t.Fatalf("Matches = %d, erwartet 1", len(got.Matches))
+	}
+	// P darf 1 nicht ueberschreiten: log(1.5) waere positiv und der Kandidat
+	// bekaeme einen Bonus fuer einen kaputten Wert.
+	if got.Matches[0].Score > 0 {
+		t.Errorf("Score = %.3f; eine Stetigkeit ueber 100 darf keinen Bonus ergeben",
+			got.Matches[0].Score)
+	}
+}
+
+// Der Fake muss dieselbe Definition rechnen wie SQLite, sonst koennen
+// Anwendungstests mit einem Verhalten gruen sein, das die echte Ablage nicht
+// hat. Genau der Zaehlfehler — Zeilen statt Konzepte — steckte im SQL und ist
+// dort behoben.
+func TestFakeRepo_AbdeckungZaehltKonzepteNichtZeilen(t *testing.T) {
+	repo := newFakeRepo()
+	level := 3
+	k := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "T32"}
+	repo.types = append(repo.types, domain.HabitatType{Key: k, Level: &level, NameEN: "T32"})
+	// c1 traegt drei Rollen und kommt in GER vor, c2 eine Rolle und kommt
+	// anderswo vor. Konzeptweise sind das 1 von 2 = 0,5. Zeilenweise waeren es
+	// 3 von 4 = 0,75 — und genau daran wird der Unterschied sichtbar.
+	eins, zwei := "wcvp:c1", "wcvp:c2"
+	for _, role := range []string{"constant", "diagnostic", "dominant"} {
+		repo.speciesRoles = append(repo.speciesRoles, domain.SpeciesRole{
+			Key: k, ConceptID: &eins, VerbatimName: "c1", Role: role, Provenance: "observed",
+		})
+	}
+	repo.speciesRoles = append(repo.speciesRoles, domain.SpeciesRole{
+		Key: k, ConceptID: &zwei, VerbatimName: "c2", Role: "constant", Provenance: "observed",
+	})
+	repo.distribution = []fakeDistribution{
+		{ConceptID: eins, Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}},
+		{ConceptID: zwei, Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "SPA"}},
+	}
+
+	got, err := repo.HabitatAreaCoverage(context.Background(), []domain.HabitatTypeKey{k}, "GER")
+	if err != nil {
+		t.Fatalf("HabitatAreaCoverage: %v", err)
+	}
+	if v := got[k]; v < 0.49 || v > 0.51 {
+		t.Errorf("Abdeckung = %.3f, erwartet 0.5 (ein Konzept von zweien) — "+
+			"der Fake zaehlt Zeilen statt Konzepte", v)
+	}
+}

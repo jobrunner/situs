@@ -98,3 +98,28 @@ func TestScoreCandidate_TreuegradUeberlebtDieHoehereStetigkeit(t *testing.T) {
 			domain.ScoreCandidate(a, 1), domain.ScoreCandidate(b, 1))
 	}
 }
+
+// Die Summe laeuft ueber eine Map, und Go iteriert Maps in zufaelliger
+// Reihenfolge. Float-Addition ist nicht assoziativ: dieselbe Eingabe kann
+// dadurch um einige ULP verschiedene Scores ergeben, und der Gleichstands-
+// Tiebreak weiter oben greift dann nicht mehr. Bei vielen Arten ist das
+// messbar.
+func TestScoreCandidate_IstBitgleichBeiWiederholung(t *testing.T) {
+	hits := make([]domain.MatchHit, 0, 40)
+	for i := 0; i < 40; i++ {
+		hits = append(hits, domain.MatchHit{
+			ConceptID: string(rune('a'+i%26)) + string(rune('0'+i/26)),
+			P:         0.1 + float64(i)*0.02,
+			Fidelity:  float64(i) * 2.3,
+		})
+	}
+	c := domain.MatchCandidate{Hits: hits}
+
+	erste := domain.ScoreCandidate(c, 40)
+	for lauf := 0; lauf < 200; lauf++ {
+		if got := domain.ScoreCandidate(c, 40); got != erste {
+			t.Fatalf("Lauf %d ergab %v, der erste %v — die Summenreihenfolge ist nicht festgelegt",
+				lauf, got, erste)
+		}
+	}
+}

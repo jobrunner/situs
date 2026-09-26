@@ -1,6 +1,9 @@
 package domain
 
-import "math"
+import (
+	"math"
+	"sort"
+)
 
 // Die vier Parameter des Matchings. Gesetzt, nicht gelernt — deshalb als
 // benannte Konstanten, damit eine spaetere Kalibrierung an echten Aufnahmen
@@ -63,9 +66,19 @@ func ScoreCandidate(c MatchCandidate, inputCount int) float64 {
 		}
 	}
 
+	// In sortierter Reihenfolge summieren, nicht in der einer Map: Go iteriert
+	// Maps zufaellig, und Float-Addition ist nicht assoziativ. Ohne das ergibt
+	// dieselbe Eingabe um einige ULP verschiedene Scores, und der
+	// Gleichstands-Tiebreak in der Anwendungsschicht greift nicht mehr.
+	ids := make([]string, 0, len(bestP))
+	for id := range bestP {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
 	score := 0.0
-	for id, p := range bestP {
-		score += math.Log(p)
+	for _, id := range ids {
+		score += math.Log(bestP[id])
 		score += MatchFidelityWeight * maxFid[id]
 	}
 	for i := len(bestP); i < inputCount; i++ {

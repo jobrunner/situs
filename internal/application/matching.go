@@ -191,10 +191,15 @@ func (q *QueryService) ordneKandidaten(ctx context.Context, req input.MatchReque
 // Stetigkeit — die nur als diagnostic gefuehrten und alle aus Aggregaten
 // abgeleiteten — bekommen den Vorgabewert.
 func rollenWahrscheinlichkeit(r domain.SpeciesRole) float64 {
-	if r.Constancy != nil && *r.Constancy > 0 {
-		return math.Min(*r.Constancy/100, 0.99)
+	if r.Constancy == nil || *r.Constancy <= 0 {
+		return domain.MatchDefaultP
 	}
-	return domain.MatchDefaultP
+	// Eine Stetigkeit von 100 heisst "in jeder Aufnahme dieses Typs", also
+	// P = 1,0. Sie auf 0,99 zu kappen machte sie von echten 99 ununterscheidbar
+	// und verschoebe die Rangfolge. Nur Werte ueber 100 werden begrenzt — die
+	// waeren ein Datenfehler, und log(>1) gaebe einen Bonus fuer einen kaputten
+	// Wert.
+	return math.Min(*r.Constancy/100, 1.0)
 }
 
 func wert(p *float64) float64 {

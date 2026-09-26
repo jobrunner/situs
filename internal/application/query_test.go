@@ -688,13 +688,21 @@ func (r *fakeRepo) HabitatAreaCoverage(_ context.Context, keys []domain.HabitatT
 	return out, nil
 }
 
-// abdeckungFuer zaehlt die Arten eines Typs mit Verbreitungsdaten und davon
-// die im Gebiet vorkommenden.
+// abdeckungFuer zaehlt die KONZEPTE eines Typs mit Verbreitungsdaten und davon
+// die im Gebiet vorkommenden — dieselbe Definition wie COUNT(DISTINCT
+// concept_id) in SQLite. Zaehlte der Fake Zeilen, koennten Anwendungstests mit
+// einem Verhalten gruen sein, das die echte Ablage nicht hat: eine Art steht
+// in demselben Typ regelmaessig als constant und diagnostic und dominant.
 func (r *fakeRepo) abdeckungFuer(k domain.HabitatTypeKey, areaCode string) (mitDaten, imGebiet int) {
+	gesehen := map[string]struct{}{}
 	for _, s := range r.speciesRoles {
 		if s.Key != k || s.ConceptID == nil {
 			continue
 		}
+		if _, doppelt := gesehen[*s.ConceptID]; doppelt {
+			continue
+		}
+		gesehen[*s.ConceptID] = struct{}{}
 		hatDaten, trifft := false, false
 		for _, d := range r.distribution {
 			if d.ConceptID != *s.ConceptID {

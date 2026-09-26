@@ -534,7 +534,7 @@ Gelände notierten **Konzept-IDs**, Ausgabe eine Rangliste.
              {"concept_id": "wcvp:concept:87028", "known": true}],
  "matches": [{"typology": "eunis@2021", "code": "T17",
               "name_en": "Fagus forest on non-acid soils",
-              "score": -2.03, "matched": 3, "of": 3,
+              "score": -1.30, "matched": 3, "of": 3,
               "species": [{"concept_id": "wcvp:concept:83891",
                            "role": "constant", "constancy": 99}]}]}
 ```
