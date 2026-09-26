@@ -152,6 +152,7 @@ area code from GPS).
 | `docs/superpowers/plans/2026-09-21-syntaxa-navigation.md` | Its TDD implementation plan (6 tasks). |
 | `docs/superpowers/specs/2026-09-21-syntaxa-verbreitung-design.md` | Teilprojekt C: syntaxa distribution, the second area scheme (`evc_territory`), join over the EVC primary codes A introduces. **Authoritative.** |
 | `docs/superpowers/plans/2026-09-21-syntaxa-verbreitung.md` | Its TDD implementation plan (12 tasks); all 12 done. |
+| `docs/superpowers/specs/2026-09-26-habitat-matching-design.md` | Artenliste → Rangliste der Habitattypen. **Revidiert** die „kein Scoring/Ranking"-Entscheidung des Fundaments, mit der Messung als Begründung. Noch nicht umgesetzt. |
 
 ## Ubiquitous Language (do not deviate)
 
