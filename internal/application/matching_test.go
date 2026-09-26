@@ -600,7 +600,7 @@ func TestMatchHabitatTypes_GebietHebtKeinenTypOhneTreffer(t *testing.T) {
 // DEFAULT_P zu belegen machte aus einer Nicht-Vorkommen-Zeile einen positiven
 // Treffer. Dieselbe Verwechslung wie fehlende Verbreitung als Abwesenheit zu
 // lesen, nur andersherum.
-func TestMatchHabitatTypes_AusdrueckicheNullIstKeinTreffer(t *testing.T) {
+func TestMatchHabitatTypes_AusdruecklicheNullIstKeinTreffer(t *testing.T) {
 	repo := newFakeRepo()
 	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
 	level := 3
@@ -951,5 +951,62 @@ func TestMatchHabitatTypes_LimitNullKuerztNicht(t *testing.T) {
 	if len(ohne.Matches) != len(alle.Matches) {
 		t.Errorf("limit 0 ergab %d Treffer, limit 50 ergab %d — 0 darf nicht auf null kuerzen",
 			len(ohne.Matches), len(alle.Matches))
+	}
+}
+
+// Dieselbe ID mehrfach zu nennen darf den Index nicht mehrfach befragen. Die
+// Antwort spiegelt die Eingabe trotzdem vollstaendig zurueck.
+func TestMatchHabitatTypes_FragtJedeIDNurEinmalAb(t *testing.T) {
+	svc := newMatchService(t)
+	repo := svc.repo.(*fakeRepo)
+
+	ids := make([]string, 20)
+	for i := range ids {
+		ids[i] = "wcvp:c1"
+	}
+	vorher := repo.speciesRolesByConceptCalls
+	got, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: ids, Typology: "eunis@2021", Level: 3, Limit: 5,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	if n := repo.speciesRolesByConceptCalls - vorher; n != 1 {
+		t.Errorf("%d Abfragen fuer 20-mal dieselbe ID, erwartet 1", n)
+	}
+	if len(got.Input) != 20 {
+		t.Errorf("Input = %d Eintraege, erwartet 20 — jede Eingabe wird gespiegelt", len(got.Input))
+	}
+	if got.Matches[0].Of != 1 {
+		t.Errorf("of = %d, erwartet 1", got.Matches[0].Of)
+	}
+}
+
+// Auch eine unbekannte ID, die doppelt genannt wird, behaelt bei jedem
+// Vorkommen ihren Grund — sonst waere die zweite Nennung stillschweigend
+// "bekannt", nur weil die erste schon abgefragt wurde.
+func TestMatchHabitatTypes_UnbekannteIDBehaeltIhrenGrundAuchDoppelt(t *testing.T) {
+	svc := newMatchService(t)
+
+	got, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:fehlt", "wcvp:fehlt", "wcvp:c1"},
+		Typology:   "eunis@2021", Level: 3, Limit: 5,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	if len(got.Input) != 3 {
+		t.Fatalf("Input = %d Eintraege, erwartet 3", len(got.Input))
+	}
+	for i, e := range got.Input[:2] {
+		if e.Known {
+			t.Errorf("Input[%d] ist als bekannt gemeldet, die ID gibt es aber nicht", i)
+		}
+		if e.Reason != input.ReasonUnknownConcept {
+			t.Errorf("Input[%d].Reason = %q, erwartet unknown_concept", i, e.Reason)
+		}
+	}
+	if got.Matches[0].Of != 1 {
+		t.Errorf("of = %d, erwartet 1 — nur wcvp:c1 ist bekannt", got.Matches[0].Of)
 	}
 }

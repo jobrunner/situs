@@ -108,7 +108,7 @@ func (q *QueryService) sammleTreffer(ctx context.Context, req input.MatchRequest
 	hits := map[domain.HabitatTypeKey][]domain.MatchHit{}
 	belege := map[domain.HabitatTypeKey][]input.MatchSpecies{}
 	bekannt := 0
-	gesehen := map[string]struct{}{}
+	gesehen := map[string]bool{} // ID -> war sie bekannt?
 
 	for _, id := range req.ConceptIDs {
 		entry := input.MatchInput{ConceptID: id}
@@ -117,25 +117,34 @@ func (q *QueryService) sammleTreffer(ctx context.Context, req input.MatchRequest
 			res.Input = append(res.Input, entry)
 			continue
 		}
+		// Eine doppelt genannte Art wird einmal abgefragt und einmal
+		// gezaehlt. Sonst kostete die Dublette einen MISS, und matched/of —
+		// die Zahl, mit der die Antwort ihre Reihenfolge begruendet — waere
+		// falsch; ausserdem befragte eine Liste mit 300-mal derselben ID den
+		// Index 300-mal. Zurueckgespiegelt wird die Eingabe trotzdem
+		// vollstaendig, wie beim Batch.
+		if bekanntSchon, doppelt := gesehen[id]; doppelt {
+			entry.Known = bekanntSchon
+			if !bekanntSchon {
+				entry.Reason = input.ReasonUnknownConcept
+			}
+			res.Input = append(res.Input, entry)
+			continue
+		}
+
 		rollen, err := q.repo.SpeciesRolesByConcept(ctx, id)
 		if err != nil {
 			return input.MatchResult{}, nil, nil, 0, fmt.Errorf("matching %q: %w", id, err)
 		}
 		if len(rollen) == 0 {
+			gesehen[id] = false
 			entry.Reason = input.ReasonUnknownConcept
 			res.Input = append(res.Input, entry)
 			continue
 		}
+		gesehen[id] = true
 		entry.Known = true
 		res.Input = append(res.Input, entry)
-		// Eine doppelt genannte Art zaehlt einmal: sonst kostete die Dublette
-		// einen MISS, und matched/of — die Zahl, mit der die Antwort ihre
-		// Reihenfolge begruendet — waere falsch. Zurueckgespiegelt wird die
-		// Eingabe trotzdem vollstaendig, wie beim Batch.
-		if _, doppelt := gesehen[id]; doppelt {
-			continue
-		}
-		gesehen[id] = struct{}{}
 		bekannt++
 
 		for _, r := range rollen {

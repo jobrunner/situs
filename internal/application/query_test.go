@@ -728,6 +728,7 @@ func (r *fakeRepo) abdeckungFuer(k domain.HabitatTypeKey, areaCode string) (mitD
 }
 
 func (r *fakeRepo) SpeciesRolesByConcept(_ context.Context, conceptID string) ([]domain.SpeciesRole, error) {
+	r.speciesRolesByConceptCalls++
 	if r.speciesRolesErr != nil {
 		return nil, r.speciesRolesErr
 	}

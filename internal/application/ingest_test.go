@@ -462,12 +462,13 @@ type fakeRepo struct {
 	crosswalksToErr error
 	// The read side's injectable failures (Task 8): each fails exactly one
 	// Repository read so a query test can pin that the failure surfaces.
-	typologyErr     error
-	habitatTypeErr  error
-	coverageErr     error
-	crosswalksErr   error
-	speciesRolesErr error
-	syntaxonErr     error
+	typologyErr                error
+	habitatTypeErr             error
+	coverageErr                error
+	speciesRolesByConceptCalls int
+	crosswalksErr              error
+	speciesRolesErr            error
+	syntaxonErr                error
 	// syntaxonByEEACodeErr fails only SyntaxonByEEACode, exercising
 	// syntaxonByIDOrEEACode's fallback-lookup error path independently of
 	// syntaxonErr, which fails the primary Syntaxon lookup instead.
