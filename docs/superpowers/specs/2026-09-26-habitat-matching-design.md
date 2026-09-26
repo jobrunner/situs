@@ -126,11 +126,13 @@ Prozentpunkte**. Das ist nicht dieselbe Methode mit anderen Parametern,
 sondern der Unterschied zwischen brauchbar und unbrauchbar. Der `MISS`-Term
 ist deshalb keine Feinheit, sondern der Entwurf.
 
-## Abnahmekriterien
+## Beobachtete Werte (nicht prüfbar)
 
 Gemessen an simulierten Aufnahmen (Arten nach ihrer Stetigkeit gezogen, wie im
-Feld), 198 Habitate, 40 Ziehungen je Habitat. Eine Implementierung, die diese
-Werte deutlich verfehlt, weicht vom Entwurf ab:
+Feld), 198 Habitate, 40 Ziehungen je Habitat. Diese Zahlen sind **beobachtend,
+nicht prüfend**: die Simulation braucht den gepinnten Index als Fixture und
+liefe Minuten — sie gehört nicht in `make verify`. Eine Implementierung, die
+sie deutlich verfehlt, weicht vom Entwurf ab, aber kein Test stellt das fest:
 
 | Eingabe-Arten | Störarten | Rang 1 | Top 3 | Top 5 |
 |---|---|---|---|---|
@@ -140,12 +142,16 @@ Werte deutlich verfehlt, weicht vom Entwurf ab:
 | 5 | 0 | 90 % | 99 % | 100 % |
 | 5 | 2 | 90 % | 99 % | 100 % |
 
-Zusätzlich als Festlegung:
+## Abnahmekriterien (prüfbar)
+
+Diese beiden sind Tests und müssen grün sein:
 
 - `Fagus sylvatica` + `Anemone nemorosa` + `Galium odoratum` → **T17** auf Rang 1
   (Waldmeister-Buchenwald), mit Abstand zum zweiten.
-- Mit `area=GER` erscheint **kein** makaronesisches Habitat unter den ersten
-  drei. Ohne `area` geschah das in 38 von 4470 simulierten Aufnahmen.
+- Eine Störart in derselben Liste wirft T17 nicht heraus.
+
+Gegen den echten Index zusätzlich nachgemessen: Abstand 1,5 zum zweiten, und
+mit `area=GER` kein makaronesisches Habitat unter den ersten drei.
 
 ## Das Gebiet ist Plausibilitätsprüfung, nicht Filter
 
@@ -156,6 +162,38 @@ geht es als Term in den Score und **nicht** als Ausschlusskriterium: ein
 Habitat, dessen Arten im Gebiet selten sind, rutscht nach hinten, verschwindet
 aber nicht. Als harter Vorfilter taugt es ohnehin kaum — für Deutschland
 blieben bei 50 % Abdeckung noch 149 der 198 Typen übrig.
+
+## Fälle, die der Entwurf festlegt
+
+Aus dem Review dieser Spezifikation — jeder Punkt war eine echte Lücke:
+
+- **Typologien ohne Artenzeilen.** `annex1` und `eunis@2012` tragen keine
+  `species_role`-Zeilen. Eine Anfrage dorthin ist **kein Fehler**, sondern
+  liefert eine leere `matches`-Liste: die Typologie existiert, nur die Evidenz
+  fehlt. Eine **unbekannte** Typologie dagegen ist `INVALID_QUERY` — sonst wäre
+  ein Tippfehler nicht von „passt nirgends" zu unterscheiden.
+- **Alle Eingabe-IDs unbekannt.** `200` mit leerer `matches`-Liste und jeder
+  Eingabe in `input` mit ihrem `reason`. Kein `404`: die Frage war beantwortbar.
+  Ohne bekannte Art gibt es keine Evidenz, und ein Ranking ohne Evidenz wäre
+  eine willkürliche Liste.
+- **Zeilen ohne Kennzahl.** Die aus Aggregaten abgeleiteten Zeilen
+  (`derived_from_aggregate`, alle 905) tragen weder `constancy` noch
+  `fidelity`. Sie zählen als **Treffer** mit `DEFAULT_P`, nicht als `MISS`: die
+  Art ist geführt, nur ihre Stetigkeit wurde für das Mitglied nie gemessen.
+- **Konzepte ohne Verbreitungsdaten** gehen in die Gebietsabdeckung **gar nicht
+  ein** — weder in Zähler noch in Nenner. Fehlende Verbreitung heißt
+  *unbekannt*, nicht *kommt nicht vor*; sie als Abwesenheit zu zählen wäre
+  dieselbe Verwechslung, die der Index bei `in_area` ausdrücklich vermeidet.
+  Ein Typ, zu dem **keine** Art Verbreitungsdaten trägt, bekommt keinen
+  Abdeckungswert und damit keinen Gebietsterm.
+- **Ein Typ ohne jeden Treffer erscheint nie**, auch nicht mit perfekter
+  Gebietsabdeckung. Rechnerisch hätte er den besseren Score
+  (`3·log(MISS) + 3·log(1,0) = −11,74` gegen `−16,92` eines Kandidaten mit
+  einem Treffer und schlechter Abdeckung). Fachlich wäre das falsch: die
+  Artenliste ist die Evidenz, das Gebiet nur ein Korrektiv. `score` ist damit
+  ein Likelihood über die **Kandidaten**, nicht über alle Typen der Ebene.
+  Daraus folgt auch, dass die 36 U-Typen ohne Artenzeilen nie erscheinen
+  können — die Zusage unten hält, weil sie nie Kandidat werden.
 
 ## Grenzen, die in die Antwort gehören
 
