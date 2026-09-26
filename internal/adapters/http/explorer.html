@@ -67,7 +67,8 @@
 <h1>situs — Explorer</h1>
 <p class="sub">
   Jedes Panel spricht genau einen Endpunkt an und zeigt die abgesetzte URL mit.
-  Es wird nichts berechnet oder zusammengefasst, was der Dienst nicht selbst
+  Die Rangliste im Match-Panel rechnet der Dienst; sonst wird hier nichts
+  berechnet oder zusammengefasst, was der Dienst nicht selbst
   liefert.
 </p>
 
@@ -127,6 +128,32 @@
   </div>
   <ul class="hits" id="sp-traits-hits"></ul>
   <div class="url"></div>
+  <pre></pre>
+</section>
+
+<section class="panel" id="match">
+  <h2>Artenliste → Rangliste der Habitattypen — POST /v1/habitat-types/match</h2>
+  <p class="note">Der Dienst ordnet die Habitattypen danach, wie gut sie die
+  Artenliste erklären. <code>score</code> ist ein Log-Likelihood, keine
+  Wahrscheinlichkeit — belastbar ist die Reihenfolge, nicht der Betrag.
+  <code>area</code> aus der Kopfzeile wirkt als Plausibilitätsprüfung, nicht als
+  Filter.</p>
+  <div class="row" style="align-items:stretch">
+    <div style="flex:1">
+      <label for="match-ids">Concept-IDs (eine je Zeile oder kommagetrennt)</label>
+      <textarea id="match-ids" placeholder="wcvp:concept:83891&#10;wcvp:concept:2692970"></textarea>
+    </div>
+  </div>
+  <div class="row">
+    <div>
+      <label for="match-limit">limit</label>
+      <input id="match-limit" size="4" value="10">
+    </div>
+    <button onclick="runMatch()">Abfragen</button>
+    <button class="secondary" onclick="toggleFormat('match')">formatiert ⇄ JSON</button>
+  </div>
+  <div class="url"></div>
+  <div id="match-view"></div>
   <pre></pre>
 </section>
 
@@ -391,6 +418,48 @@ function runSpListHabitat() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ concept_ids: ids }),
   });
+}
+
+async function runMatch() {
+  const ids = parseIds(document.getElementById("match-ids").value);
+  if (!ids.length) { return; }
+  const body = { concept_ids: ids };
+  const limit = parseInt(document.getElementById("match-limit").value, 10);
+  if (!isNaN(limit)) { body.limit = limit; }
+  const area = document.getElementById("g-area").value;
+  if (area) { body.area = area; }
+
+  const res = await call("match", "/v1/habitat-types/match", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  renderMatch(res);
+}
+
+// Zeigt die Rangliste als Tabelle. Die Reihenfolge kommt vom Dienst; diese
+// Seite sortiert nichts um und rechnet keinen Prozentwert aus, den es nicht
+// gibt.
+function renderMatch(res) {
+  const view = document.getElementById("match-view");
+  view.innerHTML = "";
+  if (!res || !Array.isArray(res.matches) || !res.matches.length) { return; }
+  const t = document.createElement("table");
+  t.innerHTML = "<thead><tr><th>#</th><th>Code</th><th>Name</th>" +
+                "<th>score</th><th>Treffer</th></tr></thead>";
+  const tb = document.createElement("tbody");
+  res.matches.forEach((m, i) => {
+    const tr = document.createElement("tr");
+    for (const v of [String(i + 1), m.code, m.name_de || m.name_en,
+                     Number(m.score).toFixed(2), `${m.matched}/${m.of}`]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.appendChild(td);
+    }
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb);
+  view.appendChild(t);
 }
 
 function runSpTraitsSummary() {
