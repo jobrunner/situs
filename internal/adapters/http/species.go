@@ -95,13 +95,23 @@ func (s *Server) decodeConceptIDs(w http.ResponseWriter, r *http.Request) ([]str
 		return nil, false
 	}
 
+	return s.validateConceptIDs(w, req.ConceptIDs)
+}
+
+// validateConceptIDs holds the checks both concept-id bodies share: the size
+// bound, the refusal of a blank entry, and the refusal of an empty list. It is
+// separate from decoding so POST /v1/habitat-types/match — whose body carries
+// further fields and therefore cannot reuse batchRequest — reaches the same
+// verdicts. Two routes of one service must not disagree about what a valid
+// concept-id list is.
+func (s *Server) validateConceptIDs(w http.ResponseWriter, ids []string) ([]string, bool) {
 	// The bound is on the raw array length, because that is what `maxItems: 300`
 	// in the spec means — a validating gateway or generated client must reach
 	// the same verdict as this handler, and none of them reads prose.
-	if len(req.ConceptIDs) > maxBatchConceptIDs {
+	if len(ids) > maxBatchConceptIDs {
 		s.writeError(w, http.StatusBadRequest, CodeInvalidQuery,
 			fmt.Sprintf("concept_ids holds %d entries, at most %d are accepted",
-				len(req.ConceptIDs), maxBatchConceptIDs))
+				len(ids), maxBatchConceptIDs))
 		return nil, false
 	}
 
@@ -114,8 +124,8 @@ func (s *Server) decodeConceptIDs(w http.ResponseWriter, r *http.Request) ([]str
 	// recording list by one; answering it with unknown_backbone would be a lie,
 	// because an empty string is not another backbone. So it is a malformed
 	// request — the same verdict a typo'd area code gets.
-	asked := make([]string, 0, len(req.ConceptIDs))
-	for i, id := range req.ConceptIDs {
+	asked := make([]string, 0, len(ids))
+	for i, id := range ids {
 		if id = strings.TrimSpace(id); id == "" {
 			s.writeError(w, http.StatusBadRequest, CodeInvalidQuery,
 				fmt.Sprintf("concept_ids[%d] is empty; every entry must be a concept id", i))

@@ -135,6 +135,10 @@ type Repository interface {
 	Crosswalks(ctx context.Context, key domain.HabitatTypeKey) ([]domain.Crosswalk, error)
 	// SpeciesRoles returns a habitat type's species; role filters when non-empty.
 	SpeciesRoles(ctx context.Context, key domain.HabitatTypeKey, role string) ([]domain.SpeciesRole, error)
+	// HabitatAreaCoverage returns, per key, the share of the type's species
+	// that occur in areaCode. Keys whose species carry no distribution data at
+	// all are absent from the result: unjudgeable is not implausible.
+	HabitatAreaCoverage(ctx context.Context, keys []domain.HabitatTypeKey, areaCode string) (map[domain.HabitatTypeKey]float64, error)
 	// SpeciesRolesByConcept returns every role a resolved concept plays.
 	SpeciesRolesByConcept(ctx context.Context, conceptID string) ([]domain.SpeciesRole, error)
 	// Syntaxon returns one vegetation unit, or ErrNotFound. It distinguishes a

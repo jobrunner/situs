@@ -668,6 +668,62 @@ func (r *fakeRepo) SpeciesRoles(_ context.Context, key domain.HabitatTypeKey, ro
 	return out, nil
 }
 
+// HabitatAreaCoverage: der Fake rechnet dieselbe Definition wie SQLite — Anteil
+// der Arten des Typs, die im Gebiet verbreitet sind. Typen ohne jede
+// Verbreitungsangabe fehlen im Ergebnis, weil unbeurteilbar nicht unplausibel
+// heisst.
+func (r *fakeRepo) HabitatAreaCoverage(_ context.Context, keys []domain.HabitatTypeKey, areaCode string) (map[domain.HabitatTypeKey]float64, error) {
+	if r.coverageErr != nil {
+		return nil, r.coverageErr
+	}
+	out := map[domain.HabitatTypeKey]float64{}
+	if areaCode == "" {
+		return out, nil
+	}
+	for _, k := range keys {
+		if mitDaten, imGebiet := r.abdeckungFuer(k, areaCode); mitDaten > 0 {
+			out[k] = float64(imGebiet) / float64(mitDaten)
+		}
+	}
+	return out, nil
+}
+
+// abdeckungFuer zaehlt die KONZEPTE eines Typs mit Verbreitungsdaten und davon
+// die im Gebiet vorkommenden — dieselbe Definition wie COUNT(DISTINCT
+// concept_id) in SQLite. Zaehlte der Fake Zeilen, koennten Anwendungstests mit
+// einem Verhalten gruen sein, das die echte Ablage nicht hat: eine Art steht
+// in demselben Typ regelmaessig als constant und diagnostic und dominant.
+func (r *fakeRepo) abdeckungFuer(k domain.HabitatTypeKey, areaCode string) (mitDaten, imGebiet int) {
+	gesehen := map[string]struct{}{}
+	for _, s := range r.speciesRoles {
+		if s.Key != k || s.ConceptID == nil {
+			continue
+		}
+		if _, doppelt := gesehen[*s.ConceptID]; doppelt {
+			continue
+		}
+		gesehen[*s.ConceptID] = struct{}{}
+		hatDaten, trifft := false, false
+		for _, d := range r.distribution {
+			if d.ConceptID != *s.ConceptID {
+				continue
+			}
+			hatDaten = true
+			if d.Area.Code == areaCode {
+				trifft = true
+			}
+		}
+		if !hatDaten {
+			continue
+		}
+		mitDaten++
+		if trifft {
+			imGebiet++
+		}
+	}
+	return mitDaten, imGebiet
+}
+
 func (r *fakeRepo) SpeciesRolesByConcept(_ context.Context, conceptID string) ([]domain.SpeciesRole, error) {
 	if r.speciesRolesErr != nil {
 		return nil, r.speciesRolesErr
