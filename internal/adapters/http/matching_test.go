@@ -157,3 +157,37 @@ func TestMatchRoute_UnbekannteTypologieIstInvalidQuery(t *testing.T) {
 		t.Errorf("Status = %d, want 400: %s", rec.Code, rec.Body.String())
 	}
 }
+
+// Die anderen Gebietsrouten trimmen den Code vor der Pruefung (habitat.go).
+// Diese Route muss dasselbe tun, sonst ist " GER " hier unbekannt und dort
+// gueltig — derselbe Dienst, zwei Urteile ueber dieselbe Eingabe.
+func TestMatchRoute_TrimmtDasGebiet(t *testing.T) {
+	q := seededQueryService()
+	srv := newTestServer(t, q)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/habitat-types/match",
+		strings.NewReader(`{"concept_ids":["wcvp:concept:1"],"area":"  GER  "}`))
+	req.Header.Set("Content-Type", "application/json")
+	srv.Router().ServeHTTP(rec, req)
+
+	if q.matchRequest.Area != "GER" {
+		t.Errorf("area kam als %q im Use-Case an, erwartet GER ohne Leerzeichen", q.matchRequest.Area)
+	}
+}
+
+// Dasselbe fuer die Typologie: " eunis@2021 " ist dieselbe Typologie.
+func TestMatchRoute_TrimmtDieTypologie(t *testing.T) {
+	q := seededQueryService()
+	srv := newTestServer(t, q)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/habitat-types/match",
+		strings.NewReader(`{"concept_ids":["wcvp:concept:1"],"typology":"  eunis@2021  "}`))
+	req.Header.Set("Content-Type", "application/json")
+	srv.Router().ServeHTTP(rec, req)
+
+	if q.matchRequest.Typology != "eunis@2021" {
+		t.Errorf("typology kam als %q an, erwartet eunis@2021", q.matchRequest.Typology)
+	}
+}

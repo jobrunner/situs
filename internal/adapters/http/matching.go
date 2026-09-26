@@ -65,8 +65,10 @@ func (s *Server) handleHabitatTypeMatch(w http.ResponseWriter, r *http.Request) 
 		ConceptIDs: ids,
 		Typology:   typologyOrDefault(body.Typology),
 		Level:      3,
-		Area:       body.Area,
-		Limit:      limit,
+		// Getrimmt wie bei den anderen Gebietsrouten (habitat.go): derselbe
+		// Dienst darf ueber " GER " nicht zwei Urteile faellen.
+		Area:  strings.TrimSpace(body.Area),
+		Limit: limit,
 	}
 	if body.Level != nil {
 		req.Level = *body.Level
