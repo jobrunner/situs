@@ -186,3 +186,155 @@ func TestMatchHabitatTypes_UnbekanntesGebietAuchOhneTreffer(t *testing.T) {
 		t.Errorf("err = %v, erwartet input.ErrUnknownArea auch ohne Kandidaten", err)
 	}
 }
+
+// Jeder Fehler des Index muss durchgereicht werden statt eine halbe Rangliste
+// zu liefern — eine unvollstaendige Ordnung waere schlimmer als keine.
+func TestMatchHabitatTypes_ReichtIndexfehlerDurch(t *testing.T) {
+	boom := errors.New("index kaputt")
+
+	t.Run("KnownAreaCodes", func(t *testing.T) {
+		svc := newMatchService(t)
+		svc.repo.(*fakeRepo).areasErr = boom
+		_, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+			ConceptIDs: []string{"wcvp:c1"}, Typology: "eunis@2021", Level: 3, Area: "GER",
+		})
+		if !errors.Is(err, boom) {
+			t.Errorf("err = %v, erwartet den Indexfehler", err)
+		}
+	})
+
+	t.Run("SpeciesRolesByConcept", func(t *testing.T) {
+		svc := newMatchService(t)
+		svc.repo.(*fakeRepo).speciesRolesErr = boom
+		_, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+			ConceptIDs: []string{"wcvp:c1"}, Typology: "eunis@2021", Level: 3,
+		})
+		if !errors.Is(err, boom) {
+			t.Errorf("err = %v, erwartet den Indexfehler", err)
+		}
+	})
+
+	t.Run("HabitatType", func(t *testing.T) {
+		svc := newMatchService(t)
+		svc.repo.(*fakeRepo).habitatTypeErr = boom
+		_, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+			ConceptIDs: []string{"wcvp:c1"}, Typology: "eunis@2021", Level: 3,
+		})
+		if !errors.Is(err, boom) {
+			t.Errorf("err = %v, erwartet den Indexfehler", err)
+		}
+	})
+}
+
+// Eine Typologie, zu der keine Artenzeile gehoert, ergibt eine leere Liste —
+// kein Fehler, denn die Frage war beantwortbar.
+func TestMatchHabitatTypes_FremdeTypologieGibtLeereListe(t *testing.T) {
+	svc := newMatchService(t)
+
+	got, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1"}, Typology: "eunis@2012", Level: 3, Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	if len(got.Matches) != 0 {
+		t.Errorf("Matches = %d, erwartet 0", len(got.Matches))
+	}
+}
+
+// Eine Ebene, die kein Kandidat hat, filtert alles weg — ebenfalls ohne Fehler.
+func TestMatchHabitatTypes_LevelFiltertKandidaten(t *testing.T) {
+	svc := newMatchService(t)
+
+	got, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1"}, Typology: "eunis@2021", Level: 2, Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	if len(got.Matches) != 0 {
+		t.Errorf("Matches = %d, erwartet 0 (alle Fixtures sind Level 3)", len(got.Matches))
+	}
+}
+
+// Mit gueltigem Gebiet laeuft der Abdeckungspfad durch: der Typ, dessen Arten
+// im Gebiet vorkommen, steht vor dem, dessen Arten anderswo wachsen.
+func TestMatchHabitatTypes_GebietOrdnetUm(t *testing.T) {
+	svc := newMatchService(t)
+	repo := svc.repo.(*fakeRepo)
+	repo.knownAreaCodes = map[string][]string{domain.SchemeWGSRPDL3: {"GER", "SPA"}}
+	repo.distribution = []fakeDistribution{
+		{ConceptID: "wcvp:c1", Area: domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "SPA"}},
+	}
+
+	got, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1"}, Typology: "eunis@2021", Level: 3, Area: "GER", Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	if len(got.Matches) == 0 {
+		t.Fatal("keine Treffer; ein Gebiet darf nicht ausschliessen, nur abwerten")
+	}
+}
+
+// Bei gleichem Score entscheidet der Code — sonst waere die Reihenfolge von
+// der Durchlaufreihenfolge einer Map abhaengig und damit von Lauf zu Lauf
+// verschieden.
+func TestMatchHabitatTypes_GleichstandWirdStabilGeordnet(t *testing.T) {
+	repo := newFakeRepo()
+	level := 3
+	for _, code := range []string{"T99", "T11", "T55"} {
+		k := domain.HabitatTypeKey{Typology: "eunis@2021", Code: code}
+		repo.types = append(repo.types, domain.HabitatType{Key: k, Level: &level, NameEN: code})
+		id, c := "wcvp:c1", 50.0
+		repo.speciesRoles = append(repo.speciesRoles, domain.SpeciesRole{
+			Key: k, ConceptID: &id, VerbatimName: "c1", Role: "constant",
+			Constancy: &c, Provenance: "observed",
+		})
+	}
+	svc := NewQueryService(repo)
+
+	var erste []string
+	for lauf := 0; lauf < 5; lauf++ {
+		got, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+			ConceptIDs: []string{"wcvp:c1"}, Typology: "eunis@2021", Level: 3, Limit: 10,
+		})
+		if err != nil {
+			t.Fatalf("MatchHabitatTypes: %v", err)
+		}
+		codes := make([]string, 0, len(got.Matches))
+		for _, m := range got.Matches {
+			codes = append(codes, m.Code)
+		}
+		if lauf == 0 {
+			erste = codes
+			if len(codes) != 3 || codes[0] != "T11" {
+				t.Fatalf("Reihenfolge = %v, erwartet T11 zuerst (Code entscheidet bei Gleichstand)", codes)
+			}
+			continue
+		}
+		for i := range codes {
+			if codes[i] != erste[i] {
+				t.Fatalf("Lauf %d ergab %v, Lauf 0 ergab %v — die Ordnung ist nicht stabil", lauf, codes, erste)
+			}
+		}
+	}
+}
+
+// Auch ein Fehler der Abdeckungsabfrage wird durchgereicht: eine Rangliste
+// ohne den Gebietsterm waere eine andere Antwort als die gestellte Frage.
+func TestMatchHabitatTypes_ReichtAbdeckungsfehlerDurch(t *testing.T) {
+	boom := errors.New("abdeckung kaputt")
+	svc := newMatchService(t)
+	repo := svc.repo.(*fakeRepo)
+	repo.knownAreaCodes = map[string][]string{domain.SchemeWGSRPDL3: {"GER"}}
+	repo.coverageErr = boom
+
+	_, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1"}, Typology: "eunis@2021", Level: 3, Area: "GER",
+	})
+	if !errors.Is(err, boom) {
+		t.Errorf("err = %v, erwartet den Abdeckungsfehler", err)
+	}
+}

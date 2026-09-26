@@ -464,6 +464,7 @@ type fakeRepo struct {
 	// Repository read so a query test can pin that the failure surfaces.
 	typologyErr     error
 	habitatTypeErr  error
+	coverageErr     error
 	crosswalksErr   error
 	speciesRolesErr error
 	syntaxonErr     error

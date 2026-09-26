@@ -673,39 +673,47 @@ func (r *fakeRepo) SpeciesRoles(_ context.Context, key domain.HabitatTypeKey, ro
 // Verbreitungsangabe fehlen im Ergebnis, weil unbeurteilbar nicht unplausibel
 // heisst.
 func (r *fakeRepo) HabitatAreaCoverage(_ context.Context, keys []domain.HabitatTypeKey, areaCode string) (map[domain.HabitatTypeKey]float64, error) {
+	if r.coverageErr != nil {
+		return nil, r.coverageErr
+	}
 	out := map[domain.HabitatTypeKey]float64{}
 	if areaCode == "" {
 		return out, nil
 	}
 	for _, k := range keys {
-		mitDaten, imGebiet := 0, 0
-		for _, s := range r.speciesRoles {
-			if s.Key != k || s.ConceptID == nil {
-				continue
-			}
-			hatDaten, trifft := false, false
-			for _, d := range r.distribution {
-				if d.ConceptID != *s.ConceptID {
-					continue
-				}
-				hatDaten = true
-				if d.Area.Code == areaCode {
-					trifft = true
-				}
-			}
-			if !hatDaten {
-				continue
-			}
-			mitDaten++
-			if trifft {
-				imGebiet++
-			}
-		}
-		if mitDaten > 0 {
+		if mitDaten, imGebiet := r.abdeckungFuer(k, areaCode); mitDaten > 0 {
 			out[k] = float64(imGebiet) / float64(mitDaten)
 		}
 	}
 	return out, nil
+}
+
+// abdeckungFuer zaehlt die Arten eines Typs mit Verbreitungsdaten und davon
+// die im Gebiet vorkommenden.
+func (r *fakeRepo) abdeckungFuer(k domain.HabitatTypeKey, areaCode string) (mitDaten, imGebiet int) {
+	for _, s := range r.speciesRoles {
+		if s.Key != k || s.ConceptID == nil {
+			continue
+		}
+		hatDaten, trifft := false, false
+		for _, d := range r.distribution {
+			if d.ConceptID != *s.ConceptID {
+				continue
+			}
+			hatDaten = true
+			if d.Area.Code == areaCode {
+				trifft = true
+			}
+		}
+		if !hatDaten {
+			continue
+		}
+		mitDaten++
+		if trifft {
+			imGebiet++
+		}
+	}
+	return mitDaten, imGebiet
 }
 
 func (r *fakeRepo) SpeciesRolesByConcept(_ context.Context, conceptID string) ([]domain.SpeciesRole, error) {

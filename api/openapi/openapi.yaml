@@ -447,6 +447,47 @@ paths:
                 $ref: "#/components/schemas/TraitSummary"
         "400":
           $ref: "#/components/responses/InvalidQuery"
+  /v1/habitat-types/match:
+    post:
+      summary: Habitattypen nach einer beobachteten Artenliste ordnen
+      description: >-
+        Nimmt die im Gelände notierten Konzept-IDs und ordnet die Habitattypen
+        danach, wie gut sie diese Liste erklären. score ist ein
+        Log-Likelihood, ausdrücklich keine Wahrscheinlichkeit: die Parameter
+        sind gesetzt und nicht kalibriert, und die Unabhängigkeitsannahme
+        trifft bei gemeinsam auftretenden Arten nicht zu. Belastbar ist die
+        Reihenfolge, nicht der Betrag — matched/of macht nachvollziehbar,
+        worauf sie beruht. Ein Typ, der eine genannte Art nicht führt, wird
+        abgewertet, aber nicht ausgeschlossen. area ist eine
+        Plausibilitätsprüfung, kein Filter. Fels und Geröll (Formation U)
+        sowie der Großteil der Ruderalvegetation führen keine Kennarten und
+        können deshalb nie erscheinen.
+      operationId: matchHabitatTypes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [concept_ids]
+              properties:
+                concept_ids:
+                  type: array
+                  items: {type: string}
+                  minItems: 1
+                typology: {type: string, default: "eunis@2021"}
+                level: {type: integer, default: 3}
+                area: {type: string}
+                limit: {type: integer, minimum: 1, maximum: 50, default: 10}
+      responses:
+        "200":
+          description: Rangliste und die zurückgespiegelten Eingaben.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchResult"
+        "400":
+          $ref: "#/components/responses/InvalidQuery"
   /v1/syntaxa:
     get:
       summary: Die Wurzeln der Syntaxa-Hierarchie, filterbar
@@ -1060,6 +1101,36 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/CrosswalkRef"
+    MatchResult:
+      type: object
+      required: [input, matches]
+      properties:
+        input:
+          type: array
+          items:
+            type: object
+            required: [concept_id, known]
+            properties:
+              concept_id: {type: string}
+              known: {type: boolean}
+              reason: {type: string, enum: [unknown_backbone, unknown_concept]}
+        matches:
+          type: array
+          items:
+            type: object
+            required: [typology, code, name_en, score, matched, of]
+            properties:
+              typology: {type: string}
+              code: {type: string}
+              name_en: {type: string}
+              name_de: {type: string}
+              score:
+                type: number
+                description: >-
+                  Log-Likelihood, keine Wahrscheinlichkeit. Nur die
+                  Reihenfolge ist belastbar.
+              matched: {type: integer}
+              of: {type: integer}
     HabitatTypeRole:
       allOf:
         - $ref: "#/components/schemas/HabitatTypeSummary"
