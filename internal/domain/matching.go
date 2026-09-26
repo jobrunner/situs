@@ -55,15 +55,16 @@ func ScoreCandidate(c MatchCandidate, inputCount int) float64 {
 	// Die Trennung erledigt zugleich die Doppelzeilen, die der Index in zwei
 	// Faellen traegt (zwei Namen auf einer Konzept-ID): sie heben den Score
 	// nicht doppelt.
+	// math.Max statt einer Vergleichsverzweigung: der Nullwert eines fehlenden
+	// Map-Eintrags ist 0, und weder Wahrscheinlichkeit noch Treuegrad sind je
+	// negativ — die Verzweigung waere nicht nur laenger, ihr ">" gegen ">="
+	// waere zudem ununterscheidbar, weil beide bei Gleichstand denselben Wert
+	// setzen.
 	bestP := map[string]float64{}
 	maxFid := map[string]float64{}
 	for _, h := range c.Hits {
-		if p, ok := bestP[h.ConceptID]; !ok || h.P > p {
-			bestP[h.ConceptID] = h.P
-		}
-		if f, ok := maxFid[h.ConceptID]; !ok || h.Fidelity > f {
-			maxFid[h.ConceptID] = h.Fidelity
-		}
+		bestP[h.ConceptID] = math.Max(bestP[h.ConceptID], h.P)
+		maxFid[h.ConceptID] = math.Max(maxFid[h.ConceptID], h.Fidelity)
 	}
 
 	// In sortierter Reihenfolge summieren, nicht in der einer Map: Go iteriert

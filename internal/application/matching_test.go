@@ -815,3 +815,141 @@ func TestFakeRepo_AbdeckungFiltertDasSchema(t *testing.T) {
 		t.Errorf("Abdeckung = %.3f; eine Zeile aus einem anderen Gebietsschema darf nicht zaehlen", v)
 	}
 }
+
+// level 0 heisst "keine Ebenenpruefung". Der Unterschied zu level 3 ist an
+// einem Typ sichtbar, der eine andere Ebene traegt: mit 0 bleibt er drin.
+func TestMatchHabitatTypes_LevelNullFiltertNicht(t *testing.T) {
+	repo := newFakeRepo()
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	zwei, drei := 2, 3
+	for _, e := range []struct {
+		code  string
+		level *int
+	}{{"T17", &drei}, {"T1", &zwei}} {
+		k := domain.HabitatTypeKey{Typology: "eunis@2021", Code: e.code}
+		repo.types = append(repo.types, domain.HabitatType{Key: k, Level: e.level, NameEN: e.code})
+		id, c := "wcvp:c1", 90.0
+		repo.speciesRoles = append(repo.speciesRoles, domain.SpeciesRole{
+			Key: k, ConceptID: &id, VerbatimName: "c1", Role: "constant",
+			Constancy: &c, Provenance: "observed",
+		})
+	}
+	svc := NewQueryService(repo)
+
+	mitDrei, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1"}, Typology: "eunis@2021", Level: 3, Limit: 50,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	mitNull, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1"}, Typology: "eunis@2021", Level: 0, Limit: 50,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	if len(mitDrei.Matches) != 1 {
+		t.Errorf("level 3 ergab %d Treffer, erwartet 1 (nur T17)", len(mitDrei.Matches))
+	}
+	if len(mitNull.Matches) != 2 {
+		t.Errorf("level 0 ergab %d Treffer, erwartet 2 — 0 heisst keine Ebenenpruefung",
+			len(mitNull.Matches))
+	}
+}
+
+// limit genau auf der Zahl der Kandidaten darf nicht kuerzen.
+func TestMatchHabitatTypes_LimitAufDerGrenzeKuerztNicht(t *testing.T) {
+	svc := newMatchService(t)
+	alle, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1", "wcvp:c2"}, Typology: "eunis@2021", Level: 3, Limit: 50,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	n := len(alle.Matches)
+	genau, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1", "wcvp:c2"}, Typology: "eunis@2021", Level: 3, Limit: n,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	if len(genau.Matches) != n {
+		t.Errorf("limit %d kuerzte auf %d Treffer", n, len(genau.Matches))
+	}
+}
+
+// Zwei Zeilen derselben Art mit GLEICHER Wahrscheinlichkeit: die zuerst
+// eingetroffene bleibt stehen, damit die Antwort nicht von der Zeilenfolge
+// der Ablage abhaengt.
+func TestMatchHabitatTypes_BelegBleibtBeiGleichstandStehen(t *testing.T) {
+	repo := newFakeRepo()
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	level := 3
+	k := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "T17"}
+	repo.types = append(repo.types, domain.HabitatType{Key: k, Level: &level, NameEN: "T17"})
+	id := "wcvp:c1"
+	for _, role := range []string{"constant", "dominant"} {
+		c := 80.0 // beide identisch
+		repo.speciesRoles = append(repo.speciesRoles, domain.SpeciesRole{
+			Key: k, ConceptID: &id, VerbatimName: "c1", Role: role,
+			Constancy: &c, Provenance: "observed",
+		})
+	}
+
+	got, err := NewQueryService(repo).MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1"}, Typology: "eunis@2021", Level: 3, Limit: 5,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	if len(got.Matches) != 1 || len(got.Matches[0].Species) != 1 {
+		t.Fatalf("erwartet ein Match mit einem Beleg, bekam %+v", got.Matches)
+	}
+	if got.Matches[0].Species[0].Role != "constant" {
+		t.Errorf("Rolle = %q, erwartet constant — bei Gleichstand bleibt die erste Zeile stehen",
+			got.Matches[0].Species[0].Role)
+	}
+}
+
+// Eine Stetigkeit von genau 0 ergibt genau den MISS-Wert — nicht irgendetwas
+// Kleines, sondern denselben Wert wie eine Art, die der Typ gar nicht fuehrt.
+func TestRollenWahrscheinlichkeit_NullErgibtGenauMiss(t *testing.T) {
+	null := 0.0
+	if got := rollenWahrscheinlichkeit(domain.SpeciesRole{Constancy: &null}); got != domain.MatchMiss {
+		t.Errorf("bei constancy 0 = %v, erwartet MatchMiss %v", got, domain.MatchMiss)
+	}
+	negativ := -5.0
+	if got := rollenWahrscheinlichkeit(domain.SpeciesRole{Constancy: &negativ}); got != domain.MatchMiss {
+		t.Errorf("bei constancy -5 = %v, erwartet MatchMiss %v", got, domain.MatchMiss)
+	}
+	winzig := 0.5 // 0,5 Prozent, also P = 0,005
+	if got := rollenWahrscheinlichkeit(domain.SpeciesRole{Constancy: &winzig}); got != 0.005 {
+		t.Errorf("bei constancy 0,5 = %v, erwartet 0.005 — ein kleiner Wert ist keine Null", got)
+	}
+	if got := rollenWahrscheinlichkeit(domain.SpeciesRole{}); got != domain.MatchDefaultP {
+		t.Errorf("ohne constancy = %v, erwartet MatchDefaultP %v", got, domain.MatchDefaultP)
+	}
+}
+
+// limit 0 heisst "keine Begrenzung" — der Use-Case kuerzt dann nicht. Der
+// Handler laesst 0 gar nicht erst durch (400), aber der Use-Case ist auch
+// ohne ihn benutzbar und darf bei 0 nicht die leere Liste liefern.
+func TestMatchHabitatTypes_LimitNullKuerztNicht(t *testing.T) {
+	svc := newMatchService(t)
+	req := input.MatchRequest{ConceptIDs: []string{"wcvp:c1", "wcvp:c2"}, Typology: "eunis@2021", Level: 3}
+
+	req.Limit = 50
+	alle, err := svc.MatchHabitatTypes(context.Background(), req)
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	req.Limit = 0
+	ohne, err := svc.MatchHabitatTypes(context.Background(), req)
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	if len(ohne.Matches) != len(alle.Matches) {
+		t.Errorf("limit 0 ergab %d Treffer, limit 50 ergab %d — 0 darf nicht auf null kuerzen",
+			len(ohne.Matches), len(alle.Matches))
+	}
+}

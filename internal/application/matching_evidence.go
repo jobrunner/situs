@@ -43,17 +43,19 @@ func wahrscheinlichkeitVon(s input.MatchSpecies) float64 {
 	return rollenWahrscheinlichkeit(domain.SpeciesRole{Constancy: s.Constancy})
 }
 
+// hoehere waehlt den groesseren von zwei optionalen Werten. Das Fehlen ist
+// "kein Wert", nicht null — sonst schluege eine fehlende Angabe eine
+// vorhandene. Der Vergleich selbst laeuft ueber math.Max, damit aus ">" gegen
+// ">=" kein Unterschied wird, den kein Test je sehen koennte.
 func hoehere(a, b *float64) *float64 {
-	switch {
-	case a == nil:
+	if a == nil {
 		return b
-	case b == nil:
-		return a
-	case *b > *a:
-		return b
-	default:
+	}
+	if b == nil {
 		return a
 	}
+	groesser := math.Max(*a, *b)
+	return &groesser
 }
 
 // rollenWahrscheinlichkeit liest constancy als P(Art | Habitat). Zeilen ohne

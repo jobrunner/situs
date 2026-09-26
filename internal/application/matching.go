@@ -1,10 +1,10 @@
 package application
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/jobrunner/situs/internal/domain"
@@ -181,14 +181,19 @@ func (q *QueryService) ordneKandidaten(ctx context.Context, req input.MatchReque
 			Matched: len(gezaehlt), Of: bekannt, Species: belege[k],
 		})
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Score != out[j].Score {
-			return out[i].Score > out[j].Score
+	// cmp.Compare statt handgeschriebener Vergleiche: absteigend nach Score,
+	// bei Gleichstand aufsteigend nach Code. Die Drei-Wege-Form kommt ohne
+	// ">" aus, dessen Unterschied zu ">=" hier ohnehin keiner waere — der
+	// zweite Vergleich wird nur bei gleichem Score erreicht, und zwei
+	// Eintraege mit gleichem Code kann es nicht geben.
+	slices.SortFunc(out, func(a, b input.MatchEntry) int {
+		if c := cmp.Compare(b.Score, a.Score); c != 0 {
+			return c
 		}
-		return out[i].Code < out[j].Code // stabil bei Gleichstand
+		return strings.Compare(a.Code, b.Code)
 	})
-	if req.Limit > 0 && len(out) > req.Limit {
-		out = out[:req.Limit]
+	if req.Limit > 0 {
+		out = out[:min(len(out), req.Limit)]
 	}
 	return out, nil
 }
