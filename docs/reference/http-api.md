@@ -514,8 +514,9 @@ kennt die 136 Codes des Schemas aus `GET /v1/areas?scheme=evc_territory`.
 Die Listen der Endpunkte unten sind Listen von **(Habitattyp, Rolle)-Paaren**,
 nicht von Habitattypen. Derselbe Habitattyp erscheint deshalb mehrfach, wenn
 die Art in ihm mehrere Rollen spielt — und das ist der Normalfall, nicht die
-Ausnahme: **3489 von 10470** (Habitattyp, Art)-Paaren tragen mehr als eine
-Rolle, ein Drittel also.
+Ausnahme: **3489 von 10470** (Habitattyp, **Name**)-Paaren tragen mehr als
+eine Rolle, ein Drittel also. Gezählt wird nach `verbatim_name`, weil die
+Tabelle so geschlüsselt ist; nicht auflösbare Namen zählen mit.
 
 Das sind **keine Duplikate**. Jede Rolle trägt ihre eigene Kennzahl, und
 zusammen sind sie drei verschiedene Aussagen über dieselbe Art im selben
@@ -538,7 +539,9 @@ Habitattyps jede Rolle genau einmal belegt.
 **Zwei Fälle brechen selbst das**, und zwar nur auf der Konzept-Route: wenn der
 Ingest zwei verschiedene `verbatim_name` auf dieselbe Konzept-ID auflöst, trägt
 `GET /v1/species/{conceptId}/habitat-types` denselben Habitattyp zweimal mit
-derselben Rolle. Gemessen sind es 2 von 8950 (Habitattyp, Konzept)-Paaren:
+derselben Rolle. Gemessen sind es 2 von **12521** (Habitattyp, Konzept,
+**Rolle**)-Gruppen — der Nenner, der zur Abfrage passt, denn das Duplikat
+entsteht je Rolle. Sie fallen auf 2 der 8950 (Habitattyp, Konzept)-Paare:
 
 | Konzept | Habitattyp | Rolle | Namen |
 |---|---|---|---|

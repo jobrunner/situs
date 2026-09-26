@@ -117,8 +117,10 @@ SELECT COUNT(*) FROM (
 
 | Größe | Gemessen |
 |---|---|
-| (Habitattyp, Konzept)-Paare | **8950** |
+| (Habitattyp, Konzept, **Rolle**)-Gruppen | **12521** |
 | davon mit zwei Namen in derselben Rolle | **2** |
+| (Habitattyp, Konzept)-Paare (ohne Rolle) | **8950** |
+| davon betroffen | **2** |
 
 Es sind `eunis@2021/R1N` für `wcvp:concept:2570774` (*Plantago holosteum* /
 *Plantago subulata*, `constant`, Stetigkeit 30 und 13) und `eunis@2021/R53`
