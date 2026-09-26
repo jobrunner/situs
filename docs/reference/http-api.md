@@ -524,15 +524,25 @@ Typ?", sondern „welche Typen erklären diese Arten?". Eingabe sind die im
 Gelände notierten **Konzept-IDs**, Ausgabe eine Rangliste.
 
 ```json
-{"concept_ids": ["wcvp:concept:83891"], "area": "GER", "limit": 10}
+{"concept_ids": ["wcvp:concept:83891", "wcvp:concept:2638482", "wcvp:concept:87028"],
+ "area": "GER", "limit": 10}
 ```
 
 ```json
-{"input":   [{"concept_id": "wcvp:concept:83891", "known": true}],
+{"input":   [{"concept_id": "wcvp:concept:83891", "known": true},
+             {"concept_id": "wcvp:concept:2638482", "known": true},
+             {"concept_id": "wcvp:concept:87028", "known": true}],
  "matches": [{"typology": "eunis@2021", "code": "T17",
               "name_en": "Fagus forest on non-acid soils",
-              "score": -1.30, "matched": 3, "of": 3}]}
+              "score": -2.03, "matched": 3, "of": 3,
+              "species": [{"concept_id": "wcvp:concept:83891",
+                           "role": "constant", "constancy": 99}]}]}
 ```
+
+`species` nennt, welche Eingabe-Art für diesen Typ gesprochen hat, mit Rolle
+und Kennzahl — im Gelände die Anschlussfrage: welche der anderen Kennarten
+suche ich jetzt? Ein `name_de` gibt es **nicht**: die Route nimmt keinen
+`lang`-Parameter.
 
 ### `score` ist ein Log-Likelihood, keine Wahrscheinlichkeit
 

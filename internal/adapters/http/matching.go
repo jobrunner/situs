@@ -2,7 +2,9 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -31,11 +33,22 @@ func (s *Server) handleHabitatTypeMatch(w http.ResponseWriter, r *http.Request) 
 	dec.DisallowUnknownFields()
 	var body matchBody
 	if err := dec.Decode(&body); err != nil {
-		s.writeError(w, http.StatusBadRequest, CodeInvalidQuery, fmt.Sprintf("malformed body: %v", err))
+		s.writeError(w, http.StatusBadRequest, CodeInvalidQuery,
+			"request body must be {\"concept_ids\":[...]} with optional typology, level, area and limit")
 		return
 	}
-	if len(body.ConceptIDs) == 0 {
-		s.writeError(w, http.StatusBadRequest, CodeInvalidQuery, "concept_ids must not be empty")
+	// Ohne das dekodiert ein Body aus zwei aneinandergehaengten Objekten das
+	// erste und wirft den Rest still weg — der Aufrufer glaubte, beide
+	// geschickt zu haben.
+	if err := dec.Decode(new(any)); !errors.Is(err, io.EOF) {
+		s.writeError(w, http.StatusBadRequest, CodeInvalidQuery, "request body must hold exactly one JSON object")
+		return
+	}
+	// Dieselben Pruefungen wie beim Batch-Endpunkt: Obergrenze, kein leerer
+	// Eintrag, keine leere Liste. Zwei Routen eines Dienstes duerfen sich
+	// darueber nicht widersprechen.
+	ids, ok := s.validateConceptIDs(w, body.ConceptIDs)
+	if !ok {
 		return
 	}
 
@@ -49,7 +62,7 @@ func (s *Server) handleHabitatTypeMatch(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	req := input.MatchRequest{
-		ConceptIDs: body.ConceptIDs,
+		ConceptIDs: ids,
 		Typology:   typologyOrDefault(body.Typology),
 		Level:      3,
 		Area:       body.Area,

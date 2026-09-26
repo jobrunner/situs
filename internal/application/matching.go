@@ -24,11 +24,14 @@ func (q *QueryService) MatchHabitatTypes(ctx context.Context, req input.MatchReq
 	// Artenliste am Ende Kandidaten ergibt. Dieselbe Pruefung wie beim
 	// vorhandenen ?area= (area.go) — sie liegt hier und nicht im Handler, weil
 	// hier der Repository-Zugang ist.
+	if err := q.pruefeTypologie(ctx, req.Typology); err != nil {
+		return input.MatchResult{}, err
+	}
 	if err := q.pruefeGebiet(ctx, req.Area); err != nil {
 		return input.MatchResult{}, err
 	}
 
-	res, hits, bekannt, err := q.sammleTreffer(ctx, req)
+	res, hits, belege, bekannt, err := q.sammleTreffer(ctx, req)
 	if err != nil {
 		return input.MatchResult{}, err
 	}
@@ -47,10 +50,29 @@ func (q *QueryService) MatchHabitatTypes(ctx context.Context, req input.MatchReq
 		}
 	}
 
-	if res.Matches, err = q.ordneKandidaten(ctx, req, keys, hits, abdeckung, bekannt); err != nil {
+	if res.Matches, err = q.ordneKandidaten(ctx, req, keys, hits, belege, abdeckung, bekannt); err != nil {
 		return input.MatchResult{}, err
 	}
 	return res, nil
+}
+
+// pruefeTypologie weist eine Typologie zurueck, die der Index nicht fuehrt.
+// Ohne das waere ein Tippfehler in typology nicht von "diese Arten passen
+// nirgends" zu unterscheiden — dieselbe Ueberlegung wie beim Gebiet.
+func (q *QueryService) pruefeTypologie(ctx context.Context, typology string) error {
+	if typology == "" {
+		return nil
+	}
+	bekannt, err := q.repo.Typologies(ctx)
+	if err != nil {
+		return err
+	}
+	for _, t := range bekannt {
+		if string(t.Typology.ID) == typology {
+			return nil
+		}
+	}
+	return fmt.Errorf("typology %q: %w", typology, input.ErrUnknownTypology)
 }
 
 // pruefeGebiet weist einen Gebietscode zurueck, den der Index nicht kennt.
@@ -72,10 +94,13 @@ func (q *QueryService) pruefeGebiet(ctx context.Context, area string) error {
 // passenden Artenzeilen. Es spiegelt dabei jede Eingabe zurueck — auch die
 // unbekannten, mit ihrem Grund.
 func (q *QueryService) sammleTreffer(ctx context.Context, req input.MatchRequest) (
-	input.MatchResult, map[domain.HabitatTypeKey][]domain.MatchHit, int, error) {
+	input.MatchResult, map[domain.HabitatTypeKey][]domain.MatchHit,
+	map[domain.HabitatTypeKey][]input.MatchSpecies, int, error) {
 	res := input.MatchResult{Input: make([]input.MatchInput, 0, len(req.ConceptIDs)), Matches: []input.MatchEntry{}}
 	hits := map[domain.HabitatTypeKey][]domain.MatchHit{}
+	belege := map[domain.HabitatTypeKey][]input.MatchSpecies{}
 	bekannt := 0
+	gesehen := map[string]struct{}{}
 
 	for _, id := range req.ConceptIDs {
 		entry := input.MatchInput{ConceptID: id}
@@ -86,7 +111,7 @@ func (q *QueryService) sammleTreffer(ctx context.Context, req input.MatchRequest
 		}
 		rollen, err := q.repo.SpeciesRolesByConcept(ctx, id)
 		if err != nil {
-			return input.MatchResult{}, nil, 0, fmt.Errorf("matching %q: %w", id, err)
+			return input.MatchResult{}, nil, nil, 0, fmt.Errorf("matching %q: %w", id, err)
 		}
 		if len(rollen) == 0 {
 			entry.Reason = input.ReasonUnknownConcept
@@ -94,8 +119,16 @@ func (q *QueryService) sammleTreffer(ctx context.Context, req input.MatchRequest
 			continue
 		}
 		entry.Known = true
-		bekannt++
 		res.Input = append(res.Input, entry)
+		// Eine doppelt genannte Art zaehlt einmal: sonst kostete die Dublette
+		// einen MISS, und matched/of — die Zahl, mit der die Antwort ihre
+		// Reihenfolge begruendet — waere falsch. Zurueckgespiegelt wird die
+		// Eingabe trotzdem vollstaendig, wie beim Batch.
+		if _, doppelt := gesehen[id]; doppelt {
+			continue
+		}
+		gesehen[id] = struct{}{}
+		bekannt++
 
 		for _, r := range rollen {
 			if string(r.Key.Typology) != req.Typology {
@@ -104,14 +137,18 @@ func (q *QueryService) sammleTreffer(ctx context.Context, req input.MatchRequest
 			hits[r.Key] = append(hits[r.Key], domain.MatchHit{
 				ConceptID: id, P: rollenWahrscheinlichkeit(r), Fidelity: wert(r.Fidelity),
 			})
+			belege[r.Key] = append(belege[r.Key], input.MatchSpecies{
+				ConceptID: id, Role: r.Role, Constancy: r.Constancy, Fidelity: r.Fidelity,
+			})
 		}
 	}
-	return res, hits, bekannt, nil
+	return res, hits, belege, bekannt, nil
 }
 
 // ordneKandidaten bewertet jeden Kandidaten und sortiert absteigend.
 func (q *QueryService) ordneKandidaten(ctx context.Context, req input.MatchRequest,
 	keys []domain.HabitatTypeKey, hits map[domain.HabitatTypeKey][]domain.MatchHit,
+	belege map[domain.HabitatTypeKey][]input.MatchSpecies,
 	abdeckung map[domain.HabitatTypeKey]float64, bekannt int) ([]input.MatchEntry, error) {
 	out := []input.MatchEntry{}
 	for _, k := range keys {
@@ -135,7 +172,7 @@ func (q *QueryService) ordneKandidaten(ctx context.Context, req input.MatchReque
 			Score: domain.ScoreCandidate(domain.MatchCandidate{
 				Key: k, Hits: hits[k], AreaCoverage: cov, HasArea: hat,
 			}, bekannt),
-			Matched: len(gezaehlt), Of: bekannt,
+			Matched: len(gezaehlt), Of: bekannt, Species: belege[k],
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {

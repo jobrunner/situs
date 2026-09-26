@@ -14,6 +14,7 @@ import (
 func newMatchService(t *testing.T) *QueryService {
 	t.Helper()
 	repo := newFakeRepo()
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
 	level := 3
 	mk := func(code string) domain.HabitatTypeKey {
 		k := domain.HabitatTypeKey{Typology: "eunis@2021", Code: code}
@@ -226,10 +227,13 @@ func TestMatchHabitatTypes_ReichtIndexfehlerDurch(t *testing.T) {
 	})
 }
 
-// Eine Typologie, zu der keine Artenzeile gehoert, ergibt eine leere Liste —
-// kein Fehler, denn die Frage war beantwortbar.
-func TestMatchHabitatTypes_FremdeTypologieGibtLeereListe(t *testing.T) {
+// Eine BEKANNTE Typologie, zu der keine Artenzeile gehoert, ergibt eine leere
+// Liste — kein Fehler, denn die Frage war beantwortbar. Der Unterschied zur
+// unbekannten Typologie ist der Punkt: dort ist es ein Tippfehler.
+func TestMatchHabitatTypes_BekannteTypologieOhneTrefferGibtLeereListe(t *testing.T) {
 	svc := newMatchService(t)
+	svc.repo.(*fakeRepo).typologies = append(svc.repo.(*fakeRepo).typologies,
+		domain.Typology{ID: "eunis@2012", Scheme: "eunis", Version: "2012"})
 
 	got, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
 		ConceptIDs: []string{"wcvp:c1"}, Typology: "eunis@2012", Level: 3, Limit: 10,
@@ -283,6 +287,7 @@ func TestMatchHabitatTypes_GebietOrdnetUm(t *testing.T) {
 // verschieden.
 func TestMatchHabitatTypes_GleichstandWirdStabilGeordnet(t *testing.T) {
 	repo := newFakeRepo()
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
 	level := 3
 	for _, code := range []string{"T99", "T11", "T55"} {
 		k := domain.HabitatTypeKey{Typology: "eunis@2021", Code: code}
@@ -336,5 +341,106 @@ func TestMatchHabitatTypes_ReichtAbdeckungsfehlerDurch(t *testing.T) {
 	})
 	if !errors.Is(err, boom) {
 		t.Errorf("err = %v, erwartet den Abdeckungsfehler", err)
+	}
+}
+
+// Eine unbekannte Typologie ist ein Tippfehler, kein leeres Ergebnis: sonst
+// ist "quatsch@1" nicht von "diese Arten passen nirgends" zu unterscheiden.
+// Dieselbe Haltung wie beim Gebiet.
+func TestMatchHabitatTypes_UnbekannteTypologieIstEinFehler(t *testing.T) {
+	svc := newMatchService(t)
+
+	_, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1"}, Typology: "quatsch@1", Level: 3, Limit: 10,
+	})
+	if !errors.Is(err, input.ErrUnknownTypology) {
+		t.Errorf("err = %v, erwartet input.ErrUnknownTypology", err)
+	}
+}
+
+// Eine doppelt genannte Art darf weder den Score druecken noch matched/of
+// verfaelschen: die Zahl, mit der die Antwort ihre Reihenfolge begruendet,
+// muss stimmen.
+func TestMatchHabitatTypes_DoppelteEingabeZaehltEinmal(t *testing.T) {
+	svc := newMatchService(t)
+	einfach, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1", "wcvp:c2"}, Typology: "eunis@2021", Level: 3, Limit: 5,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	doppelt, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1", "wcvp:c2", "wcvp:c1"}, Typology: "eunis@2021", Level: 3, Limit: 5,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	if doppelt.Matches[0].Of != einfach.Matches[0].Of {
+		t.Errorf("of = %d bei doppelter Nennung, %d bei einfacher — die Dublette zaehlt mit",
+			doppelt.Matches[0].Of, einfach.Matches[0].Of)
+	}
+	if doppelt.Matches[0].Score != einfach.Matches[0].Score {
+		t.Errorf("Score %.3f vs %.3f — die Dublette kostet einen unberechtigten MISS",
+			doppelt.Matches[0].Score, einfach.Matches[0].Score)
+	}
+	// Die Eingabe wird trotzdem vollstaendig zurueckgespiegelt, wie beim Batch.
+	if len(doppelt.Input) != 3 {
+		t.Errorf("Input = %d Eintraege, erwartet 3 — jede Eingabe wird gespiegelt", len(doppelt.Input))
+	}
+}
+
+// Die Antwort nennt, welche Art wofuer gesprochen hat — im Gelaende die
+// Anschlussfrage: welche der anderen Kennarten suche ich jetzt?
+func TestMatchHabitatTypes_NenntDieTreffendenArten(t *testing.T) {
+	svc := newMatchService(t)
+
+	got, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1", "wcvp:c2"}, Typology: "eunis@2021", Level: 3, Limit: 1,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	if len(got.Matches) == 0 {
+		t.Fatal("keine Treffer")
+	}
+	if len(got.Matches[0].Species) != 2 {
+		t.Fatalf("Species = %d, erwartet 2", len(got.Matches[0].Species))
+	}
+	for _, sp := range got.Matches[0].Species {
+		if sp.ConceptID == "" || sp.Role == "" {
+			t.Errorf("unvollstaendiger Eintrag: %+v", sp)
+		}
+	}
+}
+
+// Ohne typology faellt die Route auf die Vorgabe zurueck; die Pruefung darf
+// dann nicht anschlagen.
+func TestMatchHabitatTypes_LeereTypologieWirdNichtGeprueft(t *testing.T) {
+	svc := newMatchService(t)
+
+	got, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1"}, Level: 3, Limit: 5,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	// Ohne Typologie passt keine Artenzeile (sie tragen alle eunis@2021),
+	// aber ein Fehler ist es nicht.
+	if len(got.Matches) != 0 {
+		t.Errorf("Matches = %d, erwartet 0", len(got.Matches))
+	}
+}
+
+// Auch ein Fehler der Typologie-Abfrage wird durchgereicht.
+func TestMatchHabitatTypes_ReichtTypologiefehlerDurch(t *testing.T) {
+	boom := errors.New("typologien kaputt")
+	svc := newMatchService(t)
+	svc.repo.(*fakeRepo).typologyErr = boom
+
+	_, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1"}, Typology: "eunis@2021", Level: 3,
+	})
+	if !errors.Is(err, boom) {
+		t.Errorf("err = %v, erwartet den Typologiefehler", err)
 	}
 }

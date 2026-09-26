@@ -85,3 +85,45 @@ func TestHabitatAreaCoverage_LeereListe(t *testing.T) {
 		t.Errorf("Ergebnis = %v, erwartet leer", got)
 	}
 }
+
+// Der Zaehler muss Konzepte zaehlen, nicht Zeilen: dieselbe Art steht in
+// demselben Habitattyp regelmaessig als constant UND diagnostic UND dominant
+// (gemessen 2958 Paare). Zaehlt man Zeilen gegen Konzepte, wird die
+// "Abdeckung" groesser als 1, und aus dem Malus wird ein Bonus — der
+// Gebietsterm misst dann die Zeilenredundanz der Quelle statt der Geografie.
+func TestHabitatAreaCoverage_MehrfachrollenHebenDieAbdeckungNicht(t *testing.T) {
+	db := openTestDB(t)
+	tx, err := db.Begin(context.Background())
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	key := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "T32"}
+	level := 3
+	if err := tx.UpsertHabitatType(domain.HabitatType{Key: key, Level: &level, NameEN: "T32"}); err != nil {
+		t.Fatalf("UpsertHabitatType: %v", err)
+	}
+	// Eine Art, drei Rollen, alle im Gebiet.
+	for _, role := range []string{"constant", "diagnostic", "dominant"} {
+		id := "c1"
+		if err := tx.UpsertSpeciesRole(domain.SpeciesRole{
+			Key: key, ConceptID: &id, VerbatimName: "c1", Role: role, Provenance: "observed",
+		}); err != nil {
+			t.Fatalf("UpsertSpeciesRole: %v", err)
+		}
+	}
+	if err := tx.UpsertDistribution("c1", domain.Area{Scheme: domain.SchemeWGSRPDL3, Code: "GER"}); err != nil {
+		t.Fatalf("UpsertDistribution: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	got, err := db.HabitatAreaCoverage(context.Background(), []domain.HabitatTypeKey{key}, "GER")
+	if err != nil {
+		t.Fatalf("HabitatAreaCoverage: %v", err)
+	}
+	if v := got[key]; v > 1.0 {
+		t.Errorf("Abdeckung = %.3f; ein Anteil kann nicht groesser als 1 sein — "+
+			"der Zaehler zaehlt Zeilen statt Konzepte", v)
+	}
+}

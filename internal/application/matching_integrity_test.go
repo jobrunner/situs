@@ -23,6 +23,7 @@ const (
 func newMatchServiceFromFixture(t *testing.T) *QueryService {
 	t.Helper()
 	repo := newFakeRepo()
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
 	level := 3
 	typ := func(code string) domain.HabitatTypeKey {
 		k := domain.HabitatTypeKey{Typology: "eunis@2021", Code: code}

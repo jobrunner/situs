@@ -450,7 +450,7 @@ function renderMatch(res) {
   const tb = document.createElement("tbody");
   res.matches.forEach((m, i) => {
     const tr = document.createElement("tr");
-    for (const v of [String(i + 1), m.code, m.name_de || m.name_en,
+    for (const v of [String(i + 1), m.code, m.name_en,
                      Number(m.score).toFixed(2), `${m.matched}/${m.of}`]) {
       const td = document.createElement("td");
       td.textContent = v;

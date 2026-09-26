@@ -75,3 +75,26 @@ func TestScoreCandidate_GebietsabdeckungDruecktOhneAuszuschliessen(t *testing.T)
 		t.Errorf("Score = %v; eine Abdeckung von 0 darf nicht ausschliessen", s)
 	}
 }
+
+// Die Spec addiert beide Terme unabhaengig: Summe log P plus W_FID mal Summe
+// fidelity. Fidelity traegt aber nur die diagnostic-Zeile, constancy nur die
+// constant-Zeile — nimmt man beides aus DERSELBEN Zeile, faellt der Treuegrad
+// genau dort weg, wo er am staerksten waere. Gemessen 764 betroffene Paare,
+// mittlere verworfene Fidelity 32,7, maximal 99,7.
+func TestScoreCandidate_TreuegradUeberlebtDieHoehereStetigkeit(t *testing.T) {
+	// Habitat A fuehrt die Art als constant (0.40) UND als diagnostic (phi 45).
+	a := domain.MatchCandidate{Hits: []domain.MatchHit{
+		{ConceptID: "c1", P: 0.40},
+		{ConceptID: "c1", P: domain.MatchDefaultP, Fidelity: 45},
+	}}
+	// Habitat B fuehrt sie nur als diagnostic.
+	b := domain.MatchCandidate{Hits: []domain.MatchHit{
+		{ConceptID: "c1", P: domain.MatchDefaultP, Fidelity: 45},
+	}}
+
+	if domain.ScoreCandidate(a, 1) <= domain.ScoreCandidate(b, 1) {
+		t.Errorf("A (%.3f) ist nicht besser als B (%.3f), obwohl A strikt mehr Evidenz traegt: "+
+			"dieselbe Kennart plus hoehere Stetigkeit",
+			domain.ScoreCandidate(a, 1), domain.ScoreCandidate(b, 1))
+	}
+}

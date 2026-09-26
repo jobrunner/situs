@@ -111,3 +111,49 @@ func TestMatchRoute_NurPost(t *testing.T) {
 		t.Error("GET auf die Match-Route antwortet 200")
 	}
 }
+
+// Dieselben Pruefungen wie beim Schwester-Endpunkt: der Dienst darf sich in
+// zwei Routen nicht widersprechen.
+func TestMatchRoute_PrueftDenBodyWieDerBatch(t *testing.T) {
+	t.Run("leerer Eintrag", func(t *testing.T) {
+		rec := postMatch(t, `{"concept_ids":["  "]}`)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("Status = %d, want 400: ein leerer String ist kein Backbone", rec.Code)
+		}
+	})
+	t.Run("zweites JSON-Objekt", func(t *testing.T) {
+		rec := postMatch(t, `{"concept_ids":["wcvp:concept:1"]}{"concept_ids":["wcvp:concept:2"]}`)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("Status = %d, want 400: das zweite Objekt wuerde stillschweigend verschwinden", rec.Code)
+		}
+	})
+	t.Run("zu viele Eintraege", func(t *testing.T) {
+		ids := make([]string, 301)
+		for i := range ids {
+			ids[i] = `"wcvp:concept:1"`
+		}
+		rec := postMatch(t, `{"concept_ids":[`+strings.Join(ids, ",")+`]}`)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("Status = %d, want 400 bei 301 Eintraegen", rec.Code)
+		}
+	})
+}
+
+// Eine unbekannte Typologie ist ein Tippfehler des Aufrufers, kein leeres
+// Ergebnis — sonst ist "quatsch@1" nicht von "diese Arten passen nirgends"
+// zu unterscheiden. Dieselbe Haltung wie beim Gebiet.
+func TestMatchRoute_UnbekannteTypologieIstInvalidQuery(t *testing.T) {
+	q := seededQueryService()
+	q.matchErr = fmt.Errorf("typology %q: %w", "quatsch@1", input.ErrUnknownTypology)
+	srv := newTestServer(t, q)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/habitat-types/match",
+		strings.NewReader(`{"concept_ids":["wcvp:concept:1"],"typology":"quatsch@1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+}

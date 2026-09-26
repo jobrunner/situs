@@ -565,16 +565,29 @@ type MatchInput struct {
 	Reason    string `json:"reason,omitempty"`
 }
 
+// MatchSpecies nennt eine Eingabe-Art, die fuer diesen Habitattyp gesprochen
+// hat, mit der Rolle und der Kennzahl, die dabei zaehlte. Im Gelaende ist das
+// die Anschlussfrage: welche der anderen Kennarten suche ich jetzt?
+type MatchSpecies struct {
+	ConceptID string   `json:"concept_id"`
+	Role      string   `json:"role"`
+	Constancy *float64 `json:"constancy,omitempty"`
+	Fidelity  *float64 `json:"fidelity,omitempty"`
+}
+
 // MatchEntry ist ein Rang der Antwort. Score ist ein Log-Likelihood, keine
 // Wahrscheinlichkeit: belastbar ist die Reihenfolge, nicht der Betrag.
+//
+// Kein name_de: die Route nimmt keinen lang-Parameter, und ein in der
+// Spezifikation gefuehrtes Feld, das nie erscheint, ist Doku-Drift.
 type MatchEntry struct {
-	Typology string  `json:"typology"`
-	Code     string  `json:"code"`
-	NameEN   string  `json:"name_en"`
-	NameDE   string  `json:"name_de,omitempty"`
-	Score    float64 `json:"score"`
-	Matched  int     `json:"matched"`
-	Of       int     `json:"of"`
+	Typology string         `json:"typology"`
+	Code     string         `json:"code"`
+	NameEN   string         `json:"name_en"`
+	Score    float64        `json:"score"`
+	Matched  int            `json:"matched"`
+	Of       int            `json:"of"`
+	Species  []MatchSpecies `json:"species"`
 }
 
 // MatchResult ist die Antwort. Beide Listen sind immer da, auch leer.

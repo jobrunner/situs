@@ -475,6 +475,7 @@ paths:
                   type: array
                   items: {type: string}
                   minItems: 1
+                  maxItems: 300
                 typology: {type: string, default: "eunis@2021"}
                 level: {type: integer, default: 3}
                 area: {type: string}
@@ -1118,12 +1119,11 @@ components:
           type: array
           items:
             type: object
-            required: [typology, code, name_en, score, matched, of]
+            required: [typology, code, name_en, score, matched, of, species]
             properties:
               typology: {type: string}
               code: {type: string}
               name_en: {type: string}
-              name_de: {type: string}
               score:
                 type: number
                 description: >-
@@ -1131,6 +1131,19 @@ components:
                   Reihenfolge ist belastbar.
               matched: {type: integer}
               of: {type: integer}
+              species:
+                type: array
+                description: >-
+                  Die Eingabe-Arten, die für diesen Typ gesprochen haben, mit
+                  Rolle und der Kennzahl, die dabei zählte.
+                items:
+                  type: object
+                  required: [concept_id, role]
+                  properties:
+                    concept_id: {type: string}
+                    role: {$ref: "#/components/schemas/Role"}
+                    constancy: {type: number}
+                    fidelity: {type: number}
     HabitatTypeRole:
       allOf:
         - $ref: "#/components/schemas/HabitatTypeSummary"
