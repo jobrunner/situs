@@ -58,6 +58,15 @@ func hoehere(a, b *float64) *float64 {
 	return &groesser
 }
 
+// istNichtVorkommen erkennt die Zeile, die ausdruecklich sagt: diese Art kommt
+// in diesem Typ nicht vor. Sie prueft den Rohwert, nicht die normalisierte
+// Wahrscheinlichkeit — MatchMiss ist 0,02, und eine Stetigkeit von 2 Prozent
+// ergaebe denselben Wert, waere aber ein Treffer. Ein negativer Wert ist ein
+// Datenfehler und wird ebenso behandelt.
+func istNichtVorkommen(r domain.SpeciesRole) bool {
+	return r.Constancy != nil && *r.Constancy <= 0
+}
+
 // rollenWahrscheinlichkeit liest constancy als P(Art | Habitat). Zeilen ohne
 // Stetigkeit — die nur als diagnostic gefuehrten und alle aus Aggregaten
 // abgeleiteten — bekommen den Vorgabewert.

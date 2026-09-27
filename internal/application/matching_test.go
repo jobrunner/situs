@@ -1096,3 +1096,42 @@ func TestMatchHabitatTypes_NullstetigkeitVerdraengtDenEchtenBelegNicht(t *testin
 		t.Errorf("Beleg-Constancy = %v, erwartet 70 — die Nullzeile darf nicht ausgewiesen werden", sp.Constancy)
 	}
 }
+
+// Die Grenze, an der mein erster Anlauf danebenlag: MatchMiss ist 0,02, und
+// eine Stetigkeit von 2 Prozent ergibt normalisiert exakt denselben Wert. Auf
+// den normalisierten Wert zu pruefen verwirft damit eine legitime, nur sehr
+// seltene Art als Nicht-Vorkommen. Entschieden wird am ROHWERT.
+func TestMatchHabitatTypes_ZweiProzentIstEinTrefferKeineNull(t *testing.T) {
+	repo := newFakeRepo()
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	level := 3
+	setzen := func(code string, constancy float64) {
+		k := domain.HabitatTypeKey{Typology: "eunis@2021", Code: code}
+		repo.types = append(repo.types, domain.HabitatType{Key: k, Level: &level, NameEN: code})
+		id, c := "wcvp:c1", constancy
+		repo.speciesRoles = append(repo.speciesRoles, domain.SpeciesRole{
+			Key: k, ConceptID: &id, VerbatimName: "c1", Role: "constant",
+			Constancy: &c, Provenance: "observed",
+		})
+	}
+	setzen("T02", 2) // zwei Prozent: selten, aber vorhanden
+	setzen("T00", 0) // ausdrueckliches Nicht-Vorkommen
+
+	got, err := NewQueryService(repo).MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1"}, Typology: "eunis@2021", Level: 3, Limit: 50,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	if len(got.Matches) != 1 {
+		t.Fatalf("Matches = %+v, erwartet genau T02", got.Matches)
+	}
+	if got.Matches[0].Code != "T02" {
+		t.Errorf("Rang 1 = %s, erwartet T02 — zwei Prozent sind ein Treffer, keine Null",
+			got.Matches[0].Code)
+	}
+	if len(got.Matches[0].Species) != 1 {
+		t.Errorf("species = %d Eintraege, erwartet 1 — die Art ist belegt",
+			len(got.Matches[0].Species))
+	}
+}
