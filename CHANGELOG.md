@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.15.0](https://github.com/jobrunner/situs/compare/v0.14.0...v0.15.0) (2026-09-27)
+
+
+### Features
+
+* **application:** Habitattypen nach Log-Likelihood ordnen ([3f78e29](https://github.com/jobrunner/situs/commit/3f78e29d2067821b192b1b44c17af66602354f89))
+* **domain:** der Log-Likelihood-Score fuer das Habitat-Matching ([68383f5](https://github.com/jobrunner/situs/commit/68383f5698ecb65fa840759fc5e9edac54b15d95))
+* **explorer:** Panel fuer die Habitattyp-Rangliste ([5f9c08a](https://github.com/jobrunner/situs/commit/5f9c08a924d8e3363f4f65955b4edc452e9d9223))
+* Habitat-Matching — Artenliste zu Rangliste der Habitattypen ([01a59a8](https://github.com/jobrunner/situs/commit/01a59a85a002ab8536b5f8ab5711f61340c3dfcc))
+* **http:** POST /v1/habitat-types/match ([e498084](https://github.com/jobrunner/situs/commit/e4980840338b85fc7d257348cadeac0a1e30420d))
+* **sqlite:** Gebietsabdeckung je Habitattyp in einer Abfrage ([832ce40](https://github.com/jobrunner/situs/commit/832ce402445238594089a68ba431f4267289d486))
+
+
+### Bug Fixes
+
+* **http:** den Gebietscode trimmen wie die uebrigen Gebietsrouten ([6f59661](https://github.com/jobrunner/situs/commit/6f59661dc93835f812e85fa6dea0ca704468c9a7))
+* **matching:** ausdrueckliche Null von fehlender Angabe trennen, Belege verdichten ([f1935c1](https://github.com/jobrunner/situs/commit/f1935c1d2b609064978036c24f21cd02a5821d27))
+* **matching:** das Nicht-Vorkommen am Rohwert erkennen, nicht am normalisierten ([c2a0c19](https://github.com/jobrunner/situs/commit/c2a0c19a0832da32c56d89bd27fd5abc1c0aca98))
+* **matching:** der Gebietsterm hebt keinen Typ ohne Treffer ([386f38f](https://github.com/jobrunner/situs/commit/386f38fa443a39e2a0a40e25dedf27aa9e416f7f))
+* **matching:** die Befunde des Branch-Reviews ([95c0699](https://github.com/jobrunner/situs/commit/95c06998e470981e4cd1300d0379ec807d53478a))
+* **matching:** die Mutationsschwelle wieder erreichen ([08cf6bf](https://github.com/jobrunner/situs/commit/08cf6bfd3e4ed3e8c63f74529479bfbf27eb92d2))
+* **matching:** die vier Befunde des Copilot-Reviews zu [#73](https://github.com/jobrunner/situs/issues/73) ([877c169](https://github.com/jobrunner/situs/commit/877c169ca0c5637542d4e9448586eb2378b51032))
+* **matching:** eine Stetigkeit von 0 ist kein Treffer und kein Beleg ([21f443d](https://github.com/jobrunner/situs/commit/21f443d8c5aac1bae4ac559313a8c273ecd1d251))
+* **matching:** negative Treuegrade erhalten und nicht endliche Messwerte abweisen ([8909f59](https://github.com/jobrunner/situs/commit/8909f59b88aa3c5018c885d2c390ec14b8ba07d8))
+* **matching:** negatives level abweisen und den Fidelity-Kommentar richtigstellen ([2279c5c](https://github.com/jobrunner/situs/commit/2279c5c1a7eeb046892982fa49874e7eca2bf47e))
+* **sqlite:** die gerechnete Kapazitaet durch ein Literal ersetzen ([654a68b](https://github.com/jobrunner/situs/commit/654a68b9a4c98fb2c565a1b699ece74452bd2350))
+
+
+### Performance Improvements
+
+* **matching:** jede Konzept-ID nur einmal abfragen ([4fcf260](https://github.com/jobrunner/situs/commit/4fcf26084ca6975f63853097a603b4e026121cb0))
+
 ## [0.14.0](https://github.com/jobrunner/situs/compare/v0.13.1...v0.14.0) (2026-09-24)
 
 
