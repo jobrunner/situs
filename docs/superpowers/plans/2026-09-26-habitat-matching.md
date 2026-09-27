@@ -10,6 +10,22 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-26-habitat-matching-design.md`
 
+> **Dieser Plan ist umgesetzt, und die Code-Schnipsel darin sind überholt.**
+> Maßgeblich ist der Code, nicht dieser Plan. Beim Umsetzen und in den
+> anschließenden Reviews sind mehrere Fehler in den hier abgedruckten
+> Schnipseln gefunden worden — unter anderem eine Abdeckungsabfrage, die
+> Zeilen statt Konzepte zählt und damit Werte über 1 liefern kann, ein
+> `constancy`-Umrechner, der 100 auf 0,99 kappt und eine ausdrückliche 0 wie
+> eine fehlende Angabe behandelt, ein Antworttyp mit `name_de` statt
+> `species`, ein fehlender `strings`-Import und ein Level-Vergleich ohne
+> Zeiger-Prüfung. Wer hier abschreibt, baut diese Fehler nach.
+>
+> Der Plan bleibt unverändert stehen, weil er das Protokoll dessen ist, was
+> geplant war; die Abweichungen sind als Rulings im Ausführungsprotokoll
+> festgehalten und in `internal/application/matching.go`,
+> `internal/adapters/sqlite/read_matching.go` und den zugehörigen Tests
+> umgesetzt.
+
 ## Global Constraints
 
 - Go-Abhängigkeiten unverändert — keine neue direkte Dependency (`gomodguard_v2` würde sie abweisen).

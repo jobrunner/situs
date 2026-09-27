@@ -899,6 +899,9 @@ func unknownAreaQueryService() *fakeQueryService {
 // status mapping and serialization. It records the lang and role it was called
 // with so the tests can prove those reached the use case.
 type fakeQueryService struct {
+	matchCalls        int
+	matchRequest      input.MatchRequest
+	matchErr          error
 	types             map[string]input.HabitatTypeDetail
 	byConcept         map[string][]input.HabitatTypeRole
 	bySyntaxon        map[string][]input.HabitatTypeSummary
@@ -1312,6 +1315,26 @@ func (f *fakeQueryService) SyntaxonHabitatTypes(_ context.Context, syntaxonID, l
 // adapter to be tested against it: one entry per input in input order, and the
 // two reasons kept apart. It is deliberately a re-statement of the contract, not
 // a call into the real service — the HTTP layer is tested against the port.
+// MatchHabitatTypes: der Fake spiegelt die Eingaben zurueck und liefert einen
+// festen Rang, damit die Route Ende zu Ende pruefbar ist. Die Rangfolge selbst
+// ist im Use-Case getestet, nicht hier.
+func (f *fakeQueryService) MatchHabitatTypes(_ context.Context, req input.MatchRequest) (input.MatchResult, error) {
+	f.matchCalls++
+	f.matchRequest = req
+	if f.matchErr != nil {
+		return input.MatchResult{}, f.matchErr
+	}
+	res := input.MatchResult{Input: []input.MatchInput{}, Matches: []input.MatchEntry{}}
+	for _, id := range req.ConceptIDs {
+		res.Input = append(res.Input, input.MatchInput{ConceptID: id, Known: true})
+	}
+	res.Matches = append(res.Matches, input.MatchEntry{
+		Typology: req.Typology, Code: "T17", NameEN: "Fagus forest on non-acid soils",
+		Score: -1.3, Matched: len(req.ConceptIDs), Of: len(req.ConceptIDs),
+	})
+	return res, nil
+}
+
 func (f *fakeQueryService) SpeciesSetHabitatTypes(ctx context.Context, conceptIDs []string, lang string, filter input.AreaFilter) ([]input.ConceptResolution, error) {
 	f.conceptSetCalls++
 	f.lang = lang

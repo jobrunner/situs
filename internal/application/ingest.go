@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/jobrunner/situs/internal/domain"
@@ -189,31 +188,6 @@ func readAll(ctx context.Context, dir, name string, delim rune, required []strin
 	}
 }
 
-func parseOptionalInt(s string) (*int, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return nil, nil
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return nil, err
-	}
-	return &n, nil
-}
-
-func parseOptionalBool(s string) (*bool, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return nil, nil
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return nil, err
-	}
-	b := n != 0
-	return &b, nil
-}
-
 // ingestTypologies is the one exception to "a malformed row is skipped, not
 // aborting": a typology is the join target for every habitat type,
 // crosswalk and syntaxon link. Skipping past an unparseable typology row
@@ -315,18 +289,4 @@ func ingestCrosswalks(ctx context.Context, tx output.IngestTx, dir string) (coun
 			return nil
 		})
 	return count, skipped, err
-}
-
-// parseOptionalFloat mirrors parseOptionalInt: an empty fidelity/constancy
-// column is absence of data, never a zero value.
-func parseOptionalFloat(s string) (*float64, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return nil, nil
-	}
-	f, err := strconv.ParseFloat(s, 64)
-	if err != nil {
-		return nil, err
-	}
-	return &f, nil
 }

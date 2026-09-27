@@ -491,6 +491,9 @@ type QueryService interface {
 	// HabitatType returns one type with its species, syntaxa and crosswalks.
 	// filter marks (and, if OnlyInArea, prunes) the species by area.
 	HabitatType(ctx context.Context, key domain.HabitatTypeKey, lang string, filter AreaFilter) (HabitatTypeDetail, error)
+	// MatchHabitatTypes ranks habitat types by how well they explain a set of
+	// observed concept ids. The score is a log-likelihood, never a probability.
+	MatchHabitatTypes(ctx context.Context, req MatchRequest) (MatchResult, error)
 	// SpeciesHabitatTypes returns the habitat types a concept has a role in.
 	SpeciesHabitatTypes(ctx context.Context, conceptID, lang string, filter AreaFilter) ([]HabitatTypeRole, error)
 	// HabitatTypeSpecies returns a type's species, filtered by role when role
@@ -544,4 +547,51 @@ type QueryService interface {
 	// strictly per vocabulary and dimension — never across vocabularies,
 	// whose scales differ.
 	SpeciesTraitSummary(ctx context.Context, conceptIDs []string) (TraitSummary, error)
+}
+
+// MatchRequest ist die Anfrage an POST /v1/habitat-types/match.
+type MatchRequest struct {
+	ConceptIDs []string
+	Typology   string
+	Level      int
+	Area       string
+	Limit      int
+}
+
+// MatchInput spiegelt eine Eingabe-ID zurueck.
+type MatchInput struct {
+	ConceptID string `json:"concept_id"`
+	Known     bool   `json:"known"`
+	Reason    string `json:"reason,omitempty"`
+}
+
+// MatchSpecies nennt eine Eingabe-Art, die fuer diesen Habitattyp gesprochen
+// hat, mit der Rolle und der Kennzahl, die dabei zaehlte. Im Gelaende ist das
+// die Anschlussfrage: welche der anderen Kennarten suche ich jetzt?
+type MatchSpecies struct {
+	ConceptID string   `json:"concept_id"`
+	Role      string   `json:"role"`
+	Constancy *float64 `json:"constancy,omitempty"`
+	Fidelity  *float64 `json:"fidelity,omitempty"`
+}
+
+// MatchEntry ist ein Rang der Antwort. Score ist ein Log-Likelihood, keine
+// Wahrscheinlichkeit: belastbar ist die Reihenfolge, nicht der Betrag.
+//
+// Kein name_de: die Route nimmt keinen lang-Parameter, und ein in der
+// Spezifikation gefuehrtes Feld, das nie erscheint, ist Doku-Drift.
+type MatchEntry struct {
+	Typology string         `json:"typology"`
+	Code     string         `json:"code"`
+	NameEN   string         `json:"name_en"`
+	Score    float64        `json:"score"`
+	Matched  int            `json:"matched"`
+	Of       int            `json:"of"`
+	Species  []MatchSpecies `json:"species"`
+}
+
+// MatchResult ist die Antwort. Beide Listen sind immer da, auch leer.
+type MatchResult struct {
+	Input   []MatchInput `json:"input"`
+	Matches []MatchEntry `json:"matches"`
 }

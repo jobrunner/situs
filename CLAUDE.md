@@ -131,9 +131,9 @@ bryophyte/lichen/algae alliances (sections R–Y) does — held by
 alliance the distribution source names but the hierarchy does not,
 `CI01E`, is reported by id in `UnknownSyntaxa` rather than silently dropped or
 silently swallowed. See `docs/reference/measured-index.md` for every figure
-and the query it came from. Deliberately out of scope: scoring/ranking, the
-ESy rule engine, the EUNIS-2012 key, full plot classification, co-occurrence
-ranking, an Article-17 filter, syntaxa distribution's inheritance upward
+and the query it came from. Deliberately out of scope: the ESy rule engine,
+the EUNIS-2012 key, full plot classification, co-occurrence ranking, ranking
+of **syntaxa** for a species list, an Article-17 filter, syntaxa distribution's inheritance upward
 (class/order/formation), and any ISO↔WGSRPD mapping (the frontend derives the
 area code from GPS).
 
@@ -152,7 +152,7 @@ area code from GPS).
 | `docs/superpowers/plans/2026-09-21-syntaxa-navigation.md` | Its TDD implementation plan (6 tasks). |
 | `docs/superpowers/specs/2026-09-21-syntaxa-verbreitung-design.md` | Teilprojekt C: syntaxa distribution, the second area scheme (`evc_territory`), join over the EVC primary codes A introduces. **Authoritative.** |
 | `docs/superpowers/plans/2026-09-21-syntaxa-verbreitung.md` | Its TDD implementation plan (12 tasks); all 12 done. |
-| `docs/superpowers/specs/2026-09-26-habitat-matching-design.md` | Artenliste → Rangliste der Habitattypen. **Revidiert** die „kein Scoring/Ranking"-Entscheidung des Fundaments, mit der Messung als Begründung. Noch nicht umgesetzt. |
+| `docs/superpowers/specs/2026-09-26-habitat-matching-design.md` | Artenliste → Rangliste der Habitattypen. **Revidiert** die „kein Scoring/Ranking"-Entscheidung des Fundaments, mit der Messung als Begründung. Umgesetzt. |
 
 ## Ubiquitous Language (do not deviate)
 
@@ -368,9 +368,19 @@ The free EEA/Euroveg data reaches **EUNIS level 3** and **alliance (Verband)**.
 need EVA (European Vegetation Archive) access, which is only worth requesting
 once a real scientific project justifies it. Do not design around associations.
 
-Also deliberately out of scope for this foundation: scoring/ranking (plant set →
-ranked habitats), the ESy rule engine and the EUNIS-2012 key (both need cover
-and region data), and full plot classification.
+Also deliberately out of scope for this foundation: the ESy rule engine and the
+EUNIS-2012 key (both need cover and region data), and full plot classification.
+
+**Ranking HABITAT TYPES was out of scope and no longer is.** The exclusion
+still holds for everything else the earlier scope lists — co-occurrence
+ranking, ranking syntaxa for a species list, full plot classification. What
+changed is one route: `POST /v1/habitat-types/match` ranks habitat types for
+an observed species list —
+see `docs/superpowers/specs/2026-09-26-habitat-matching-design.md`, which
+revises the foundation decision and carries the measurement that motivated it:
+62 % of the 3561 species in the 198 level-3 types with a species list occur in
+exactly one type, and 53 % of all type pairs share no species at all. The score
+is a log-likelihood, never a probability — only the ordering is sound.
 
 ## Quality Gates
 
