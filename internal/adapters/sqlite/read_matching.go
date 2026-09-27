@@ -32,8 +32,10 @@ func (d *DB) HabitatAreaCoverage(ctx context.Context, keys []domain.HabitatTypeK
 		return out, nil
 	}
 
-	args := make([]any, 0, len(keys)*2+3)
-	args = append(args, domain.SchemeWGSRPDL3, areaCode)
+	// Literal statt make mit gerechneter Kapazitaet: die Rechnung waere reine
+	// Allokationsvorsorge, die kein Test je beobachten koennte — und damit ein
+	// Mutant, den keiner toeten kann.
+	args := []any{domain.SchemeWGSRPDL3, areaCode}
 	for _, k := range keys {
 		args = append(args, string(k.Typology), k.Code)
 	}
