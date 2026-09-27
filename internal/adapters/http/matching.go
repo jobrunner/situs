@@ -71,6 +71,13 @@ func (s *Server) handleHabitatTypeMatch(w http.ResponseWriter, r *http.Request) 
 		Limit: limit,
 	}
 	if body.Level != nil {
+		// 0 heisst "alle Ebenen" und ist gueltig; negativ heisst nichts und
+		// ist ein Fehler des Aufrufers — dieselbe Haltung wie bei limit.
+		if *body.Level < 0 {
+			s.writeError(w, http.StatusBadRequest, CodeInvalidQuery,
+				"level must not be negative; 0 means every level")
+			return
+		}
 		req.Level = *body.Level
 	}
 

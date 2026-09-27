@@ -497,7 +497,14 @@ paths:
                   minItems: 1
                   maxItems: 300
                 typology: {type: string, default: "eunis@2021"}
-                level: {type: integer, default: 3}
+                level:
+                  type: integer
+                  minimum: 0
+                  default: 3
+                  description: >-
+                    Die Ebene, auf der gerankt wird. 0 heißt "alle Ebenen";
+                    ein negativer Wert ist INVALID_QUERY. Nur Level 3 führt
+                    heute Artenlisten.
                 area: {type: string}
                 limit: {type: integer, minimum: 1, maximum: 50, default: 10}
       responses:

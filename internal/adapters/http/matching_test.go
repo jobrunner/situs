@@ -191,3 +191,34 @@ func TestMatchRoute_TrimmtDieTypologie(t *testing.T) {
 		t.Errorf("typology kam als %q an, erwartet eunis@2021", q.matchRequest.Typology)
 	}
 }
+
+// Ein negatives level ist ein Fehler des Aufrufers: 0 heisst "alle Ebenen",
+// aber -1 heisst nichts. Dieselbe Haltung wie bei limit.
+func TestMatchRoute_NegativesLevelIstInvalidQuery(t *testing.T) {
+	for _, body := range []string{
+		`{"concept_ids":["wcvp:concept:1"],"level":-1}`,
+		`{"concept_ids":["wcvp:concept:1"],"level":-99}`,
+	} {
+		if rec := postMatch(t, body); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s -> Status %d, want 400", body, rec.Code)
+		}
+	}
+}
+
+// level 0 bleibt gueltig und heisst "alle Ebenen" — es wird durchgereicht.
+func TestMatchRoute_LevelNullIstGueltig(t *testing.T) {
+	q := seededQueryService()
+	srv := newTestServer(t, q)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/habitat-types/match",
+		strings.NewReader(`{"concept_ids":["wcvp:concept:1"],"level":0}`))
+	req.Header.Set("Content-Type", "application/json")
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Status = %d, want 200: level 0 heisst alle Ebenen", rec.Code)
+	}
+	if q.matchRequest.Level != 0 {
+		t.Errorf("level kam als %d im Use-Case an, erwartet 0", q.matchRequest.Level)
+	}
+}

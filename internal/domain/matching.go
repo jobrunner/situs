@@ -60,11 +60,16 @@ func ScoreCandidate(c MatchCandidate, inputCount int) float64 {
 	// Die Trennung erledigt zugleich die Doppelzeilen, die der Index in zwei
 	// Faellen traegt (zwei Namen auf einer Konzept-ID): sie heben den Score
 	// nicht doppelt.
-	// math.Max statt einer Vergleichsverzweigung: der Nullwert eines fehlenden
-	// Map-Eintrags ist 0, und weder Wahrscheinlichkeit noch Treuegrad sind je
-	// negativ — die Verzweigung waere nicht nur laenger, ihr ">" gegen ">="
-	// waere zudem ununterscheidbar, weil beide bei Gleichstand denselben Wert
-	// setzen.
+	// Die Wahrscheinlichkeit kommt ueber math.Max zusammen: sie ist nie
+	// negativ, also ist der Nullwert eines fehlenden Map-Eintrags ein
+	// brauchbarer Anfang.
+	//
+	// Der Treuegrad NICHT. Er ist ein phi-Koeffizient und kann negativ sein —
+	// die Art ist dann ein Gegenanzeiger fuer diesen Typ —, weshalb hier
+	// zwischen "keine Angabe" (nil) und einem Wert unterschieden wird. Ein
+	// Nullwert als Anfang haette jede negative Angabe verworfen; genau dieser
+	// Fehler stand hier einmal und ist durch zwei Tests im domain-Paket
+	// abgesichert.
 	bestP := map[string]float64{}
 	maxFid := map[string]*float64{}
 	for _, h := range c.Hits {
