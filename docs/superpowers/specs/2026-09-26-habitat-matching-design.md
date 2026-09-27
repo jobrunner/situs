@@ -176,6 +176,12 @@ Aus dem Review dieser Spezifikation — jeder Punkt war eine echte Lücke:
   Eingabe in `input` mit ihrem `reason`. Kein `404`: die Frage war beantwortbar.
   Ohne bekannte Art gibt es keine Evidenz, und ein Ranking ohne Evidenz wäre
   eine willkürliche Liste.
+- **Eine Stetigkeit von 0 ist kein Treffer.** Sie sagt, dass die Art in keiner
+  Aufnahme dieses Typs vorkommt — eine Angabe, keine fehlende. Die Zeile geht
+  weder in `matched` noch in `species` ein und macht den Typ nicht zum
+  Kandidaten; ihr MISS-Beitrag entsteht ohnehin daraus, dass die Art bei
+  diesem Typ dann fehlt. Zu unterscheiden von der **fehlenden** Stetigkeit
+  (`null`), siehe nächster Punkt.
 - **Zeilen ohne Kennzahl.** Die aus Aggregaten abgeleiteten Zeilen
   (`derived_from_aggregate`, alle 905) tragen weder `constancy` noch
   `fidelity`. Sie zählen als **Treffer** mit `DEFAULT_P`, nicht als `MISS`: die

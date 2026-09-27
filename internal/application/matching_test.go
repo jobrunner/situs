@@ -595,11 +595,11 @@ func TestMatchHabitatTypes_GebietHebtKeinenTypOhneTreffer(t *testing.T) {
 	}
 }
 
-// Eine ausdrueckliche Stetigkeit von 0 heisst "kommt in keiner Aufnahme
-// dieses Typs vor" — das ist eine Angabe, keine fehlende Angabe. Sie mit
-// DEFAULT_P zu belegen machte aus einer Nicht-Vorkommen-Zeile einen positiven
-// Treffer. Dieselbe Verwechslung wie fehlende Verbreitung als Abwesenheit zu
-// lesen, nur andersherum.
+// Eine ausdrueckliche Stetigkeit von 0 heisst, die Art kommt in keiner
+// Aufnahme dieses Typs vor. Das ist eine Angabe, keine fehlende Angabe — und
+// sie macht den Typ nicht zum Kandidaten. Ein Typ, der die Art gar nicht
+// fuehrt, und einer, der sie mit 0 fuehrt, sind fuer die Antwort dasselbe:
+// beide erscheinen nicht.
 func TestMatchHabitatTypes_AusdruecklicheNullIstKeinTreffer(t *testing.T) {
 	repo := newFakeRepo()
 	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
@@ -614,8 +614,8 @@ func TestMatchHabitatTypes_AusdruecklicheNullIstKeinTreffer(t *testing.T) {
 		})
 	}
 	null := 0.0
-	setzen("T01", &null) // ausdrueckliche Null
-	setzen("T02", nil)   // gar keine Angabe
+	setzen("T01", &null) // ausdrueckliche Null: kein Kandidat
+	setzen("T02", nil)   // keine Angabe: Treffer mit dem Vorgabewert
 	svc := NewQueryService(repo)
 
 	got, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
@@ -624,17 +624,8 @@ func TestMatchHabitatTypes_AusdruecklicheNullIstKeinTreffer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MatchHabitatTypes: %v", err)
 	}
-	if len(got.Matches) != 2 {
-		t.Fatalf("Matches = %d, erwartet 2", len(got.Matches))
-	}
-	byCode := map[string]float64{}
-	for _, m := range got.Matches {
-		byCode[m.Code] = m.Score
-	}
-	if byCode["T01"] >= byCode["T02"] {
-		t.Errorf("T01 (Stetigkeit 0) = %.3f, T02 (keine Angabe) = %.3f — "+
-			"eine ausdrueckliche Null darf nicht so gut bewertet werden wie eine fehlende Angabe",
-			byCode["T01"], byCode["T02"])
+	if len(got.Matches) != 1 || got.Matches[0].Code != "T02" {
+		t.Fatalf("Matches = %+v, erwartet allein T02 — die Nullzeile ist kein Treffer", got.Matches)
 	}
 }
 
@@ -1026,5 +1017,82 @@ func TestParseOptionalFloat_WeistNichtEndlicheWerteZurueck(t *testing.T) {
 		if _, err := parseOptionalFloat(roh); err != nil {
 			t.Errorf("parseOptionalFloat(%q) = %v, erwartet keinen Fehler", roh, err)
 		}
+	}
+}
+
+// Eine Zeile mit ausdruecklicher Stetigkeit 0 sagt: die Art kommt in diesem
+// Typ NICHT vor. Der Score behandelt sie folgerichtig als Fehltreffer — dann
+// darf sie aber auch nicht als Treffer gezaehlt, als Beleg ausgewiesen oder
+// zum Grund werden, dass der Typ ueberhaupt Kandidat wird.
+func TestMatchHabitatTypes_NullstetigkeitIstKeinTrefferUndKeinBeleg(t *testing.T) {
+	repo := newFakeRepo()
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	level := 3
+	legeAn := func(code string, constancy float64) {
+		k := domain.HabitatTypeKey{Typology: "eunis@2021", Code: code}
+		repo.types = append(repo.types, domain.HabitatType{Key: k, Level: &level, NameEN: code})
+		id, c := "wcvp:c1", constancy
+		repo.speciesRoles = append(repo.speciesRoles, domain.SpeciesRole{
+			Key: k, ConceptID: &id, VerbatimName: "c1", Role: "constant",
+			Constancy: &c, Provenance: "observed",
+		})
+	}
+	legeAn("T01", 90) // echter Treffer
+	legeAn("T99", 0)  // ausdrueckliches Nicht-Vorkommen
+	svc := NewQueryService(repo)
+
+	got, err := svc.MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1"}, Typology: "eunis@2021", Level: 3, Limit: 50,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	for _, m := range got.Matches {
+		if m.Code == "T99" {
+			t.Errorf("T99 steht in der Liste, fuehrt die Art aber mit Stetigkeit 0 — " +
+				"ein ausdrueckliches Nicht-Vorkommen macht keinen Kandidaten")
+		}
+	}
+	if len(got.Matches) != 1 || got.Matches[0].Code != "T01" {
+		t.Fatalf("Matches = %+v, erwartet allein T01", got.Matches)
+	}
+	if got.Matches[0].Matched != 1 {
+		t.Errorf("matched = %d, erwartet 1", got.Matches[0].Matched)
+	}
+}
+
+// Fuehrt derselbe Typ die Art einmal mit 0 und einmal mit einer echten
+// Stetigkeit, zaehlt die echte — und nur sie erscheint als Beleg.
+func TestMatchHabitatTypes_NullstetigkeitVerdraengtDenEchtenBelegNicht(t *testing.T) {
+	repo := newFakeRepo()
+	repo.typologies = []domain.Typology{{ID: "eunis@2021", Scheme: "eunis", Version: "2021"}}
+	level := 3
+	k := domain.HabitatTypeKey{Typology: "eunis@2021", Code: "T17"}
+	repo.types = append(repo.types, domain.HabitatType{Key: k, Level: &level, NameEN: "T17"})
+	id := "wcvp:c1"
+	for _, c := range []float64{0, 70} {
+		wert := c
+		rolle := "dominant"
+		if c == 0 {
+			rolle = "constant"
+		}
+		repo.speciesRoles = append(repo.speciesRoles, domain.SpeciesRole{
+			Key: k, ConceptID: &id, VerbatimName: "c1", Role: rolle,
+			Constancy: &wert, Provenance: "observed",
+		})
+	}
+
+	got, err := NewQueryService(repo).MatchHabitatTypes(context.Background(), input.MatchRequest{
+		ConceptIDs: []string{"wcvp:c1"}, Typology: "eunis@2021", Level: 3, Limit: 5,
+	})
+	if err != nil {
+		t.Fatalf("MatchHabitatTypes: %v", err)
+	}
+	if len(got.Matches) != 1 || len(got.Matches[0].Species) != 1 {
+		t.Fatalf("erwartet ein Match mit einem Beleg, bekam %+v", got.Matches)
+	}
+	sp := got.Matches[0].Species[0]
+	if sp.Constancy == nil || *sp.Constancy != 70 {
+		t.Errorf("Beleg-Constancy = %v, erwartet 70 — die Nullzeile darf nicht ausgewiesen werden", sp.Constancy)
 	}
 }

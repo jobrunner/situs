@@ -151,8 +151,18 @@ func (q *QueryService) sammleTreffer(ctx context.Context, req input.MatchRequest
 			if string(r.Key.Typology) != req.Typology {
 				continue
 			}
+			p := rollenWahrscheinlichkeit(r)
+			// Eine Zeile mit ausdruecklicher Stetigkeit 0 sagt, dass die Art
+			// in diesem Typ NICHT vorkommt. Der Score behandelt sie als
+			// Fehltreffer; dann darf sie auch nicht als Treffer gezaehlt, als
+			// Beleg ausgewiesen oder zum Grund werden, dass der Typ ueberhaupt
+			// Kandidat wird. Ihr MISS-Beitrag kommt ohnehin ueber inputCount,
+			// weil die Art dann bei diesem Typ schlicht fehlt.
+			if p == domain.MatchMiss {
+				continue
+			}
 			hits[r.Key] = append(hits[r.Key], domain.MatchHit{
-				ConceptID: id, P: rollenWahrscheinlichkeit(r), Fidelity: r.Fidelity,
+				ConceptID: id, P: p, Fidelity: r.Fidelity,
 			})
 			verdichteBeleg(belege, r.Key, id, r)
 		}
