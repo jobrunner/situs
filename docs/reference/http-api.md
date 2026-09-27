@@ -654,6 +654,19 @@ Ein Gebiet, in dem die Arten eines Typs kaum vorkommen, drückt ihn nach hinten
 zuverlässig geografisch unmögliche Vorschläge. Ein unbekannter Gebietscode ist
 `INVALID_QUERY`, niemals stillschweigend ignoriert.
 
+### Eine Stetigkeit von 0 ist kein Treffer
+
+`constancy: 0` heißt, die Art kommt in **keiner** Aufnahme dieses Typs vor.
+Das ist eine Angabe, keine fehlende Angabe — und sie macht den Typ nicht zum
+Kandidaten. Ein Typ, der die Art gar nicht führt, und einer, der sie mit 0
+führt, sind für die Antwort dasselbe: beide erscheinen nicht, und die Art
+zählt in beiden Fällen nicht zu `matched` und steht nicht in `species`.
+
+Zu unterscheiden davon ist die **fehlende** Stetigkeit (`null`): sie steht auf
+jeder nur als `diagnostic` geführten Zeile und auf allen aus Aggregaten
+abgeleiteten. Dort wurde nichts gemessen, und die Zeile zählt mit
+`MatchDefaultP` als Treffer.
+
 ### Ein Typ ohne Treffer erscheint nie
 
 Auch nicht mit perfekter Gebietsabdeckung. Rechnerisch hätte er den besseren

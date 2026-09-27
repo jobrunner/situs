@@ -151,6 +151,20 @@ func (q *QueryService) sammleTreffer(ctx context.Context, req input.MatchRequest
 			if string(r.Key.Typology) != req.Typology {
 				continue
 			}
+			// Eine Zeile mit ausdruecklicher Stetigkeit 0 sagt, dass die Art
+			// in diesem Typ NICHT vorkommt. Der Score behandelt sie als
+			// Fehltreffer; dann darf sie auch nicht als Treffer gezaehlt, als
+			// Beleg ausgewiesen oder zum Grund werden, dass der Typ ueberhaupt
+			// Kandidat wird. Ihr MISS-Beitrag kommt ohnehin ueber inputCount,
+			// weil die Art dann bei diesem Typ schlicht fehlt.
+			//
+			// Entschieden wird am ROHWERT, nicht am normalisierten: MatchMiss
+			// ist 0,02, und eine Stetigkeit von 2 Prozent ergaebe genau
+			// denselben Wert. Eine seltene Art waere sonst von einem
+			// Nicht-Vorkommen nicht zu unterscheiden.
+			if istNichtVorkommen(r) {
+				continue
+			}
 			hits[r.Key] = append(hits[r.Key], domain.MatchHit{
 				ConceptID: id, P: rollenWahrscheinlichkeit(r), Fidelity: r.Fidelity,
 			})
