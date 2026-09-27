@@ -152,7 +152,7 @@ func (q *QueryService) sammleTreffer(ctx context.Context, req input.MatchRequest
 				continue
 			}
 			hits[r.Key] = append(hits[r.Key], domain.MatchHit{
-				ConceptID: id, P: rollenWahrscheinlichkeit(r), Fidelity: wert(r.Fidelity),
+				ConceptID: id, P: rollenWahrscheinlichkeit(r), Fidelity: r.Fidelity,
 			})
 			verdichteBeleg(belege, r.Key, id, r)
 		}

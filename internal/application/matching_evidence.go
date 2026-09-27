@@ -85,10 +85,3 @@ func rollenWahrscheinlichkeit(r domain.SpeciesRole) float64 {
 	// Wert.
 	return math.Min(*r.Constancy/100, 1.0)
 }
-
-func wert(p *float64) float64 {
-	if p == nil {
-		return 0
-	}
-	return *p
-}

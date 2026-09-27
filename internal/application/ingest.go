@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -327,6 +328,14 @@ func parseOptionalFloat(s string) (*float64, error) {
 	f, err := strconv.ParseFloat(s, 64)
 	if err != nil {
 		return nil, err
+	}
+	// strconv.ParseFloat nimmt "NaN", "Inf" und "Infinity" an. Ein solcher
+	// Messwert ist ein Datenfehler und gehoert hier zurueckgewiesen, nicht
+	// erst beim Ausliefern: ein NaN im Score macht die Antwort
+	// unserialisierbar, und zwar nachdem der Statuscode 200 schon geschrieben
+	// ist — der Aufrufer bekaeme einen abgebrochenen Rumpf ohne Fehlermeldung.
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return nil, fmt.Errorf("%q is not a finite measurement", s)
 	}
 	return &f, nil
 }

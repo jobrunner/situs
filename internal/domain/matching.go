@@ -31,7 +31,12 @@ const (
 type MatchHit struct {
 	ConceptID string
 	P         float64 // P(Art | Habitat)
-	Fidelity  float64 // 0, wenn die Zeile keinen Treuegrad fuehrt
+	// Fidelity ist der phi-Koeffizient der Zeile, nil wenn sie keinen
+	// fuehrt. Ein Zeiger, weil phi NEGATIV sein kann: die Art ist dann ein
+	// Gegenanzeiger fuer diesen Typ. Als float64 mit 0 als Ersatzwert waere
+	// "keine Angabe" von "phi = 0" nicht zu unterscheiden, und jede negative
+	// Angabe verschwaende gegen den Nullwert.
+	Fidelity *float64
 }
 
 // MatchCandidate ist ein Habitattyp mit seinen Treffern zur Eingabe.
@@ -61,10 +66,18 @@ func ScoreCandidate(c MatchCandidate, inputCount int) float64 {
 	// waere zudem ununterscheidbar, weil beide bei Gleichstand denselben Wert
 	// setzen.
 	bestP := map[string]float64{}
-	maxFid := map[string]float64{}
+	maxFid := map[string]*float64{}
 	for _, h := range c.Hits {
 		bestP[h.ConceptID] = math.Max(bestP[h.ConceptID], h.P)
-		maxFid[h.ConceptID] = math.Max(maxFid[h.ConceptID], h.Fidelity)
+		if h.Fidelity != nil {
+			cur := maxFid[h.ConceptID]
+			if cur == nil {
+				maxFid[h.ConceptID] = h.Fidelity
+				continue
+			}
+			groesser := math.Max(*cur, *h.Fidelity)
+			maxFid[h.ConceptID] = &groesser
+		}
 	}
 
 	// In sortierter Reihenfolge summieren, nicht in der einer Map: Go iteriert
@@ -80,7 +93,9 @@ func ScoreCandidate(c MatchCandidate, inputCount int) float64 {
 	score := 0.0
 	for _, id := range ids {
 		score += math.Log(bestP[id])
-		score += MatchFidelityWeight * maxFid[id]
+		if f := maxFid[id]; f != nil {
+			score += MatchFidelityWeight * *f
+		}
 	}
 	for i := len(bestP); i < inputCount; i++ {
 		score += math.Log(MatchMiss)

@@ -54,7 +54,7 @@ func TestScoreCandidate_NimmtDieHoechsteWahrscheinlichkeitJeArt(t *testing.T) {
 // Der Treuegrad hebt eine Kennart ueber eine Begleitart gleicher Stetigkeit.
 func TestScoreCandidate_TreuegradHebtDieKennart(t *testing.T) {
 	ohne := domain.MatchCandidate{Hits: []domain.MatchHit{{ConceptID: "c1", P: 0.5}}}
-	mit := domain.MatchCandidate{Hits: []domain.MatchHit{{ConceptID: "c1", P: 0.5, Fidelity: 40}}}
+	mit := domain.MatchCandidate{Hits: []domain.MatchHit{{ConceptID: "c1", P: 0.5, Fidelity: floatZeiger(40)}}}
 
 	if domain.ScoreCandidate(mit, 1) <= domain.ScoreCandidate(ohne, 1) {
 		t.Error("Fidelity erhoeht den Score nicht")
@@ -85,11 +85,11 @@ func TestScoreCandidate_TreuegradUeberlebtDieHoehereStetigkeit(t *testing.T) {
 	// Habitat A fuehrt die Art als constant (0.40) UND als diagnostic (phi 45).
 	a := domain.MatchCandidate{Hits: []domain.MatchHit{
 		{ConceptID: "c1", P: 0.40},
-		{ConceptID: "c1", P: domain.MatchDefaultP, Fidelity: 45},
+		{ConceptID: "c1", P: domain.MatchDefaultP, Fidelity: floatZeiger(45)},
 	}}
 	// Habitat B fuehrt sie nur als diagnostic.
 	b := domain.MatchCandidate{Hits: []domain.MatchHit{
-		{ConceptID: "c1", P: domain.MatchDefaultP, Fidelity: 45},
+		{ConceptID: "c1", P: domain.MatchDefaultP, Fidelity: floatZeiger(45)},
 	}}
 
 	if domain.ScoreCandidate(a, 1) <= domain.ScoreCandidate(b, 1) {
@@ -110,7 +110,7 @@ func TestScoreCandidate_IstBitgleichBeiWiederholung(t *testing.T) {
 		hits = append(hits, domain.MatchHit{
 			ConceptID: string(rune('a'+i%26)) + string(rune('0'+i/26)),
 			P:         0.1 + float64(i)*0.02,
-			Fidelity:  float64(i) * 2.3,
+			Fidelity:  floatZeiger(float64(i) * 2.3),
 		})
 	}
 	c := domain.MatchCandidate{Hits: hits}
@@ -121,5 +121,55 @@ func TestScoreCandidate_IstBitgleichBeiWiederholung(t *testing.T) {
 			t.Fatalf("Lauf %d ergab %v, der erste %v — die Summenreihenfolge ist nicht festgelegt",
 				lauf, got, erste)
 		}
+	}
+}
+
+// Der Treuegrad ist ein phi-Koeffizient und kann negativ sein: die Art ist
+// dann fuer diesen Typ ein GEGENanzeiger. Ein negativer Wert muss den Score
+// senken, nicht verschwinden — die Formel lautet W_FID mal fidelity, ohne
+// Untergrenze bei null.
+func TestScoreCandidate_NegativerTreuegradSenktDenScore(t *testing.T) {
+	ohne := domain.MatchCandidate{Hits: []domain.MatchHit{{ConceptID: "c1", P: 0.5}}}
+	negativ := domain.MatchCandidate{Hits: []domain.MatchHit{
+		{ConceptID: "c1", P: 0.5, Fidelity: floatZeiger(-40)},
+	}}
+
+	if domain.ScoreCandidate(negativ, 1) >= domain.ScoreCandidate(ohne, 1) {
+		t.Errorf("negativer Treuegrad = %.4f, ohne Angabe = %.4f — ein Gegenanzeiger muss senken",
+			domain.ScoreCandidate(negativ, 1), domain.ScoreCandidate(ohne, 1))
+	}
+}
+
+// Von zwei Zeilen derselben Art gilt der hoechste Treuegrad — auch wenn beide
+// negativ sind. Die fehlende Angabe ist dabei kein Nullwert, der jede
+// negative Angabe schluege.
+func TestScoreCandidate_NimmtDenHoechstenTreuegradAuchImNegativen(t *testing.T) {
+	c := domain.MatchCandidate{Hits: []domain.MatchHit{
+		{ConceptID: "c1", P: 0.5, Fidelity: floatZeiger(-40)},
+		{ConceptID: "c1", P: 0.5, Fidelity: floatZeiger(-10)},
+	}}
+	nurDerHoehere := domain.MatchCandidate{Hits: []domain.MatchHit{
+		{ConceptID: "c1", P: 0.5, Fidelity: floatZeiger(-10)},
+	}}
+
+	if a, b := domain.ScoreCandidate(c, 1), domain.ScoreCandidate(nurDerHoehere, 1); a != b {
+		t.Errorf("Score mit beiden = %.4f, nur mit dem hoeheren = %.4f — es muss der hoechste gelten", a, b)
+	}
+}
+
+func floatZeiger(v float64) *float64 { return &v }
+
+// Der Treuegrad geht mit W_FID MULTIPLIZIERT in den Score ein, nicht anders
+// verrechnet. Geprueft am exakten Wert, damit eine vertauschte Rechenart
+// auffaellt und nicht bloss die Richtung stimmt.
+func TestScoreCandidate_TreuegradGehtMultipliziertEin(t *testing.T) {
+	c := domain.MatchCandidate{Hits: []domain.MatchHit{
+		{ConceptID: "c1", P: 0.5, Fidelity: floatZeiger(40)},
+	}}
+	want := math.Log(0.5) + domain.MatchFidelityWeight*40
+
+	if got := domain.ScoreCandidate(c, 1); math.Abs(got-want) > 1e-12 {
+		t.Errorf("Score = %.12f, erwartet log(0,5) + %v*40 = %.12f",
+			got, domain.MatchFidelityWeight, want)
 	}
 }

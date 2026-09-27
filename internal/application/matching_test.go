@@ -1010,3 +1010,21 @@ func TestMatchHabitatTypes_UnbekannteIDBehaeltIhrenGrundAuchDoppelt(t *testing.T
 		t.Errorf("of = %d, erwartet 1 — nur wcvp:c1 ist bekannt", got.Matches[0].Of)
 	}
 }
+
+// strconv.ParseFloat akzeptiert "NaN" und "Inf". Solche Werte duerfen nicht
+// in den Index gelangen: ein NaN im Score macht die Antwort unserialisierbar,
+// und zwar erst NACH dem 200 — der Aufrufer bekaeme einen abgebrochenen Body.
+// Der richtige Ort dafuer ist der Ingest, wo ein solcher Wert ein Datenfehler
+// ist, nicht das Ausliefern.
+func TestParseOptionalFloat_WeistNichtEndlicheWerteZurueck(t *testing.T) {
+	for _, roh := range []string{"NaN", "nan", "Inf", "+Inf", "-Inf", "Infinity"} {
+		if _, err := parseOptionalFloat(roh); err == nil {
+			t.Errorf("parseOptionalFloat(%q) = kein Fehler; ein nicht endlicher Messwert ist ein Datenfehler", roh)
+		}
+	}
+	for _, roh := range []string{"", "0", "-40", "99.5"} {
+		if _, err := parseOptionalFloat(roh); err != nil {
+			t.Errorf("parseOptionalFloat(%q) = %v, erwartet keinen Fehler", roh, err)
+		}
+	}
+}
