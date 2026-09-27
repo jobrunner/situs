@@ -92,6 +92,11 @@ curl -s -X POST localhost:8070/v1/species/habitat-types \
   -H 'Content-Type: application/json' \
   -d '{"concept_ids":["wcvp:concept:2457314","wcvp:concept:2606633"]}'
 
+# Artenliste -> Rangliste der Habitattypen (Log-Likelihood, keine Prozente)
+curl -s -X POST localhost:8070/v1/habitat-types/match \
+  -H 'Content-Type: application/json' \
+  -d '{"concept_ids":["wcvp:concept:83891"],"area":"GER","limit":5}'
+
 # Namen, die der Index selbst führt — keine Namensauflösung, dafür ist hostus da.
 curl -s 'localhost:8070/v1/species/search?q=fagus&limit=5'
 

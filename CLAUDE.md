@@ -131,9 +131,9 @@ bryophyte/lichen/algae alliances (sections R–Y) does — held by
 alliance the distribution source names but the hierarchy does not,
 `CI01E`, is reported by id in `UnknownSyntaxa` rather than silently dropped or
 silently swallowed. See `docs/reference/measured-index.md` for every figure
-and the query it came from. Deliberately out of scope: scoring/ranking, the
-ESy rule engine, the EUNIS-2012 key, full plot classification, co-occurrence
-ranking, an Article-17 filter, syntaxa distribution's inheritance upward
+and the query it came from. Deliberately out of scope: the ESy rule engine,
+the EUNIS-2012 key, full plot classification, co-occurrence ranking, ranking
+of **syntaxa** for a species list, an Article-17 filter, syntaxa distribution's inheritance upward
 (class/order/formation), and any ISO↔WGSRPD mapping (the frontend derives the
 area code from GPS).
 
@@ -371,8 +371,11 @@ once a real scientific project justifies it. Do not design around associations.
 Also deliberately out of scope for this foundation: the ESy rule engine and the
 EUNIS-2012 key (both need cover and region data), and full plot classification.
 
-**Scoring/ranking was out of scope and no longer is.** `POST
-/v1/habitat-types/match` ranks habitat types for an observed species list —
+**Ranking HABITAT TYPES was out of scope and no longer is.** The exclusion
+still holds for everything else the earlier scope lists — co-occurrence
+ranking, ranking syntaxa for a species list, full plot classification. What
+changed is one route: `POST /v1/habitat-types/match` ranks habitat types for
+an observed species list —
 see `docs/superpowers/specs/2026-09-26-habitat-matching-design.md`, which
 revises the foundation decision and carries the measurement that motivated it:
 62 % of the 3561 species in the 198 level-3 types with a species list occur in
